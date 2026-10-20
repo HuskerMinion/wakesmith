@@ -90,7 +90,7 @@ async function load() {
   document.title = document.querySelector("h1").textContent;
   document.getElementById("summary").textContent = data.summary ||
     `The model disagrees with the label on ${data.clips.length} clips at threshold ${data.threshold}: ` +
-    `${pos} labelled "${ph}" that it scored low, ${data.clips.length - pos} labelled "not ${ph}" that it scored high. ` +
+    `${pos} labeled "${ph}" that it scored low, ${data.clips.length - pos} labeled "not ${ph}" that it scored high. ` +
     `Listen and mark what was really said.`;
   render();
 }
@@ -111,7 +111,7 @@ function render() {
 function card(i) {
   const c = data.clips[i], d = data.decisions[c.id];
   const ph = esc(data.phrase || "wake phrase");
-  const claim = c.claim || (c.label === "wake" ? `Labelled <b>${ph}</b>, model says no` : `Labelled <b>not ${ph}</b>, model says yes`);
+  const claim = c.claim || (c.label === "wake" ? `Labeled <b>${ph}</b>, model says no` : `Labeled <b>not ${ph}</b>, model says yes`);
   const dev = c.file.split("/").slice(-2, -1)[0] || "";
   const btns = Object.entries(V).map(([k, [name, cls, key]]) =>
     `<button class="${cls}${d && d.verdict === k ? " sel" : ""}" onclick="mark(${i},'${k}')">${name}<span class="k">${key}</span></button>`).join("");

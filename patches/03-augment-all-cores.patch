@@ -40,7 +40,7 @@
 -        out_path = wav_path.with_name(f"{orig_stem}_r{round_idx}.wav")
 -        sf.write(str(out_path), audio, sample_rate)
 +    # Patched (wakesmith): fan clips out over all CPU cores. The stock loop ran one clip at a time
-+    # (~1 core of 12). Set LKW_AUG_WORKERS=1 to get the original serial behaviour.
++    # (~1 core of 12). Set LKW_AUG_WORKERS=1 to get the original serial behavior.
 +    import multiprocessing as mp
 +    import os
 +

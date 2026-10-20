@@ -134,7 +134,7 @@ What mattered:
 - **Real negatives.** All three new models, trained with real false triggers, gave 2-8 false
   triggers where the previous model gave 10. The new models differ in more than their data,
   though.
-- **The review page.** The first pass over ~1,000 labelled clips found 11 wrong training labels:
+- **The review page.** The first pass over ~1,000 labeled clips found 11 wrong training labels:
   9 "false triggers" were really the phrase, and 2 "phrases" weren't. A second pass listened to
   every disputed held-out clip and found the test labels correct, so the scores above can be
   trusted.

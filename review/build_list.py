@@ -1,10 +1,10 @@
 """List the real recordings where trained models disagree with the label, for the review page.
 
-Scores every labelled recording (full original clip, as a live listener hears it) with each model.
+Scores every labeled recording (full original clip, as a live listener hears it) with each model.
 A clip is listed when any model disagrees at THRESHOLD: a positive scoring below it, or a negative
 scoring at or above it. Writes WORK/review/clips.json, most confident disagreements first.
 
-In practice these lists hold real labelling mistakes. One household's first pass found 11 wrong
+In practice these lists hold real labeling mistakes. One household's first pass found 11 wrong
 training labels among ~1,000 clips, and listening to every disputed held-out clip confirmed that
 their test labels were right.
 
@@ -49,5 +49,5 @@ out = recipe.WORK / "review/clips.json"
 out.parent.mkdir(parents=True, exist_ok=True)
 json.dump({"threshold": thr, "phrase": recipe.LABEL, "clips": clips}, open(out, "w"), indent=1)
 pos = sum(c["label"] == "wake" for c in clips)
-print(f"{len(clips)} disagreements at {thr}: {pos} labelled '{recipe.LABEL}' scored low, "
-      f"{len(clips) - pos} labelled other scored high; {sum(c['split'] == 'test' for c in clips)} held-out -> {out}")
+print(f"{len(clips)} disagreements at {thr}: {pos} labeled '{recipe.LABEL}' scored low, "
+      f"{len(clips) - pos} labeled other scored high; {sum(c['split'] == 'test' for c in clips)} held-out -> {out}")
