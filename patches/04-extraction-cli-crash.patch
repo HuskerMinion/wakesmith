@@ -1,0 +1,13 @@
+--- a/livekit/wakeword/data/features.py
++++ b/livekit/wakeword/data/features.py
+@@ -69,7 +69,9 @@
+     return np.stack(all_features, axis=0)  # (N_clips, 16, 96)
+ 
+ 
+-def run_extraction(config: WakeWordConfig, sess_options: SessionOptions) -> None:
++def run_extraction(config: WakeWordConfig, sess_options: SessionOptions | None = None) -> None:
++    # Patched (wakesmith): 0.3.0's CLI calls run_extraction(config) with no sess_options and crashed;
++    # None is fine downstream (feature_extractor applies session_options() defaults).
+     """Extract and save features for all splits of a wake word config."""
+     mel_frontend = MelSpectrogramFrontend(
+         onnx_path=get_mel_model_path(),

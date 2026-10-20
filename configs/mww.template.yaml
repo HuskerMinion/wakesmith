@@ -1,0 +1,72 @@
+# microWakeWord training config. scripts/mww-train.sh fills in @MODEL@ and runs from WORK/mww, so
+# the paths below are relative to it. Copy and set MWW_CONFIG to use your own.
+# Sampling weights follow the upstream notebook, plus the two recipe sets: synthetic sound-alikes and
+# real negatives (penalty 2: a real false trigger costs more than a synthetic one).
+# (A run with negative_class_weight 40 and 40k steps was not better on real held-out clips.)
+window_step_ms: 10
+train_dir: trained/@MODEL@
+features:
+- features_dir: features/positive
+  sampling_weight: 2.0
+  penalty_weight: 1.0
+  truth: true
+  truncation_strategy: truncate_start
+  type: mmap
+- features_dir: features/adversarial
+  sampling_weight: 3.0
+  penalty_weight: 1.0
+  truth: false
+  truncation_strategy: truncate_start
+  type: mmap
+- features_dir: features/real_negative     # drop this entry if you have no real negatives
+  sampling_weight: 2.0
+  penalty_weight: 2.0
+  truth: false
+  truncation_strategy: truncate_start
+  type: mmap
+- features_dir: negative_datasets/speech
+  sampling_weight: 10.0
+  penalty_weight: 1.0
+  truth: false
+  truncation_strategy: random
+  type: mmap
+- features_dir: negative_datasets/dinner_party
+  sampling_weight: 10.0
+  penalty_weight: 1.0
+  truth: false
+  truncation_strategy: random
+  type: mmap
+- features_dir: negative_datasets/no_speech
+  sampling_weight: 5.0
+  penalty_weight: 1.0
+  truth: false
+  truncation_strategy: random
+  type: mmap
+- features_dir: negative_datasets/dinner_party_eval
+  sampling_weight: 0.0
+  penalty_weight: 1.0
+  truth: false
+  truncation_strategy: split
+  type: mmap
+training_steps:
+- 20000
+positive_class_weight:
+- 1
+negative_class_weight:
+- 20
+learning_rates:
+- 0.001
+batch_size: 128
+time_mask_max_size:
+- 0
+time_mask_count:
+- 0
+freq_mask_max_size:
+- 0
+freq_mask_count:
+- 0
+eval_step_interval: 500
+clip_duration_ms: 1500
+target_minimization: 0.9
+minimization_metric: null
+maximization_metric: average_viable_recall

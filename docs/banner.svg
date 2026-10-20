@@ -1,0 +1,144 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="640" viewBox="0 0 1280 640">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#0d1020"/>
+      <stop offset="1" stop-color="#1b1428"/>
+    </linearGradient>
+    <radialGradient id="glow" cx="370" cy="420" r="330" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#ff7a1a" stop-opacity="0.55"/>
+      <stop offset="0.45" stop-color="#ff5a1a" stop-opacity="0.16"/>
+      <stop offset="1" stop-color="#ff5a1a" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="steel" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#4a5070"/>
+      <stop offset="0.5" stop-color="#2a2e44"/>
+      <stop offset="1" stop-color="#181a29"/>
+    </linearGradient>
+    <linearGradient id="hot" x1="0" y1="1" x2="0" y2="0">
+      <stop offset="0" stop-color="#ff4d12"/>
+      <stop offset="0.55" stop-color="#ff9f1c"/>
+      <stop offset="1" stop-color="#fff1b8"/>
+    </linearGradient>
+    <linearGradient id="handle" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#6b4226"/>
+      <stop offset="0.5" stop-color="#9a6438"/>
+      <stop offset="1" stop-color="#5a361f"/>
+    </linearGradient>
+    <linearGradient id="head" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#8a91ad"/>
+      <stop offset="1" stop-color="#3b4058"/>
+    </linearGradient>
+    <filter id="blur" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur stdDeviation="7"/>
+    </filter>
+    <filter id="soft" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur stdDeviation="2"/>
+    </filter>
+  </defs>
+
+  <rect width="1280" height="640" fill="url(#bg)"/>
+  <rect width="1280" height="640" fill="url(#glow)"/>
+
+  <!-- voice arriving from the left: the spoken phrase -->
+  <g fill="none" stroke="#7f8bd6" stroke-linecap="round" opacity="0.55">
+    <path d="M70 330 q16 -26 0 -52" stroke-width="5"/>
+    <path d="M92 350 q30 -50 0 -100" stroke-width="5" opacity="0.75"/>
+    <path d="M114 370 q44 -74 0 -148" stroke-width="5" opacity="0.5"/>
+  </g>
+
+  <!-- anvil -->
+  <path d="M150 428 Q200 408 250 410 L530 410 L530 452 L468 452 Q446 474 438 502 L500 526 L500 548 L262 548 L262 526 L324 502 Q316 474 296 452 L250 452 Q205 448 150 428 Z"
+        fill="url(#steel)" stroke="#0a0b14" stroke-width="2"/>
+  <path d="M150 428 Q200 408 250 410 L530 410" fill="none" stroke="#ffb35c" stroke-width="3" opacity="0.8"/>
+
+  <!-- the wake word, glowing on the anvil: a waveform of hot metal -->
+  <g id="wave">
+    <g filter="url(#blur)" opacity="0.9" fill="#ff8a1c">
+      <rect x="268" y="392" width="9" height="16" rx="4.5"/>
+      <rect x="284" y="380" width="9" height="28" rx="4.5"/>
+      <rect x="300" y="362" width="9" height="46" rx="4.5"/>
+      <rect x="316" y="372" width="9" height="36" rx="4.5"/>
+      <rect x="332" y="340" width="9" height="68" rx="4.5"/>
+      <rect x="348" y="318" width="9" height="90" rx="4.5"/>
+      <rect x="364" y="346" width="9" height="62" rx="4.5"/>
+      <rect x="380" y="368" width="9" height="40" rx="4.5"/>
+      <rect x="396" y="386" width="9" height="22" rx="4.5"/>
+      <rect x="412" y="352" width="9" height="56" rx="4.5"/>
+      <rect x="428" y="326" width="9" height="82" rx="4.5"/>
+      <rect x="444" y="338" width="9" height="70" rx="4.5"/>
+      <rect x="460" y="364" width="9" height="44" rx="4.5"/>
+      <rect x="476" y="380" width="9" height="28" rx="4.5"/>
+      <rect x="492" y="394" width="9" height="14" rx="4.5"/>
+    </g>
+    <g fill="url(#hot)">
+      <rect x="268" y="392" width="9" height="16" rx="4.5"/>
+      <rect x="284" y="380" width="9" height="28" rx="4.5"/>
+      <rect x="300" y="362" width="9" height="46" rx="4.5"/>
+      <rect x="316" y="372" width="9" height="36" rx="4.5"/>
+      <rect x="332" y="340" width="9" height="68" rx="4.5"/>
+      <rect x="348" y="318" width="9" height="90" rx="4.5"/>
+      <rect x="364" y="346" width="9" height="62" rx="4.5"/>
+      <rect x="380" y="368" width="9" height="40" rx="4.5"/>
+      <rect x="396" y="386" width="9" height="22" rx="4.5"/>
+      <rect x="412" y="352" width="9" height="56" rx="4.5"/>
+      <rect x="428" y="326" width="9" height="82" rx="4.5"/>
+      <rect x="444" y="338" width="9" height="70" rx="4.5"/>
+      <rect x="460" y="364" width="9" height="44" rx="4.5"/>
+      <rect x="476" y="380" width="9" height="28" rx="4.5"/>
+      <rect x="492" y="394" width="9" height="14" rx="4.5"/>
+    </g>
+  </g>
+
+  <!-- hammer, striking the waveform; its lower face meets the tallest bar -->
+  <g transform="rotate(-24 432 322)">
+    <rect x="455" y="252" width="230" height="20" rx="9" fill="url(#handle)" stroke="#2a180c" stroke-width="2"/>
+    <rect x="404" y="204" width="56" height="118" rx="7" fill="url(#head)" stroke="#0a0b14" stroke-width="2"/>
+    <rect x="404" y="204" width="9" height="118" rx="4" fill="#c3c9df" opacity="0.55"/>
+  </g>
+
+  <!-- impact flash + sparks -->
+  <g filter="url(#blur)">
+    <ellipse cx="432" cy="326" rx="42" ry="14" fill="#ffe08a" opacity="0.5"/>
+  </g>
+  <g stroke="#ffd166" stroke-width="3.5" stroke-linecap="round">
+    <line x1="396" y1="318" x2="372" y2="308"/>
+    <line x1="400" y1="300" x2="384" y2="280"/>
+    <line x1="470" y1="322" x2="494" y2="314"/>
+    <line x1="468" y1="340" x2="492" y2="342"/>
+  </g>
+  <g fill="#ffd166">
+    <circle cx="330" cy="262" r="4"/>
+    <circle cx="352" cy="226" r="3"/>
+    <circle cx="300" cy="294" r="3.5"/>
+    <circle cx="386" cy="238" r="2.5"/>
+    <circle cx="270" cy="250" r="2.5"/>
+    <circle cx="540" cy="300" r="3.5"/>
+    <circle cx="582" cy="336" r="2.5"/>
+    <circle cx="520" cy="262" r="2.5"/>
+  </g>
+  <g fill="#ff9f1c">
+    <rect x="316" y="282" width="5" height="14" rx="2.5" transform="rotate(-40 318 289)"/>
+    <rect x="368" y="256" width="5" height="12" rx="2.5" transform="rotate(-20 370 262)"/>
+    <rect x="556" y="280" width="5" height="13" rx="2.5" transform="rotate(55 558 286)"/>
+  </g>
+
+  <!-- title -->
+  <text x="660" y="300" font-family="Montserrat" font-weight="800" font-size="104" fill="#f6f1e7" letter-spacing="-2">wakesmith</text>
+  <text x="664" y="356" font-family="Montserrat" font-weight="600" font-size="36" fill="#ffb35c">Forge your own wake word.</text>
+  <text x="664" y="404" font-family="DejaVu Sans" font-size="21" fill="#aab1cc">Synthetic speech + your own recordings</text>
+  <text x="664" y="434" font-family="DejaVu Sans" font-size="21" fill="#aab1cc">→ openWakeWord &amp; microWakeWord models</text>
+
+  <!-- chips -->
+  <g font-family="DejaVu Sans" font-size="17" fill="#d7dbef">
+    <rect x="664" y="468" width="104" height="34" rx="17" fill="none" stroke="#4b5378" stroke-width="1.5"/>
+    <text x="716" y="491" text-anchor="middle">Intel Arc</text>
+    <rect x="780" y="468" width="92" height="34" rx="17" fill="none" stroke="#4b5378" stroke-width="1.5"/>
+    <text x="826" y="491" text-anchor="middle">NVIDIA</text>
+    <rect x="884" y="468" width="66" height="34" rx="17" fill="none" stroke="#4b5378" stroke-width="1.5"/>
+    <text x="917" y="491" text-anchor="middle">CPU</text>
+    <rect x="962" y="468" width="116" height="34" rx="17" fill="none" stroke="#4b5378" stroke-width="1.5"/>
+    <text x="1020" y="491" text-anchor="middle">ESPHome</text>
+    <rect x="1090" y="468" width="160" height="34" rx="17" fill="none" stroke="#4b5378" stroke-width="1.5"/>
+    <text x="1170" y="491" text-anchor="middle">Home Assistant</text>
+  </g>
+</svg>

@@ -1,0 +1,176 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Clip Review</title>
+<style>
+  :root {
+    --bg: #f6f5f2; --card: #ffffff; --text: #1d1d1f; --muted: #6b6b70; --line: #e3e1dc;
+    --accent: #2f5fd0; --yes: #1f7a4a; --no: #b03a2e; --unsure: #8a6d1b; --bad: #5d5d66;
+    --focus: #2f5fd0;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #151517; --card: #1f1f22; --text: #ececee; --muted: #9a9aa2; --line: #313136;
+      --accent: #7ea2ff; --yes: #5cc58c; --no: #ff8a7d; --unsure: #e3c25e; --bad: #a4a4ae;
+      --focus: #7ea2ff;
+    }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text);
+         font: 15px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; }
+  header { position: sticky; top: 0; z-index: 2; background: var(--bg); border-bottom: 1px solid var(--line);
+           padding: 12px 16px; }
+  .wrap { max-width: 860px; margin: 0 auto; }
+  h1 { font-size: 18px; margin: 0 0 4px; }
+  .sub { color: var(--muted); font-size: 13px; }
+  .bar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-top: 8px; }
+  .progress { flex: 1 1 200px; height: 6px; background: var(--line); border-radius: 3px; overflow: hidden; }
+  .progress > div { height: 100%; background: var(--accent); width: 0; transition: width .2s; }
+  select, input[type=text] { font: inherit; color: var(--text); background: var(--card);
+         border: 1px solid var(--line); border-radius: 6px; padding: 5px 8px; }
+  main { padding: 12px 16px 80px; }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px;
+          margin-bottom: 10px; }
+  .card.current { outline: 2px solid var(--focus); outline-offset: 1px; }
+  .card.done { opacity: .62; }
+  .row { display: flex; flex-wrap: wrap; gap: 6px 14px; align-items: baseline; }
+  .claim { font-weight: 600; }
+  .meta { color: var(--muted); font-size: 13px; }
+  .file { color: var(--muted); font-size: 12px; word-break: break-all; margin-top: 2px; }
+  .tag { font-size: 11px; padding: 1px 6px; border-radius: 4px; border: 1px solid var(--line); color: var(--muted); }
+  audio { width: 100%; margin: 8px 0 6px; }
+  .btns { display: flex; flex-wrap: wrap; gap: 6px; }
+  button { font: inherit; font-size: 14px; border-radius: 6px; padding: 6px 12px; cursor: pointer;
+           background: var(--card); color: var(--text); border: 1px solid var(--line); }
+  button .k { color: var(--muted); font-size: 11px; margin-left: 4px; }
+  button.sel.yes { background: var(--yes); border-color: var(--yes); color: #fff; }
+  button.sel.no { background: var(--no); border-color: var(--no); color: #fff; }
+  button.sel.unsure { background: var(--unsure); border-color: var(--unsure); color: #fff; }
+  button.sel.bad { background: var(--bad); border-color: var(--bad); color: #fff; }
+  button.sel .k { color: inherit; }
+  .note { width: 100%; margin-top: 6px; }
+  .verdict { font-size: 13px; margin-left: auto; }
+  .help { color: var(--muted); font-size: 12px; margin-top: 6px; }
+  .empty { color: var(--muted); padding: 40px 0; text-align: center; }
+</style>
+</head>
+<body>
+<header>
+  <div class="wrap">
+    <h1>Disputed clips</h1>
+    <div class="sub" id="summary">Loading…</div>
+    <div class="bar">
+      <div class="progress"><div id="prog"></div></div>
+      <span class="meta" id="count"></span>
+      <select id="filter">
+        <option value="todo">Not yet marked</option>
+        <option value="all">All</option>
+        <option value="done">Marked</option>
+      </select>
+    </div>
+    <div class="help">Keys: <b>Space</b> play/pause · <b>1</b> <span class="ph">the phrase</span> · <b>2</b> Not <span class="ph">the phrase</span> · <b>3</b> Unsure · <b>4</b> Bad audio · <b>J/K</b> next/previous · <b>0</b> clear</div>
+  </div>
+</header>
+<main><div class="wrap" id="list"></div></main>
+<script>
+let V = {};
+let data = { clips: [], decisions: {} }, cur = 0, shown = [];
+
+function esc(s) { return String(s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c])); }
+
+async function load() {
+  data = await (await fetch("/clips.json")).json();
+  const ph = data.phrase || "Wake phrase";
+  V = { wake: [ph, "yes", 1], not_wake: ["Not " + ph, "no", 2], unsure: ["Unsure", "unsure", 3], bad_audio: ["Bad audio", "bad", 4] };
+  document.querySelectorAll(".ph").forEach(e => e.textContent = ph);
+  const pos = data.clips.filter(c => c.label === "wake").length;
+  document.querySelector("h1").textContent = data.title || `${ph}: disputed clips`;
+  document.title = document.querySelector("h1").textContent;
+  document.getElementById("summary").textContent = data.summary ||
+    `The model disagrees with the label on ${data.clips.length} clips at threshold ${data.threshold}: ` +
+    `${pos} labelled "${ph}" that it scored low, ${data.clips.length - pos} labelled "not ${ph}" that it scored high. ` +
+    `Listen and mark what was really said.`;
+  render();
+}
+
+function render() {
+  const f = document.getElementById("filter").value;
+  shown = data.clips.map((c, i) => i).filter(i => {
+    const d = !!data.decisions[data.clips[i].id];
+    return f === "all" || (f === "done" ? d : !d);
+  });
+  const list = document.getElementById("list");
+  if (!shown.length) { list.innerHTML = `<div class="empty">Nothing here. ${f === "todo" ? "All clips are marked." : ""}</div>`; }
+  else list.innerHTML = shown.map(i => card(i)).join("");
+  cur = Math.min(cur, Math.max(0, shown.length - 1));
+  updateCount(); highlight(false);
+}
+
+function card(i) {
+  const c = data.clips[i], d = data.decisions[c.id];
+  const ph = esc(data.phrase || "wake phrase");
+  const claim = c.claim || (c.label === "wake" ? `Labelled <b>${ph}</b>, model says no` : `Labelled <b>not ${ph}</b>, model says yes`);
+  const dev = c.file.split("/").slice(-2, -1)[0] || "";
+  const btns = Object.entries(V).map(([k, [name, cls, key]]) =>
+    `<button class="${cls}${d && d.verdict === k ? " sel" : ""}" onclick="mark(${i},'${k}')">${name}<span class="k">${key}</span></button>`).join("");
+  return `<div class="card${d ? " done" : ""}" id="c${i}" onclick="focusCard(${i})">
+    <div class="row"><span class="claim">${claim}</span><span class="meta">${c.scores ? esc(c.scores) : "score " + c.score.toFixed(3)}</span>
+      <span class="tag">${c.split === "test" ? "held-out test" : "training"}</span>
+      ${dev ? `<span class="tag">${esc(dev)}</span>` : ""}
+      ${c.how ? `<span class="meta">${esc(c.how)}</span>` : ""}</div>
+    <div class="file">${esc(c.src)}/${esc(c.file)}</div>
+    <audio id="a${i}" controls preload="none" src="/audio/${i}"></audio>
+    <div class="btns">${btns}</div>
+    <input class="note" type="text" id="n${i}" placeholder="Note (optional): what was actually said?" value="${esc(d ? d.note : "")}"
+      onchange="if(data.decisions['${esc(c.id)}']) mark(${i}, data.decisions['${esc(c.id)}'].verdict, true)">
+  </div>`;
+}
+
+async function mark(i, verdict, keep) {
+  const c = data.clips[i], note = document.getElementById("n" + i)?.value || "";
+  const body = { i, verdict, note };
+  const r = await fetch("/mark", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+  if (!r.ok) { alert("Save failed: " + await r.text()); return; }
+  if (verdict === null) delete data.decisions[c.id];
+  else data.decisions[c.id] = { verdict, note };
+  const pos = shown.indexOf(i);
+  const el = document.getElementById("c" + i);
+  if (el) el.outerHTML = card(i);
+  updateCount();
+  if (!keep && verdict !== null) { cur = Math.min(pos + 1, shown.length - 1); highlight(true); }
+  else highlight(false);
+}
+
+function updateCount() {
+  const done = data.clips.filter(c => data.decisions[c.id]).length;
+  document.getElementById("count").textContent = `${done} / ${data.clips.length} marked`;
+  document.getElementById("prog").style.width = (data.clips.length ? 100 * done / data.clips.length : 0) + "%";
+}
+
+function highlight(play) {
+  document.querySelectorAll(".card.current").forEach(e => e.classList.remove("current"));
+  const i = shown[cur]; if (i === undefined) return;
+  const el = document.getElementById("c" + i); if (!el) return;
+  el.classList.add("current"); el.scrollIntoView({ block: "nearest", behavior: "smooth" });
+  if (play) { document.querySelectorAll("audio").forEach(a => a.pause()); const a = document.getElementById("a" + i); a.currentTime = 0; a.play().catch(() => {}); }
+}
+
+function focusCard(i) { const p = shown.indexOf(i); if (p >= 0 && p !== cur) { cur = p; highlight(false); } }
+
+document.addEventListener("keydown", e => {
+  if (e.target.tagName === "INPUT" || e.target.tagName === "SELECT") return;
+  const i = shown[cur]; if (i === undefined) return;
+  const a = document.getElementById("a" + i);
+  if (e.key === " ") { e.preventDefault(); a.paused ? a.play() : a.pause(); }
+  else if (e.key === "j") { cur = Math.min(cur + 1, shown.length - 1); highlight(true); }
+  else if (e.key === "k") { cur = Math.max(cur - 1, 0); highlight(true); }
+  else if (e.key === "0") mark(i, null);
+  else { const v = Object.entries(V).find(([, [, , key]]) => String(key) === e.key); if (v) mark(i, v[0]); }
+});
+document.getElementById("filter").addEventListener("change", () => { cur = 0; render(); });
+load();
+</script>
+</body>
+</html>

@@ -1,0 +1,139 @@
+diff -ruN a/livekit/wakeword/data/features.py b/livekit/wakeword/data/features.py
+--- a/livekit/wakeword/data/features.py
++++ b/livekit/wakeword/data/features.py
+@@ -3,6 +3,7 @@
+ from __future__ import annotations
+ 
+ import logging
++import os
+ from pathlib import Path
+ 
+ import numpy as np
+@@ -51,17 +52,35 @@
+         logger.warning(f"No WAV files in {clip_dir}")
+         return np.zeros((0, N_EMBEDDING_TIMESTEPS, 96), dtype=np.float32)
+ 
+-    all_features: list[np.ndarray] = []
++    # Patched (wakesmith): batch clips through the embedding model (identical output; the stock
++    # loop ran one clip per ONNX call). Only the last N_EMBEDDING_TIMESTEPS windows are kept,
++    # so only those are computed. LKW_FEAT_BATCH sets the clips per batch.
++    import os
+ 
+-    for wav_path in tqdm(wav_files, desc=f"Features {clip_dir.name}", unit="clip"):
+-        audio, sr = sf.read(str(wav_path))
+-        if audio.ndim > 1:
+-            audio = audio[:, 0]
+-        audio = audio.astype(np.float32)
+-
+-        mel = mel_frontend(audio)
+-        embeddings = speech_embedding.extract_embeddings(mel)
+-        all_features.append(_pad_or_truncate(embeddings[0]))
++    all_features: list[np.ndarray] = []
++    batch = int(os.environ.get("LKW_FEAT_BATCH", "256"))
++    with tqdm(total=len(wav_files), desc=f"Features {clip_dir.name}", unit="clip") as pbar:
++        for s in range(0, len(wav_files), batch):
++            win_sets = []
++            for wav_path in wav_files[s : s + batch]:
++                audio, sr = sf.read(str(wav_path))
++                if audio.ndim > 1:
++                    audio = audio[:, 0]
++                mel = mel_frontend(audio.astype(np.float32))[0]  # (frames, 32)
++                n_win = max(0, (mel.shape[0] - 76) // 8 + 1)
++                first = max(0, n_win - N_EMBEDDING_TIMESTEPS)
++                win_sets.append(
++                    np.stack([mel[i * 8 : i * 8 + 76] for i in range(first, n_win)])
++                    if n_win
++                    else np.zeros((0, 76, 32), np.float32)
++                )
++            flat = np.concatenate(win_sets)
++            embs = speech_embedding(flat) if len(flat) else np.zeros((0, 96), np.float32)
++            k = 0
++            for w in win_sets:
++                all_features.append(_pad_or_truncate(embs[k : k + len(w)]))
++                k += len(w)
++            pbar.update(len(win_sets))
+ 
+     if not all_features:
+         return np.zeros((0, N_EMBEDDING_TIMESTEPS, 96), dtype=np.float32)
+@@ -73,13 +92,25 @@
+     # Patched (wakesmith): 0.3.0's CLI calls run_extraction(config) with no sess_options and crashed;
+     # None is fine downstream (feature_extractor applies session_options() defaults).
+     """Extract and save features for all splits of a wake word config."""
++    # Patched (wakesmith): run the frozen models on an Intel GPU through OpenVINO when the
++    # onnxruntime-openvino build is installed (~20x faster on an Arc B70). LKW_OV_DEVICE picks the
++    # OpenVINO device (default GPU; "off" forces CPU).
++    import onnxruntime as ort
++
++    providers = None
++    ov_device = os.environ.get("LKW_OV_DEVICE", "GPU")
++    if ov_device != "off" and "OpenVINOExecutionProvider" in ort.get_available_providers():
++        providers = [("OpenVINOExecutionProvider", {"device_type": ov_device, "precision": "FP32"}), "CPUExecutionProvider"]
++        logger.info(f"Feature extraction on OpenVINO {ov_device}")
+     mel_frontend = MelSpectrogramFrontend(
+         onnx_path=get_mel_model_path(),
+         sess_options=sess_options,
++        providers=providers,
+     )
+     speech_embedding = SpeechEmbedding(
+         onnx_path=get_embedding_model_path(),
+         sess_options=sess_options,
++        providers=providers,
+     )
+ 
+     model_dir = config.model_output_dir
+diff -ruN a/livekit/wakeword/models/feature_extractor.py b/livekit/wakeword/models/feature_extractor.py
+--- a/livekit/wakeword/models/feature_extractor.py
++++ b/livekit/wakeword/models/feature_extractor.py
+@@ -31,20 +31,26 @@
+     Output: (batch, time_frames, 32)
+     """
+ 
+-    def __init__(self, onnx_path: str | Path, sess_options: SessionOptions = None):
++    def __init__(
++        self, onnx_path: str | Path, sess_options: SessionOptions = None, providers: list | None = None
++    ):
++        # providers: patched (wakesmith) - onnxruntime providers, default CPU-only as upstream
++        self._providers = providers or ["CPUExecutionProvider"]
+         if not Path(onnx_path).exists():
+             raise FileNotFoundError(
+                 f"Mel ONNX model not found: {onnx_path}\n"
+                 "This should not happen - please reinstall livekit-wakeword."
+             )
+-        self._init_onnx(onnx_path, sess_options)
++        self._init_onnx(onnx_path, sess_options, self._providers)
+ 
+-    def _init_onnx(self, onnx_path: str | Path, sess_options: SessionOptions = None) -> None:
++    def _init_onnx(
++        self, onnx_path: str | Path, sess_options: SessionOptions = None, providers: list | None = None
++    ) -> None:
+         import onnxruntime as ort
+ 
+         self._onnx_session = ort.InferenceSession(
+             str(onnx_path),
+-            providers=["CPUExecutionProvider"],
++            providers=providers or ["CPUExecutionProvider"],
+             sess_options=session_options(sess_options),
+         )
+         self._input_name = self._onnx_session.get_inputs()[0].name
+@@ -93,7 +99,11 @@
+     ONNX output: (batch, 1, 1, 96)   — 96-dim embedding
+     """
+ 
+-    def __init__(self, onnx_path: str | Path, sess_options: SessionOptions = None):
++    def __init__(
++        self, onnx_path: str | Path, sess_options: SessionOptions = None, providers: list | None = None
++    ):
++        # providers: patched (wakesmith) - onnxruntime providers, default CPU-only as upstream
++        self._providers = providers or ["CPUExecutionProvider"]
+         import onnxruntime as ort
+ 
+         if not Path(onnx_path).exists():
+@@ -104,7 +114,7 @@
+ 
+         self._session = ort.InferenceSession(
+             str(onnx_path),
+-            providers=["CPUExecutionProvider"],
++            providers=self._providers,
+             sess_options=session_options(sess_options),
+         )
+         self._input_name = self._session.get_inputs()[0].name

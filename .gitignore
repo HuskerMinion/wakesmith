@@ -1,0 +1,19 @@
+# Python environments (setup.sh)
+.venv*/
+__pycache__/
+
+# Your settings: may hold paths to private recordings
+recipe.env
+
+# Everything generated: downloads, synthetic clips, features, models, prepared real recordings,
+# review verdicts. Keep real recordings and their labels out of git.
+work/
+*.wav
+*.npy
+*.onnx
+*.tflite
+*.pt
+decisions.json
+clips.json
+HELDOUT.txt
+labels.csv

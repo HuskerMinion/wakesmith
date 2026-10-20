@@ -1,0 +1,67 @@
+diff -ruN a/livekit/wakeword/data/generate.py b/livekit/wakeword/data/generate.py
+--- a/livekit/wakeword/data/generate.py
++++ b/livekit/wakeword/data/generate.py
+@@ -337,6 +337,11 @@
+     """
+     model_dir = config.model_output_dir
+     tts = get_tts_backend(config)
++    # Patched (wakesmith): LKW_GEN_PARTS (comma list of positive,negative,background; default all)
++    # selects which parts this process generates, so two processes can each drive one GPU.
++    import os
++
++    parts = set(os.environ.get("LKW_GEN_PARTS", "positive,negative,background").split(","))
+     tts.validate_artifacts()
+ 
+     # --- Positive splits ---
+@@ -345,7 +350,7 @@
+         ("positive_test", config.target_phrases, config.n_samples_val),
+     ]
+ 
+-    for split_name, phrases, n_target in splits:
++    for split_name, phrases, n_target in splits if "positive" in parts else []:
+         split_dir = model_dir / split_name
+         existing = _count_original_clips(split_dir)
+         if existing >= n_target:
+@@ -380,7 +385,9 @@
+     neg_test_existing = _count_original_clips(neg_test_dir)
+ 
+     # Skip adversarial phrase generation entirely if both negative splits are complete
+-    if neg_train_existing >= config.n_samples and neg_test_existing >= config.n_samples_val:
++    if "negative" not in parts:
++        pass
++    elif neg_train_existing >= config.n_samples and neg_test_existing >= config.n_samples_val:
+         logger.info("Both negative splits already complete, skipping adversarial generation")
+     else:
+         logger.info("Generating adversarial negative phrases...")
+@@ -428,6 +435,8 @@
+             )
+ 
+     # --- Background noise splits ---
++    if "background" not in parts:
++        return
+     if config.n_background_samples > 0:
+         _generate_background_clips(config, "background_train", config.n_background_samples)
+     if config.n_background_samples_val > 0:
+diff -ruN a/livekit/wakeword/data/piper/synthesis.py b/livekit/wakeword/data/piper/synthesis.py
+--- a/livekit/wakeword/data/piper/synthesis.py
++++ b/livekit/wakeword/data/piper/synthesis.py
+@@ -318,8 +318,18 @@
+     return audio
+ 
+ 
++_PHONEME_CACHE: dict[tuple[int, str, str], list[int]] = {}
++
++
+ def get_phonemes(config: dict[str, Any], text: str, voice: str = "en-us") -> list[int]:
+-    """Convert text to phoneme IDs using espeak-ng CLI."""
++    """Convert text to phoneme IDs using espeak-ng CLI (patched (wakesmith): cached per text)."""
++    key = (id(config), text, voice)
++    if key not in _PHONEME_CACHE:
++        _PHONEME_CACHE[key] = _get_phonemes_uncached(config, text, voice)
++    return list(_PHONEME_CACHE[key])
++
++
++def _get_phonemes_uncached(config: dict[str, Any], text: str, voice: str = "en-us") -> list[int]:
+     phonemes_str = _espeak_phonemize(text, voice)
+     phonemes = list(unicodedata.normalize("NFD", phonemes_str))
+ 
