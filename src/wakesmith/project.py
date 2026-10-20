@@ -51,6 +51,9 @@ class MicroWakeWord:
     steps: int = 20000
     negative_class_weight: float = 20.0
     cutoff: float = 0.9  # probability cutoff in the exported manifest (pick from test results)
+    # Feature frontend of the devices the model is for, used by `wakesmith test` and review:
+    # "tflm" (ESPHome, microWakeWord's own runtime) or "zserge" (zserge/microwakeword, pure Go).
+    frontend: str = "tflm"
 
 
 @dataclass

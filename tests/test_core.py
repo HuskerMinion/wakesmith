@@ -165,3 +165,19 @@ def test_restricted_unpickler_refuses_foreign_code():
 
     with pytest.raises(pickle.UnpicklingError, match="refusing"):
         _Unpickler(io.BytesIO(pickle.dumps(Evil()))).load()
+
+
+def test_device_frontend_matches_zserge_go():
+    """Checksum of the Go engine's int8 features (zserge/microwakeword bfaf384) on this signal."""
+    import hashlib
+
+    from wakesmith import devicefront
+
+    t = np.arange(32000) / 16000
+    noise = np.random.default_rng(7).normal(0, 200, len(t))
+    a = (3000 * np.sin(2 * np.pi * 440 * t) * (t > 0.8) + noise).astype(np.int16)
+    f = devicefront.features(a)
+    assert f.shape == (198, 40)
+    assert hashlib.sha256(f.tobytes()).hexdigest() == (
+        "ac03e26a32b186a4deb0f33a30c1a6906619adcaf9b70f3b22dbe2bb822d7043"
+    )

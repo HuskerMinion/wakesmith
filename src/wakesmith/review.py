@@ -21,7 +21,7 @@ def build(p: Project, kind: str = "mww", threshold: float | None = None, progres
     if not real:
         raise ValueError("the project has no real recordings to review")
     if kind == "mww":
-        peak = evaluate.mww_scorer(mww.model_path(p))
+        peak = evaluate.mww_scorer(mww.model_path(p), frontend=p.microwakeword.frontend)
         threshold = threshold if threshold is not None else p.microwakeword.cutoff
     else:
         peak = oww.Scorer(p.path("oww", "model", "model.tflite")).peak

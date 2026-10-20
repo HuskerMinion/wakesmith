@@ -86,13 +86,18 @@ def test(
     project_: str = typer.Argument(..., metavar="PROJECT"),
     kind: str = typer.Option("all", help="mww, oww or all"),
     model: Path = typer.Option(None, help="score this model file instead"),
+    frontend: str = typer.Option(
+        None, help="microWakeWord features: tflm (ESPHome) or zserge (default: the project's)"
+    ),
 ) -> None:
     """Score held-out real recordings."""
     from . import evaluate, project
 
+    if frontend not in (None, "tflm", "zserge"):
+        raise typer.BadParameter("tflm or zserge", param_hint="--frontend")
     p = project.load(project_)
     for k in ("mww", "oww") if kind == "all" else (kind,):
-        typer.echo(evaluate.format_table(evaluate.score(p, k, model)))
+        typer.echo(evaluate.format_table(evaluate.score(p, k, model, frontend)))
 
 
 @app.command()

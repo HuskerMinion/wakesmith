@@ -116,6 +116,13 @@ wakesmith's gap:
      - microWakeWord: ≥81/94 caught at ≤8/69 false triggers (v1).
      - openWakeWord: ≥68/94 at ≤2/69 (DNN v2).
      That's the proof that dropping LiveKit costs nothing.
+   - **Status (2026-10-20):** passed on the reference (TFLite Micro) frontend, but **not** on the
+     devices' frontend. The deployed devices run zserge/microwakeword, whose float frontend differs
+     from the microfrontend microWakeWord trains on. Scored the way those devices hear the clips
+     (`wakesmith test --frontend zserge`), on the full held-out recordings: v1 catches 86/94 at
+     4/69 false (0.80), the new model 74/94 at 4/69. v1 stays live. Open question: match the
+     frontends on the device side, or train on device features (the downloaded negative sets are
+     microfrontend features only, so that needs raw-audio negatives).
 2. **Hardware doctor + `setup`.**
    - **Accept when:** auto-configured correctly on this machine (2 × Arc), and in a CPU-only mode
      (`--cpu`).
