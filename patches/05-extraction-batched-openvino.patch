@@ -60,7 +60,7 @@ diff -ruN a/livekit/wakeword/data/features.py b/livekit/wakeword/data/features.p
      # None is fine downstream (feature_extractor applies session_options() defaults).
      """Extract and save features for all splits of a wake word config."""
 +    # Patched (wakesmith): run the frozen models on an Intel GPU through OpenVINO when the
-+    # onnxruntime-openvino build is installed (~20x faster on an Arc B70). LKW_OV_DEVICE picks the
++    # onnxruntime-openvino build is installed (~13x faster on an Arc B70). LKW_OV_DEVICE picks the
 +    # OpenVINO device (default GPU; "off" forces CPU).
 +    import onnxruntime as ort
 +

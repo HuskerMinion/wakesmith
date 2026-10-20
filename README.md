@@ -153,8 +153,8 @@ per class:
 | Stage | Stock livekit-wakeword 0.3.0 | This recipe | How |
 |---|---|---|---|
 | TTS generation | 1 process, 1 GPU | 1 process per GPU | positives on one card, sound-alikes on the other (patch 06) |
-| Augmentation | ~98 clips/s (1 core) | ~1,400 clips/s | all CPU cores (patch 03) |
-| Feature extraction | ~55 clips/s (CPU, 1 clip per call) | ~1,100 clips/s | batched, OpenVINO on the Arc GPU (patch 05) |
+| Augmentation | ~97 clips/s (1 core) | ~1,200 clips/s | all CPU cores (patch 03) |
+| Feature extraction | ~96 clips/s (CPU, 1 clip per call) | ~1,100-1,260 clips/s (~150 batched on CPU alone) | batched, OpenVINO on the Arc GPU (patch 05) |
 | microWakeWord features | 1 clip at a time (notebook) | 91k clips in 63 s | all CPU cores (`mww_features.py`) |
 | microWakeWord training | - | ~18 steps/s, 20k steps ≈ 20 min | CPU (see below) |
 
