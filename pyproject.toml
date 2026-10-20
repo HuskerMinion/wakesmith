@@ -1,0 +1,49 @@
+[build-system]
+requires = ["setuptools>=69"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "wakesmith"
+version = "0.2.0.dev0"
+description = "Forge your own wake word: train microWakeWord and openWakeWord models from synthetic speech plus your own recordings, on Intel Arc, NVIDIA or CPU"
+readme = "README.md"
+license = "Apache-2.0"
+requires-python = ">=3.10,<3.13"
+authors = [{ name = "HuskerMinion" }]
+# torch/torchaudio are not listed: `wakesmith setup` installs the build that matches the hardware
+# (XPU, CUDA or CPU wheels come from different indexes). microWakeWord is installed by setup too,
+# editable from a pinned clone: its wheel omits the microwakeword.audio package (no __init__.py).
+dependencies = [
+    "numpy>=2,<3",
+    "scipy",
+    "soundfile",
+    "pyyaml",
+    "typer>=0.12",
+    "tqdm",
+    "onnxruntime>=1.20",
+    "tensorflow>=2.18",
+    "tensorboard",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8", "ruff>=0.6"]
+
+[project.scripts]
+wakesmith = "wakesmith.cli:app"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+wakesmith = ["web/*", "tts/vits/LICENSE"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+extend-exclude = ["src/wakesmith/tts/vits"]
+
+[tool.ruff.lint.per-file-ignores]
+"src/wakesmith/cli.py" = ["B008"]  # typer.Option defaults are the Typer idiom
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

@@ -17,3 +17,7 @@ decisions.json
 clips.json
 HELDOUT.txt
 labels.csv
+
+# wakesmith app: data and projects live in ~/.local/share/wakesmith (WAKESMITH_HOME)
+*.egg-info/
+build/
