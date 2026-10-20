@@ -83,9 +83,10 @@ class Frontend:
             else np.zeros((0, WINDOW, 32), np.float32)
         )
 
-    def features(self, clips: list[np.ndarray], chunk: int = 128) -> np.ndarray:
+    def features(self, clips: list[np.ndarray], chunk: int = 16) -> np.ndarray:
         """Clips -> (len(clips), 16, 96). The windows of `chunk` clips go through the embedding
-        model in one call (bounded: the model's activations grow with the batch)."""
+        model in one call. Small chunks are both lighter and faster on CPU: 8 clips per call use
+        ~0.5 GB per process, 128 use ~2.4 GB and run slower."""
         if len(clips) > chunk:
             return np.concatenate(
                 [self.features(clips[i : i + chunk], chunk) for i in range(0, len(clips), chunk)]
@@ -145,7 +146,7 @@ def _chunk(args: tuple[list[str], int]) -> np.ndarray:
             raise ValueError(f"{f}: {sr} Hz (want 16 kHz)")
         for _ in range(rounds):
             clips.append(pcm_scale(_W["aug"].augment_clip(a[:, 0])))
-    return _W["fe"].features(clips)
+    return _W["fe"].features(clips, chunk=8)
 
 
 def extract(files: list[str], rounds: int, workers: int, desc: str) -> np.ndarray:

@@ -81,7 +81,7 @@ let data = { clips: [], decisions: {} }, cur = 0, shown = [];
 function esc(s) { return String(s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c])); }
 
 async function load() {
-  data = await (await fetch("/clips.json")).json();
+  data = await (await fetch("clips.json")).json();
   const ph = data.phrase || "Wake phrase";
   V = { wake: [ph, "yes", 1], not_wake: ["Not " + ph, "no", 2], unsure: ["Unsure", "unsure", 3], bad_audio: ["Bad audio", "bad", 4] };
   document.querySelectorAll(".ph").forEach(e => e.textContent = ph);
@@ -121,7 +121,7 @@ function card(i) {
       ${dev ? `<span class="tag">${esc(dev)}</span>` : ""}
       ${c.how ? `<span class="meta">${esc(c.how)}</span>` : ""}</div>
     <div class="file">${esc(c.src)}/${esc(c.file)}</div>
-    <audio id="a${i}" controls preload="none" src="/audio/${i}"></audio>
+    <audio id="a${i}" controls preload="none" src="audio/${i}"></audio>
     <div class="btns">${btns}</div>
     <input class="note" type="text" id="n${i}" placeholder="Note (optional): what was actually said?" value="${esc(d ? d.note : "")}"
       onchange="if(data.decisions['${esc(c.id)}']) mark(${i}, data.decisions['${esc(c.id)}'].verdict, true)">
@@ -131,7 +131,7 @@ function card(i) {
 async function mark(i, verdict, keep) {
   const c = data.clips[i], note = document.getElementById("n" + i)?.value || "";
   const body = { i, verdict, note };
-  const r = await fetch("/mark", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+  const r = await fetch("mark", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
   if (!r.ok) { alert("Save failed: " + await r.text()); return; }
   if (verdict === null) delete data.decisions[c.id];
   else data.decisions[c.id] = { verdict, note };

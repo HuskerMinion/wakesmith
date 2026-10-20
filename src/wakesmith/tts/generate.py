@@ -30,6 +30,21 @@ import torch
 
 from . import phonemize
 from .vits import commons
+from .vits import transforms as _transforms
+
+_searchsorted = _transforms.searchsorted
+
+
+def _safe_searchsorted(bin_locations, inputs, eps=1e-6):
+    """Bin index for the duration predictor's splines, kept in range. Upstream returns -1 for a NaN
+    input (every comparison is false), and the following gather() then trips a device-side
+    "index out of bounds" assertion on Intel GPUs that can wedge the driver until reboot. CPU never
+    produces those NaNs; valid inputs get exactly the upstream result."""
+    idx = _searchsorted(bin_locations, torch.nan_to_num(inputs), eps)
+    return idx.clamp(0, bin_locations.shape[-1] - 2)
+
+
+_transforms.searchsorted = _safe_searchsorted  # rational_quadratic_spline looks it up at call time
 
 logger = logging.getLogger(__name__)
 OUT_RATE = 16000
@@ -183,9 +198,10 @@ def _trim(a: np.ndarray, thr: float = 1e-3) -> np.ndarray:
     return a[nz[0] : nz[-1] + 1] if len(nz) else a
 
 
-def write_wav(path: Path, audio: np.ndarray) -> None:
+def write_wav(path, audio: np.ndarray) -> None:
+    """16 kHz mono 16-bit WAV to a path or a binary file object."""
     pcm = (np.clip(audio, -1, 1) * 32767).astype("<i2")
-    with wave.open(str(path), "wb") as w:
+    with wave.open(path if hasattr(path, "write") else str(path), "wb") as w:
         w.setnchannels(1)
         w.setsampwidth(2)
         w.setframerate(OUT_RATE)

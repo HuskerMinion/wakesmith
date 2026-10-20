@@ -45,11 +45,14 @@ class Hardware:
         return max(1, min(self.cpus, int(self.ram_free_gb // 1.5) or 1))
 
 
-def detect() -> Hardware:
-    import torch
-
+def detect(gpu: bool = True) -> Hardware:
+    """gpu=False: CPU/RAM only, without opening the GPU driver (stages that don't use it)."""
     cpus = os.cpu_count() or 1
     ram, free = _ram_gb("MemTotal"), _ram_gb("MemAvailable")
+    if not gpu:
+        return Hardware("cpu", [], cpus, ram, free)
+    import torch
+
     if hasattr(torch, "xpu") and torch.xpu.is_available():
         gpus = [
             Gpu(
@@ -95,3 +98,37 @@ def _openvino_gpu() -> bool:
 
 def disk_free_gb(path: str) -> float:
     return round(shutil.disk_usage(path).free / 2**30, 1)
+
+
+def detect_safe(timeout: float = 30.0) -> tuple[Hardware, str]:
+    """detect() in a child process, so a hung GPU driver can't hang the caller.
+
+    Returns (hardware, problem). On timeout or error the hardware is CPU-only and `problem` says
+    why. A process stuck in the driver can't be killed; it is left behind, the caller goes on."""
+    import json
+    import subprocess
+    import sys
+
+    code = (
+        "import json; from dataclasses import asdict; from wakesmith import hardware; "
+        "print(json.dumps(asdict(hardware.detect())))"
+    )
+    proc = subprocess.Popen(
+        [sys.executable, "-c", code], stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True
+    )
+    try:
+        out, _ = proc.communicate(timeout=timeout)
+        if proc.returncode != 0:
+            raise ValueError(f"exit {proc.returncode}")
+        d = json.loads(out.strip().splitlines()[-1])
+        d["gpus"] = [Gpu(**g) for g in d["gpus"]]
+        return Hardware(**d), ""
+    except subprocess.TimeoutExpired:
+        proc.kill()  # don't wait for it: a process stuck in the driver never exits
+        why = (
+            "the GPU driver is not responding (a crashed GPU job can wedge it; a reboot "
+            "usually fixes it)"
+        )
+    except (ValueError, IndexError) as e:
+        why = f"GPU detection failed: {e}"
+    return detect(gpu=False), why

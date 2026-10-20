@@ -18,7 +18,9 @@ def doctor() -> None:
     """Show detected hardware, the settings that follow from it, and downloaded data."""
     from . import assets, hardware
 
-    hw = hardware.detect()
+    hw, problem = hardware.detect_safe()
+    if problem:
+        typer.echo(f"warning: {problem}")
     typer.echo(f"accelerator: {hw.accel}")
     for g in hw.gpus:
         typer.echo(f"  {g.device}: {g.name}, {g.memory_gb} GB")
@@ -120,3 +122,86 @@ def download(names: list[str] = typer.Argument(None, help="asset names (default:
 
     for n in names or list(assets.ASSETS):
         typer.echo(f"{n}: {assets.fetch(assets.ASSETS[n])}")
+
+
+@app.command()
+def setup(
+    cpu: bool = typer.Option(False, "--cpu", help="CPU only, even if a GPU is found"),
+    yes: bool = typer.Option(False, "--yes", "-y", help="download data without asking"),
+    no_data: bool = typer.Option(False, "--no-data", help="skip the data downloads"),
+) -> None:
+    """Install the right torch build for this machine, microWakeWord, and the training data."""
+    from . import assets
+    from . import setup_env as se
+
+    missing = se.missing_tools()
+    if missing:
+        typer.echo(f"missing: {', '.join(missing)} (e.g. sudo apt install {' '.join(missing)})")
+        raise typer.Exit(1)
+    gpus = se.pci_gpus()
+    accel = "cpu" if cpu else se.choose_accel(gpus)
+    typer.echo(f"GPUs: {', '.join(f'{v} {a}' for v, a in gpus) or 'none'} -> torch build: {accel}")
+    try:
+        import torch
+
+        current = torch.__version__
+    except ImportError:
+        current = ""
+    tag = {"xpu": "+xpu", "cuda": "+cu", "cpu": "+cpu"}[accel]
+    if tag in current and se.torch_sees(accel):
+        typer.echo(f"torch {current} already fits")
+    else:
+        se.install_torch(accel)
+        if not se.torch_sees(accel):
+            typer.echo(f"torch {accel} build doesn't see the GPU; falling back to CPU")
+            accel = "cpu"
+            se.install_torch("cpu")
+    typer.echo(f"microWakeWord: {se.install_microwakeword()}")
+    if no_data:
+        return
+    todo = [a for a in assets.ASSETS.values() if not a.present()]
+    gb = sum(a.size for a in todo) / 1e9
+    if todo and (yes or typer.confirm(f"download {len(todo)} items, {gb:.1f} GB?")):
+        for a in todo:
+            typer.echo(f"{a.name}: {assets.fetch(a)}")
+    typer.echo("done: run `wakesmith doctor` to see what wakesmith will use")
+
+
+@app.command()
+def review(
+    project_: str = typer.Argument(..., metavar="PROJECT"),
+    model: str = typer.Option("mww", help="score with the mww or oww model"),
+    threshold: float = typer.Option(None, help="disagreement threshold (default: export cutoff)"),
+) -> None:
+    """List real recordings the trained model disagrees with, for the review page."""
+    from . import project
+    from . import review as rv
+
+    out = rv.build(project.load(project_), model, threshold)
+    pos = sum(c["label"] == "wake" for c in out["clips"])
+    typer.echo(
+        f"{len(out['clips'])} disputed clips at {out['threshold']}: {pos} labelled as the "
+        f"phrase scored low, {len(out['clips']) - pos} others scored high"
+    )
+
+
+@app.command()
+def serve(
+    host: str = typer.Option("127.0.0.1", help="0.0.0.0 to use it from other devices on your LAN"),
+    port: int = typer.Option(8765),
+) -> None:
+    """Start the web UI."""
+    import secrets
+
+    import uvicorn
+
+    from .web.server import create_app
+
+    local = host in ("127.0.0.1", "localhost", "::1")
+    token = None if local else secrets.token_urlsafe(16)
+    shown = "localhost" if local else host
+    url = f"http://{shown}:{port}/" + ("" if local else f"?token={token}")
+    typer.echo(f"wakesmith UI: {url}")
+    if token:
+        typer.echo("anyone with this link (token included) can use the UI: keep it on your LAN")
+    uvicorn.run(create_app(token), host=host, port=port, log_level="warning")

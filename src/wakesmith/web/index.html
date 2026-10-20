@@ -1,0 +1,314 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>wakesmith</title>
+<style>
+  :root {
+    --bg: #f5f3ef; --panel: #ffffff; --text: #1c1b1f; --muted: #6a6872; --line: #e2dfd8;
+    --accent: #d9631e; --accent-ink: #ffffff; --ok: #1f7a4a; --bad: #b03a2e; --run: #2f5fd0;
+    --chip: #f0ece5; --code: #faf8f4; --shadow: 0 1px 2px rgba(0,0,0,.05);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #121218; --panel: #1b1b23; --text: #ecebf1; --muted: #9b99a6; --line: #2d2c37;
+      --accent: #ff8a3d; --accent-ink: #1b1208; --ok: #5cc58c; --bad: #ff8a7d; --run: #7ea2ff;
+      --chip: #262531; --code: #15151b; --shadow: none;
+    }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text);
+         font: 15px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif; }
+  a { color: var(--accent); }
+  header { border-bottom: 1px solid var(--line); background: var(--panel); }
+  .wrap { max-width: 980px; margin: 0 auto; padding: 0 16px; }
+  .top { display: flex; align-items: center; gap: 12px; padding: 12px 0; flex-wrap: wrap; }
+  .brand { display: flex; align-items: center; gap: 8px; font-weight: 800; font-size: 20px;
+           text-decoration: none; color: var(--text); letter-spacing: -.3px; }
+  .hw { margin-left: auto; color: var(--muted); font-size: 13px; }
+  main { padding: 20px 0 60px; }
+  h1 { font-size: 24px; margin: 0 0 4px; letter-spacing: -.3px; }
+  h2 { font-size: 16px; margin: 0 0 10px; }
+  .sub { color: var(--muted); margin: 0 0 18px; }
+  .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 12px;
+           padding: 16px; margin-bottom: 14px; box-shadow: var(--shadow); }
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 12px; }
+  .card { display: block; text-decoration: none; color: inherit; background: var(--panel);
+          border: 1px solid var(--line); border-radius: 12px; padding: 14px; box-shadow: var(--shadow); }
+  .card:hover { border-color: var(--accent); }
+  .card .t { font-weight: 700; font-size: 17px; }
+  .card.new { display: flex; align-items: center; justify-content: center; min-height: 96px;
+              border-style: dashed; color: var(--accent); font-weight: 600; }
+  label { display: block; font-weight: 600; margin: 12px 0 4px; }
+  .hint { color: var(--muted); font-size: 13px; font-weight: 400; }
+  input[type=text], input[type=number], select { font: inherit; color: var(--text); background: var(--bg);
+         border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; width: 100%; }
+  .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  .row > input[type=text] { flex: 1 1 260px; width: auto; }
+  button { font: inherit; border-radius: 8px; padding: 8px 14px; cursor: pointer; border: 1px solid var(--line);
+           background: var(--panel); color: var(--text); }
+  button.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); font-weight: 600; }
+  button.danger { color: var(--bad); }
+  button:disabled { opacity: .5; cursor: default; }
+  .chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+  .chip { background: var(--chip); border-radius: 999px; padding: 3px 4px 3px 10px; font-size: 13px;
+          display: inline-flex; align-items: center; gap: 2px; }
+  .chip button { border: 0; background: none; padding: 0 6px; color: var(--muted); font-size: 14px; }
+  .chip button:hover { color: var(--text); }
+  .choice { display: flex; gap: 8px; flex-wrap: wrap; }
+  .choice label { font-weight: 400; margin: 0; border: 1px solid var(--line); border-radius: 8px;
+                  padding: 8px 12px; cursor: pointer; flex: 1 1 200px; }
+  .choice label:has(input:checked) { border-color: var(--accent); }
+  .choice b { display: block; }
+  .stages { display: grid; grid-template-columns: repeat(auto-fit, minmax(110px, 1fr)); gap: 6px; }
+  .stage { border: 1px solid var(--line); border-radius: 8px; padding: 6px 8px; font-size: 13px; }
+  .stage .s { font-size: 12px; color: var(--muted); }
+  .stage.done { border-color: var(--ok); } .stage.done .s { color: var(--ok); }
+  .stage.running { border-color: var(--run); } .stage.running .s { color: var(--run); }
+  .stage.failed { border-color: var(--bad); } .stage.failed .s { color: var(--bad); }
+  .bar { height: 8px; background: var(--chip); border-radius: 4px; overflow: hidden; margin: 8px 0 4px; }
+  .bar > div { height: 100%; background: var(--run); width: 0; transition: width .4s; }
+  pre.log { background: var(--code); border: 1px solid var(--line); border-radius: 8px; padding: 10px;
+            font-size: 12px; max-height: 280px; overflow: auto; white-space: pre-wrap; margin: 8px 0 0; }
+  table { border-collapse: collapse; width: 100%; font-variant-numeric: tabular-nums; }
+  th, td { text-align: left; padding: 5px 8px; border-bottom: 1px solid var(--line); font-size: 14px; }
+  tr.pick { background: var(--chip); }
+  tr[data-t] { cursor: pointer; }
+  .two { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 14px; }
+  .note { font-size: 13px; color: var(--muted); border-left: 3px solid var(--accent); padding: 4px 10px; margin-top: 10px; }
+  .err { color: var(--bad); margin-top: 8px; font-size: 14px; }
+  .files a { display: block; font-size: 14px; }
+</style>
+</head>
+<body>
+<header><div class="wrap top">
+  <a class="brand" href="#/"><svg width="22" height="22" viewBox="0 0 24 24" aria-hidden="true">
+    <path d="M3 15c3-1 5-1 7-1h11v3h-4c-1 1-1 2-1 3h2v2H6v-2h2c0-1 0-2-1-3H7c-2 0-3-1-4-2z" fill="currentColor" opacity=".85"/>
+    <rect x="9" y="8" width="2" height="5" rx="1" fill="#ff9f1c"/><rect x="12" y="5" width="2" height="8" rx="1" fill="#ff9f1c"/>
+    <rect x="15" y="9" width="2" height="4" rx="1" fill="#ff9f1c"/></svg>wakesmith</a>
+  <span class="hw" id="hw">detecting hardware…</span>
+</div></header>
+<main><div class="wrap" id="view"></div></main>
+<script>
+const $ = (s, el = document) => el.querySelector(s);
+const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const STAGE_NAMES = {"generate":"Synthetic speech","real":"Your recordings","mww-features":"mWW features",
+  "mww-train":"mWW training","oww-features":"oWW features","oww-train":"oWW training","test":"Held-out test","export":"Export"};
+let es = null;
+
+async function api(path, opts = {}) {
+  const r = await fetch(path, {headers: {"Content-Type": "application/json"}, ...opts,
+                               body: opts.body ? JSON.stringify(opts.body) : undefined});
+  if (!r.ok) { let m = r.statusText; try { m = (await r.json()).detail || m; } catch {} throw new Error(m); }
+  return r.headers.get("content-type")?.includes("json") ? r.json() : r;
+}
+
+async function hardware() {
+  try {
+    const h = await api("/api/hardware");
+    const gpus = h.gpus.length ? `${h.gpus.length}× ${h.gpus[0].name.replace(/\(R\)/g, "")} (${h.accel})` : "CPU only";
+    if (h.problem) { $("#hw").textContent = "⚠ " + h.problem; return; }
+    $("#hw").textContent = `${gpus} · ${h.cpus} cores · ${Math.round(h.ram_free_gb)}/${Math.round(h.ram_gb)} GB RAM free · ${Math.round(h.disk_free_gb)} GB disk`;
+  } catch { $("#hw").textContent = ""; }
+}
+
+function route() {
+  if (es) { es.close(); es = null; }
+  const h = location.hash.slice(1) || "/";
+  const m = h.match(/^\/p\/([^/]+)$/);
+  if (h === "/new") return viewNew();
+  if (m) return viewProject(decodeURIComponent(m[1]));
+  return viewHome();
+}
+window.addEventListener("hashchange", route);
+
+// ---- home ---------------------------------------------------------------------------------------
+async function viewHome() {
+  const v = $("#view");
+  v.innerHTML = `<h1>Your wake words</h1><p class="sub">Train a wake word for ESPHome / Home Assistant devices
+    (microWakeWord) and openWakeWord, from synthetic speech plus your own recordings.</p><div class="grid" id="list"></div>`;
+  const list = await api("/api/projects");
+  $("#list").innerHTML = list.map(p => `<a class="card" href="#/p/${encodeURIComponent(p.name)}">
+      <div class="t">${esc(p.label)}</div>
+      <div class="hint">${p.job.running ? "training…" : p.done.includes("export") ? "ready to export" :
+        p.done.length ? `${p.done.length} of 8 stages done` : "not trained yet"}</div></a>`).join("")
+    + `<a class="card new" href="#/new">+ New wake word</a>`;
+}
+
+// ---- new project --------------------------------------------------------------------------------
+async function viewNew() {
+  const v = $("#view");
+  v.innerHTML = `<h1>New wake word</h1><p class="sub">Pick a phrase, check how the synthetic voices say it, and choose what the model should reject.</p>
+  <div class="panel">
+    <label for="phrase">Wake phrase <span class="hint">2–4 syllables or more works best, e.g. "hey jarvis"</span></label>
+    <div class="row"><input type="text" id="phrase" placeholder="hey jarvis" autocomplete="off">
+      <button id="hear">▶ Hear it</button><button id="sugg">Suggest sound-alikes</button></div>
+    <div class="hint" id="hearnote"></div>
+  </div>
+  <div class="panel">
+    <h2>Sound-alikes to reject</h2>
+    <div class="hint">Phrases that sound close but shouldn't wake the device. Click one to hear it, × to remove it.
+      Add anything that falsely triggered an earlier model.</div>
+    <div class="chips" id="chips"></div>
+    <div class="row" style="margin-top:8px"><input type="text" id="add" placeholder="add a phrase and press Enter"></div>
+  </div>
+  <div class="panel">
+    <h2>Your recordings <span class="hint">(optional, but they make the biggest difference)</span></h2>
+    <label for="pos">Folder of real "wake phrase" recordings <span class="hint">16 kHz WAV · optional labels.csv and HELDOUT.txt</span></label>
+    <input type="text" id="pos" placeholder="/home/you/recordings/wake">
+    <label for="neg">Folder of real "not the phrase" recordings <span class="hint">ideally what falsely triggered an older model</span></label>
+    <input type="text" id="neg" placeholder="/home/you/recordings/false-triggers">
+    <div class="note">Put every clip from your last day or two of recordings in HELDOUT.txt: those are never trained on,
+      and the results page scores them, so you see how the model does on your real house.</div>
+  </div>
+  <div class="panel">
+    <h2>Size</h2>
+    <div class="choice">
+      <label><input type="radio" name="preset" value="quick"> <b>Quick test</b><span class="hint">2,000 clips per class · see if the phrase works</span></label>
+      <label><input type="radio" name="preset" value="standard" checked> <b>Standard</b><span class="hint">25,000 clips per class · a model to deploy</span></label>
+    </div>
+    <h2 style="margin-top:14px">Models</h2>
+    <div class="choice">
+      <label><input type="checkbox" id="mww" checked> <b>microWakeWord</b><span class="hint">ESPHome devices, Home Assistant Voice PE</span></label>
+      <label><input type="checkbox" id="oww" checked> <b>openWakeWord</b><span class="hint">Wyoming openWakeWord, Home Assistant add-on</span></label>
+    </div>
+    <div class="row" style="margin-top:14px"><button class="primary" id="create">Create and start training</button>
+      <button id="createonly">Create only</button></div>
+    <div class="err" id="err"></div>
+  </div>`;
+  let negs = [];
+  const chips = () => $("#chips").innerHTML = negs.map((n, i) =>
+    `<span class="chip"><a href="#" data-say="${esc(n)}" style="color:inherit;text-decoration:none">${esc(n)}</a><button data-rm="${i}" aria-label="remove">×</button></span>`).join("")
+    || `<span class="hint">Type a phrase above and press "Suggest sound-alikes".</span>`;
+  chips();
+  const play = async (text, note) => {
+    if (note) $("#hearnote").textContent = "generating…";
+    try {
+      const r = await api("/api/preview?text=" + encodeURIComponent(text));
+      const a = new Audio(URL.createObjectURL(await r.blob())); await a.play();
+      if (note) $("#hearnote").textContent = "a random synthetic voice; press again for another";
+    } catch (e) { $("#hearnote").textContent = e.message; }
+  };
+  $("#hear").onclick = () => $("#phrase").value.trim() && play($("#phrase").value.trim(), true);
+  $("#sugg").onclick = async () => {
+    const p = $("#phrase").value.trim(); if (!p) return;
+    $("#sugg").disabled = true;
+    try { negs = await api("/api/suggest?n=50&phrase=" + encodeURIComponent(p)); chips(); }
+    finally { $("#sugg").disabled = false; }
+  };
+  $("#chips").onclick = e => {
+    if (e.target.dataset.rm !== undefined) { negs.splice(+e.target.dataset.rm, 1); chips(); }
+    if (e.target.dataset.say) { e.preventDefault(); play(e.target.dataset.say); }
+  };
+  $("#add").onkeydown = e => { if (e.key === "Enter" && e.target.value.trim()) { negs.unshift(e.target.value.trim()); e.target.value = ""; chips(); } };
+  const create = async train => {
+    $("#err").textContent = "";
+    const body = { phrase: $("#phrase").value.trim(), negatives: negs, positives: $("#pos").value.trim(),
+      negatives_dir: $("#neg").value.trim(), preset: document.querySelector("input[name=preset]:checked").value,
+      microwakeword: { enabled: $("#mww").checked }, openwakeword: { enabled: $("#oww").checked } };
+    try {
+      const p = await api("/api/projects", { method: "POST", body });
+      if (train) await api(`/api/projects/${encodeURIComponent(p.name)}/train`, { method: "POST", body: {} });
+      location.hash = "#/p/" + encodeURIComponent(p.name);
+    } catch (e) { $("#err").textContent = e.message; }
+  };
+  $("#create").onclick = () => create(true);
+  $("#createonly").onclick = () => create(false);
+}
+
+// ---- project ------------------------------------------------------------------------------------
+async function viewProject(name) {
+  const v = $("#view"), base = `/api/projects/${encodeURIComponent(name)}`;
+  let p;
+  try { p = await api(base); } catch (e) { v.innerHTML = `<p class="err">${esc(e.message)}</p>`; return; }
+  const picks = { mww: p.microwakeword.cutoff, oww: p.openwakeword.threshold };
+  v.innerHTML = `<h1>${esc(p.label)}</h1><p class="sub">${esc(p.dir)}</p>
+  <div class="panel"><div class="row" style="justify-content:space-between"><h2 style="margin:0">Training</h2>
+    <div class="row"><button class="primary" id="go">Train</button>
+      <button id="retrain" title="After changing recordings or review verdicts: reuses the synthetic clips">Retrain from recordings</button>
+      <button class="danger" id="stop">Stop</button></div></div>
+    <div class="stages" id="stages" style="margin-top:12px"></div>
+    <div id="prog"></div>
+    <details><summary class="hint" style="cursor:pointer;margin-top:8px">Log</summary><pre class="log" id="log"></pre></details>
+    <div class="err" id="err"></div></div>
+  <div class="panel"><h2>Results on your held-out recordings</h2><div class="two" id="results"></div>
+    <div class="note">Click a row to choose the cutoff for that model, then export. A higher cutoff means fewer false
+      wake-ups but more missed ones.</div>
+    <div class="row" style="margin-top:10px"><button class="primary" id="export">Export with these cutoffs</button></div>
+    <div class="files" id="files"></div>
+    ${p.data_profile === "personal" ? `<div class="note">Trained with datasets that allow non-commercial use only: these models are for personal use.</div>` : ""}</div>
+  <div class="panel"><h2>Review labels</h2>
+    <div class="hint">Lists your recordings the model disagrees with: usually labelling mistakes. Mark what was really said,
+      then "Retrain from recordings". Held-out clips are never moved.</div>
+    <div class="row" style="margin-top:8px"><select id="rmodel" style="width:auto"><option value="mww">microWakeWord</option><option value="oww">openWakeWord</option></select>
+      <button id="rbuild">Build review list</button>
+      <a id="ropen" href="/p/${encodeURIComponent(name)}/review/" target="_blank">Open review page (${p.review_clips} clips)</a></div></div>`;
+
+  const renderStages = stages => $("#stages").innerHTML = Object.keys(STAGE_NAMES).map(s => {
+    const st = stages[s] || {}, off = (s.startsWith("mww") && !p.microwakeword.enabled) || (s.startsWith("oww") && !p.openwakeword.enabled);
+    const status = off ? "off" : st.status || "waiting";
+    const t = st.time ? ` · ${st.time < 90 ? Math.round(st.time) + " s" : Math.round(st.time / 60) + " min"}` : "";
+    return `<div class="stage ${status}" title="${esc(st.error || "")}"><div>${STAGE_NAMES[s]}</div><div class="s">${status}${t}</div></div>`;
+  }).join("");
+  const renderResults = res => {
+    $("#results").innerHTML = ["mww", "oww"].filter(k => res[k]).map(k => {
+      const r = res[k];
+      return `<div><b>${k === "mww" ? "microWakeWord" : "openWakeWord"}</b> <span class="hint">${r.positives} phrase clips, ${r.negatives} other clips</span>
+        <table data-k="${k}"><tr><th>Cutoff</th><th>Caught</th><th>False wake-ups</th></tr>${r.table.map(row =>
+        `<tr data-t="${row.threshold}" class="${Math.abs(row.threshold - picks[k]) < 1e-9 ? "pick" : ""}"><td>${row.threshold.toFixed(2)}</td>
+         <td>${row.caught}/${r.positives} (${Math.round(100 * row.caught / Math.max(1, r.positives))}%)</td><td>${row.false}/${r.negatives}</td></tr>`).join("")}</table></div>`;
+    }).join("") || `<span class="hint">No results yet: they appear after the "Held-out test" stage (needs your recordings with a HELDOUT.txt).</span>`;
+  };
+  const renderFiles = files => $("#files").innerHTML = files.length ? `<div class="hint" style="margin-top:10px">Exported:</div>` +
+    files.map(f => `<a href="${base}/files/${f.split("/").map(encodeURIComponent).join("/")}" download>${esc(f)}</a>`).join("") : "";
+  renderStages(p.stages); renderResults(p.results); renderFiles(p.exported);
+  $("#results").onclick = e => {
+    const tr = e.target.closest("tr[data-t]"); if (!tr) return;
+    const k = tr.closest("table").dataset.k; picks[k] = +tr.dataset.t; renderResults(p.results);
+  };
+  const act = async (path, body) => { $("#err").textContent = ""; try { await api(base + path, { method: "POST", body: body || {} }); } catch (e) { $("#err").textContent = e.message; } };
+  $("#go").onclick = () => act("/train");
+  $("#retrain").onclick = () => act("/train", { from: "real" });
+  $("#stop").onclick = () => act("/stop");
+  $("#rbuild").onclick = () => act("/review/build", { model: $("#rmodel").value });
+  $("#export").onclick = async () => {
+    try { renderFiles(await api(base + "/export", { method: "POST", body: { cutoff: picks.mww, threshold: picks.oww } })); }
+    catch (e) { $("#err").textContent = e.message; }
+  };
+
+  let wasRunning = p.job.running;
+  es = new EventSource(base + "/events");
+  es.onmessage = async ev => {
+    const d = JSON.parse(ev.data), log = $("#log");
+    if (!log) return;
+    renderStages(d.stages);
+    if (d.lines.length) { log.textContent += d.lines.join("\n") + "\n"; log.scrollTop = log.scrollHeight; }
+    $("#go").disabled = $("#retrain").disabled = $("#rbuild").disabled = d.job.running;
+    $("#stop").disabled = !d.job.running;
+    const pr = d.progress, run = Object.entries(d.stages).find(([, s]) => s?.status === "running");
+    let pct = null, label = "";
+    if (d.job.running && run) {
+      const [s] = run;
+      if (s === "generate") {
+        const parts = ["positive", "negative"].map(k => pr["generate-" + k]).filter(Boolean);
+        if (parts.length) { pct = 100 * parts.reduce((a, x) => a + x.done / x.total, 0) / parts.length; label = parts.map(x => `${x.split} ${x.done}/${x.total}`).join(" · "); }
+      } else if (s === "mww-train" && pr["mww-train"]) { pct = 100 * pr["mww-train"].done / pr["mww-train"].total; label = `step ${pr["mww-train"].done} of ${pr["mww-train"].total}`; }
+      else if (s === "oww-train" && pr["oww-train"]) { const o = pr["oww-train"]; pct = 100 * o.done / o.total; label = `phase ${o.phase} of 3, step ${o.done} of ${o.total}`; }
+      else if (pr.bar) { pct = pr.bar.percent; label = `${pr.bar.desc} ${pr.bar.done}/${pr.bar.total}`; }
+      $("#prog").innerHTML = `<div class="bar"><div style="width:${pct ?? 3}%"></div></div><div class="hint">${esc(STAGE_NAMES[s])}${label ? ": " + esc(label) : ""}</div>`;
+    } else if (d.job.running) {
+      $("#prog").innerHTML = `<div class="hint" style="margin-top:8px">${esc(d.job.title)} running…</div>`;
+    } else $("#prog").innerHTML = "";
+    if (wasRunning && !d.job.running) {  // a job just finished: refresh results and review count
+      const q = await api(base); p.results = q.results; renderResults(q.results); renderFiles(q.exported);
+      $("#ropen").textContent = `Open review page (${q.review_clips} clips)`;
+    }
+    wasRunning = d.job.running;
+  };
+}
+
+hardware(); route();
+</script>
+</body>
+</html>

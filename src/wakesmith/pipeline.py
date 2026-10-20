@@ -57,7 +57,13 @@ def run(
             f.write(line + "\n")
         (log or print)(line)
 
-    hw = hardware.detect()
+    # Only speech generation uses the GPU: other stages must not open the driver at all.
+    if "generate" in STAGES[STAGES.index(first) : STAGES.index(last) + 1]:
+        hw, problem = hardware.detect_safe()
+        if problem:
+            say(f"warning: {problem}; generating on the CPU")
+    else:
+        hw = hardware.detect(gpu=False)
     for key, val in p.hardware.items():  # project overrides
         setattr(hw, key, val)
     stages = STAGES[STAGES.index(first) : STAGES.index(last) + 1]
