@@ -30,7 +30,9 @@ for venv in "${venvs[@]}"; do
     elif patch -d "$site" -p1 --dry-run -s -f < "$p" >/dev/null 2>&1; then
       patch -d "$site" -p1 -s -f -b -z .orig < "$p" && echo "   $name: APPLIED"
     else
-      echo "   $name: FAILED - upstream code changed, port $p by hand"; status=1
+      echo "   $name: FAILED - doesn't fit the installed code. After updating this repo, an older"
+      echo "      version of the patch may be installed: rebuild with  rm -rf .venv* && ./setup.sh --no-data"
+      echo "      Otherwise livekit-wakeword itself changed, and $p needs porting by hand."; status=1
     fi
   done
 done
