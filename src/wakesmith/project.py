@@ -59,8 +59,11 @@ class OpenWakeWord:
     steps: int = 50000
     layer_dim: int = 128
     blocks: int = 2
-    max_negative_weight: float = 1500.0
-    target_fp_per_hour: float = 0.2
+    # Starting weight of negatives (doubled after a phase while the false-trigger rate on the
+    # validation set is above target). Tuned on real held-out clips: 3000, LiveKit's setting,
+    # suppressed recall to ~14% once the features use the runtime's int16 scale; 100 -> 400 worked.
+    max_negative_weight: float = 100.0
+    target_fp_per_hour: float = 0.1
     threshold: float = 0.5
 
 
