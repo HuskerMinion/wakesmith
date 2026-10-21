@@ -563,7 +563,7 @@ async function recordTake({ onLevel, maxS = 8, fixedS = 0, signal }) {
     const node = new AudioWorkletNode(ctx, "tap"), src = ctx.createMediaStreamSource(stream), rate = ctx.sampleRate;
     src.connect(node);
     const chunks = [], hop = 0.02;
-    let got = 0, noise = 0.005, speechStart = -1, lastLoud = -1, acc = [], accN = 0;
+    let got = 0, noise = 0, nsum = 0, nn = 0, peak = 0, peakT = 0, speechStart = -1, lastLoud = -1, acc = [], accN = 0;
     await new Promise((resolve, reject) => {
       signal?.addEventListener("abort", () => resolve());
       node.port.onmessage = e => {
@@ -573,16 +573,22 @@ async function recordTake({ onLevel, maxS = 8, fixedS = 0, signal }) {
         const rms = Math.sqrt(sq / accN), t = got / rate; acc = []; accN = 0;
         onLevel?.(rms);
         if (fixedS) { if (t >= fixedS) resolve(); return; }
-        if (speechStart < 0) noise = 0.95 * noise + 0.05 * Math.min(rms, 0.05);
-        if (rms > Math.max(0.015, noise * 4)) { if (speechStart < 0) speechStart = t; lastLoud = t; }
+        if (t < 0.3) { nsum += rms; nn++; noise = nsum / nn; return; }  // the room, before anyone speaks
+        if (rms > peak) { peak = rms; peakT = t; }
+        if (speechStart < 0) noise = 0.98 * noise + 0.02 * Math.min(rms, noise * 1.5);
+        // soft voices across a quiet room peak around 0.005-0.01: a low floor, relative to the room
+        if (rms > Math.max(0.002, noise * 4)) { if (speechStart < 0) speechStart = t; lastLoud = t; }
         if ((speechStart >= 0 && t - lastLoud > 1.0 && lastLoud - speechStart > 0.15) || t >= maxS) resolve();
       };
       setTimeout(() => reject(new Error("no audio from the microphone")), (Math.max(maxS, fixedS) + 3) * 1000);
     });
     src.disconnect(); node.disconnect();
-    let a = await to16k(chunks, rate);
+    let a = await to16k(chunks, rate), faint = false;
     if (!fixedS && speechStart >= 0) a = a.slice(Math.max(0, Math.floor((speechStart - 0.5) * 16000)), Math.ceil((lastLoud + 0.5) * 16000));
-    return { audio: a, heard: fixedS > 0 || speechStart >= 0 };
+    else if (!fixedS && peak > noise * 2.5) {  // too faint for the detector but above the room: keep 3 s around the loudest moment
+      faint = true; a = a.slice(Math.max(0, Math.floor((peakT - 1.5) * 16000)), Math.ceil((peakT + 1.5) * 16000));
+    }
+    return { audio: a, heard: fixedS > 0 || speechStart >= 0 || faint, faint };
   } finally { stream.getTracks().forEach(t => t.stop()); ctx.close(); URL.revokeObjectURL(url); }
 }
 
@@ -660,9 +666,10 @@ async function voicesTab(p, base, steps) {
     mic?.classList.add("on"); $("#rechint").textContent = kind === "neg" ? "Recording 10 s of room sound: stay quiet…" : "Listening… say it now.";
     try {
       const r = kind === "neg" ? await recordTake({ onLevel: meter, fixedS: 10 }) : await recordTake({ onLevel: meter });
-      if (!r.heard) { $("#rechint").textContent = "I didn't hear anything: check the microphone, then try again."; return; }
+      if (!r.heard) { $("#rechint").textContent = "Nothing louder than the room came through: check the microphone, or move a little closer, then try again."; return; }
       await upload(kind, r.audio, kind === "neg" ? "room sound" : PROMPTS[(n - 1) % PROMPTS.length], kind === "pos" && n % 4 === 0);
       await load(); draw();
+      if (r.faint) $("#rechint").textContent = "Saved, but it was very faint: press play on the newest take to check you can hear the phrase.";
     } catch (e) { err(e.name === "NotAllowedError" ? "The browser blocked the microphone: allow it for this page and try again." : e.message); }
     finally { busy = false; mic?.classList.remove("on"); }
   };
