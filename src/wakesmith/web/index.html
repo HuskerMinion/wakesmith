@@ -3,103 +3,226 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<link rel="icon" href="data:,">
+<link rel="icon" type="image/png" href="/static/favicon.png">
 <title>wakesmith</title>
 <style>
+  /* Brand kit: Deep Space ground, Neon Cyan accents, Forge Orange primary, Waveform Gold levels. */
   :root {
-    --bg: #f5f3ef; --panel: #ffffff; --text: #1c1b1f; --muted: #6a6872; --line: #e2dfd8;
-    --accent: #d9631e; --accent-ink: #ffffff; --ok: #1f7a4a; --bad: #b03a2e; --run: #2f5fd0;
-    --chip: #f0ece5; --code: #faf8f4; --shadow: 0 1px 2px rgba(0,0,0,.05);
-  }
-  @media (prefers-color-scheme: dark) {
-    :root {
-      --bg: #121218; --panel: #1b1b23; --text: #ecebf1; --muted: #9b99a6; --line: #2d2c37;
-      --accent: #ff8a3d; --accent-ink: #1b1208; --ok: #5cc58c; --bad: #ff8a7d; --run: #7ea2ff;
-      --chip: #262531; --code: #15151b; --shadow: none;
-    }
+    --bg: #0f141e; --side: #0a0e15; --panel: #1a2536; --raised: #24324a; --inset: #141c2a;
+    --line: #2a3b5c; --line2: #223049; --field: #3a4f75;
+    --text: #e6ecf5; --muted: #9aa8bd; --soft: #c5cfdd;
+    --cyan: #4ad5ff; --orange: #ff7b00; --gold: #ffcc00; --on-accent: #0f141e;
+    --ok-bg: #123528; --ok: #5fe0a0; --info-bg: #10304a; --info: #7fdfff; --warn-bg: #3a2410; --warn: #ffb066;
+    --pick-bg: #2a2414;
+    --bar-caught: #1c95c4; --bar-false: #d96500;  /* chart shades, checked for colour blindness on --panel */
+    --head: Montserrat, "Segoe UI", system-ui, sans-serif;
+    --body: Inter, "Segoe UI", system-ui, -apple-system, sans-serif;
+    --mono: "JetBrains Mono", "Cascadia Mono", Consolas, ui-monospace, monospace;
+    color-scheme: dark;
   }
   * { box-sizing: border-box; }
-  body { margin: 0; background: var(--bg); color: var(--text);
-         font: 15px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif; }
-  a { color: var(--accent); }
-  header { border-bottom: 1px solid var(--line); background: var(--panel); }
-  .wrap { max-width: 980px; margin: 0 auto; padding: 0 16px; }
-  .top { display: flex; align-items: center; gap: 12px; padding: 12px 0; flex-wrap: wrap; }
-  .brand { display: flex; align-items: center; gap: 8px; font-weight: 800; font-size: 20px;
-           text-decoration: none; color: var(--text); letter-spacing: -.3px; }
-  .hw { margin-left: auto; color: var(--muted); font-size: 13px; }
-  main { padding: 20px 0 60px; }
-  h1 { font-size: 24px; margin: 0 0 4px; letter-spacing: -.3px; }
-  h2 { font-size: 16px; margin: 0 0 10px; }
-  .sub { color: var(--muted); margin: 0 0 18px; }
-  .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 12px;
-           padding: 16px; margin-bottom: 14px; box-shadow: var(--shadow); }
-  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 12px; }
-  .card { display: block; text-decoration: none; color: inherit; background: var(--panel);
-          border: 1px solid var(--line); border-radius: 12px; padding: 14px; box-shadow: var(--shadow); }
-  .card:hover { border-color: var(--accent); }
-  .card .t { font-weight: 700; font-size: 17px; }
-  .card.new { display: flex; align-items: center; justify-content: center; min-height: 96px;
-              border-style: dashed; color: var(--accent); font-weight: 600; }
-  label { display: block; font-weight: 600; margin: 12px 0 4px; }
+  body { margin: 0; background: var(--bg); color: var(--text); font: 15px/1.5 var(--body); }
+  a { color: var(--cyan); } a:hover { color: #8be4ff; }
+  .app { min-height: 100vh; display: flex; flex-wrap: wrap; }
+
+  /* sidebar: stacks on top on a phone */
+  nav.side { flex: 1 1 240px; max-width: 100%; background: var(--side); border-right: 1px solid #1e2a3d;
+             padding: 22px 14px; display: flex; flex-direction: column; gap: 22px; }
+  .brand { display: flex; align-items: center; gap: 10px; text-decoration: none; padding: 0 8px; }
+  .brand img { width: 40px; height: 40px; border-radius: 10px; display: block; }
+  .brand span { font: 700 23px/1 var(--head); color: #fff; letter-spacing: -.01em; }
+  .brand b { font-weight: 700; background: linear-gradient(90deg, var(--orange), #ffb347 45%, var(--cyan));
+             -webkit-background-clip: text; background-clip: text; color: transparent; }
+  .navgroup { display: flex; flex-direction: column; gap: 3px; }
+  .navgroup + .navgroup { padding-top: 14px; border-top: 1px solid var(--line2); }
+  .navlabel { font-size: 12px; font-weight: 600; color: var(--muted); padding: 0 12px 4px; letter-spacing: .04em; text-transform: uppercase;
+              overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .navgroup a { display: flex; align-items: center; gap: 12px; min-height: 44px; padding: 0 12px; border-radius: 8px;
+                color: #b8c4d6; text-decoration: none; font-size: 15px; }
+  .navgroup a:hover { background: #141c2a; color: #fff; }
+  .navgroup a[aria-current="page"] { background: var(--panel); color: #fff; font-weight: 600; }
+  .navgroup a[aria-current="page"] svg { stroke: var(--cyan); }
+  .machine { margin-top: auto; padding: 12px; border-radius: 10px; background: var(--inset); font-size: 13px; color: var(--muted); }
+  .machine strong { display: block; color: #fff; margin-bottom: 4px; }
+  .machine .warn { color: var(--warn); margin-top: 6px; }
+
+  main { flex: 999 1 560px; min-width: 0; padding: 36px clamp(16px, 4vw, 52px) 64px; display: flex; flex-direction: column; gap: 22px; }
+  h1 { font: 700 30px/1.15 var(--head); margin: 0; letter-spacing: -.02em; }
+  h2 { font: 700 18px/1.25 var(--head); margin: 0; }
+  h3 { font-size: 15px; margin: 0; }
+  .kicker { font-size: 14px; color: var(--muted); font-weight: 500; margin-bottom: 4px; }
+  .sub { color: var(--muted); margin: 6px 0 0; max-width: 760px; }
+  .head { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: flex-end; gap: 16px; }
+  .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 22px; display: flex; flex-direction: column; gap: 14px; }
+  .panel.dark { background: var(--raised); border-color: var(--raised); }
+  .cols { display: flex; flex-wrap: wrap; gap: 22px; align-items: flex-start; }
+  .cols > .wide { flex: 999 1 520px; min-width: 0; display: flex; flex-direction: column; gap: 22px; }
+  .cols > .narrow { flex: 1 1 300px; min-width: 0; display: flex; flex-direction: column; gap: 16px; }
   .hint { color: var(--muted); font-size: 13px; font-weight: 400; }
-  input[type=text], input[type=number], select { font: inherit; color: var(--text); background: var(--bg);
-         border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; width: 100%; }
-  .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
-  .row > input[type=text] { flex: 1 1 260px; width: auto; }
-  button { font: inherit; border-radius: 8px; padding: 8px 14px; cursor: pointer; border: 1px solid var(--line);
-           background: var(--panel); color: var(--text); }
-  button.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); font-weight: 600; }
-  button.danger { color: var(--bad); }
-  button:disabled { opacity: .5; cursor: default; }
-  .chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
-  .chip { background: var(--chip); border-radius: 999px; padding: 3px 4px 3px 10px; font-size: 13px;
-          display: inline-flex; align-items: center; gap: 2px; }
-  .chip button { border: 0; background: none; padding: 0 6px; color: var(--muted); font-size: 14px; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(290px, 1fr)); gap: 18px; }
+  .mono { font-family: var(--mono); }
+
+  /* controls */
+  label.f { display: flex; flex-direction: column; gap: 6px; font-size: 14px; font-weight: 600; }
+  input[type=text], input[type=search], select { font: 400 15px var(--body); color: var(--text); background: var(--inset);
+         border: 1px solid var(--field); border-radius: 10px; min-height: 46px; padding: 0 12px; width: 100%; }
+  input:focus-visible, select:focus-visible, button:focus-visible, a:focus-visible, summary:focus-visible { outline: 2px solid var(--cyan); outline-offset: 2px; }
+  .row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+  .row > .grow { flex: 1 1 260px; }
+  button, .btn { font: 500 15px var(--body); border-radius: 10px; min-height: 44px; padding: 0 18px; cursor: pointer;
+           border: 1px solid #34486b; background: var(--panel); color: var(--text); display: inline-flex; align-items: center;
+           justify-content: center; gap: 8px; text-decoration: none; }
+  button:hover, .btn:hover { border-color: var(--cyan); color: var(--text); }
+  button.primary, .btn.primary { background: var(--orange); border-color: var(--orange); color: var(--on-accent); font-weight: 600; }
+  button.primary:hover, .btn.primary:hover { background: #ff9233; }
+  button.danger { color: var(--warn); }
+  button:disabled { opacity: .45; cursor: default; }
+  button svg, .btn svg { flex: none; }
+
+  /* badges and notes: always an icon or word with the colour */
+  .badge { display: inline-flex; align-items: center; gap: 5px; white-space: nowrap; padding: 4px 10px; border-radius: 999px; font-size: 13px; font-weight: 600; }
+  .badge.ok { background: var(--ok-bg); color: var(--ok); } .badge.info { background: var(--info-bg); color: var(--info); }
+  .badge.warn { background: var(--warn-bg); color: var(--warn); } .badge.idle { background: var(--raised); color: var(--soft); }
+  .callout { display: flex; gap: 10px; align-items: flex-start; font-size: 14px; line-height: 1.5; border-radius: 10px; padding: 12px 14px; }
+  .callout.info { background: var(--info-bg); color: #d7f3ff; } .callout.warn { background: var(--warn-bg); color: #ffd9b3; }
+  .callout svg { flex: none; margin-top: 2px; }
+  .err { color: var(--warn); font-size: 14px; }
+  .err:empty { display: none; }
+
+  /* dashboard */
+  .filters { display: flex; flex-wrap: wrap; gap: 8px; }
+  .filters button { min-height: 40px; border-radius: 999px; padding: 0 16px; font-size: 14px; }
+  .filters button[aria-pressed="true"] { background: var(--cyan); border-color: var(--cyan); color: var(--on-accent); font-weight: 600; }
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 20px; display: flex; flex-direction: column; gap: 14px; }
+  .card h2 { font-size: 21px; }
+  .stats { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+  .stat { background: var(--inset); border-radius: 10px; padding: 10px 12px; }
+  .stat .k { font-size: 12px; color: var(--muted); font-weight: 500; }
+  .stat .v { font: 500 19px var(--mono); margin-top: 2px; }
+  .card .acts { display: flex; flex-wrap: wrap; gap: 8px; margin-top: auto; }
+  .newcard { min-height: 240px; border: 2px dashed #34486b; border-radius: 14px; display: flex; flex-direction: column; align-items: center;
+             justify-content: center; gap: 10px; color: var(--muted); text-decoration: none; font-weight: 500; }
+  .newcard:hover { border-color: var(--orange); color: var(--text); }
+
+  /* new wake word */
+  .steps { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 8px; }
+  .steps li { display: flex; align-items: center; gap: 8px; padding: 7px 14px 7px 7px; border-radius: 999px; background: var(--panel);
+              border: 1px solid var(--line); font-size: 14px; color: var(--muted); }
+  .steps li span { display: inline-flex; width: 24px; height: 24px; border-radius: 50%; background: var(--inset); align-items: center;
+                   justify-content: center; font-size: 12px; color: var(--text); }
+  .steps li.on { background: var(--raised); border-color: var(--raised); color: #fff; font-weight: 600; }
+  .steps li.on span { background: var(--orange); color: var(--on-accent); }
+  .steps li.done span { background: var(--ok-bg); color: var(--ok); }
+  .scen { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 14px; }
+  .scen button { flex-direction: column; align-items: flex-start; justify-content: flex-start; text-align: left; gap: 8px; min-height: 164px; padding: 18px; border-radius: 14px;
+                 border: 2px solid var(--line); background: var(--panel); }
+  .scen button[aria-pressed="true"] { border-color: var(--orange); background: var(--pick-bg); }
+  .scen .ic { display: inline-flex; width: 44px; height: 44px; border-radius: 12px; align-items: center; justify-content: center; background: var(--raised); }
+  .scen button[aria-pressed="true"] .ic { background: var(--orange); color: var(--on-accent); }
+  .scen b { font: 700 17px var(--head); }
+  .scen small { font-size: 13px; line-height: 1.45; color: var(--muted); }
+  .checks { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 10px; }
+  .checks li { display: flex; gap: 10px; align-items: flex-start; font-size: 14px; line-height: 1.45; }
+  .checks .dot { flex: none; display: inline-flex; width: 22px; height: 22px; border-radius: 50%; align-items: center; justify-content: center; }
+  .chips { display: flex; flex-wrap: wrap; gap: 8px; }
+  .chip { display: inline-flex; align-items: center; padding-left: 12px; border-radius: 999px; background: var(--inset); border: 1px solid var(--line); font-size: 14px; }
+  .chip a { color: var(--text); text-decoration: none; }
+  .chip button { border: 0; background: transparent; min-height: 36px; width: 36px; padding: 0; border-radius: 999px; color: var(--muted); }
   .chip button:hover { color: var(--text); }
-  .choice { display: flex; gap: 8px; flex-wrap: wrap; }
-  .choice label { font-weight: 400; margin: 0; border: 1px solid var(--line); border-radius: 8px;
-                  padding: 8px 12px; cursor: pointer; flex: 1 1 200px; }
-  .choice label:has(input:checked) { border-color: var(--accent); }
-  .choice b { display: block; }
-  .stages { display: grid; grid-template-columns: repeat(auto-fit, minmax(110px, 1fr)); gap: 6px; }
-  .stage { border: 1px solid var(--line); border-radius: 8px; padding: 6px 8px; font-size: 13px; }
-  .stage .s { font-size: 12px; color: var(--muted); }
-  .stage.done { border-color: var(--ok); } .stage.done .s { color: var(--ok); }
-  .stage.running { border-color: var(--run); } .stage.running .s { color: var(--run); }
-  .stage.failed { border-color: var(--bad); } .stage.failed .s { color: var(--bad); }
-  .bar { height: 8px; background: var(--chip); border-radius: 4px; overflow: hidden; margin: 8px 0 4px; }
-  .bar > div { height: 100%; background: var(--run); width: 0; transition: width .4s; }
-  pre.log { background: var(--code); border: 1px solid var(--line); border-radius: 8px; padding: 10px;
-            font-size: 12px; max-height: 280px; overflow: auto; white-space: pre-wrap; margin: 8px 0 0; }
-  table { border-collapse: collapse; width: 100%; font-variant-numeric: tabular-nums; }
-  th, td { text-align: left; padding: 5px 8px; border-bottom: 1px solid var(--line); font-size: 14px; }
-  tr.pick { background: var(--chip); }
-  tr[data-t] { cursor: pointer; }
-  .two { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 14px; }
-  .note { font-size: 13px; color: var(--muted); border-left: 3px solid var(--accent); padding: 4px 10px; margin-top: 10px; }
-  .err { color: var(--bad); margin-top: 8px; font-size: 14px; }
-  .files a { display: block; font-size: 14px; }
-  .eta { margin-top: 6px; font-size: 15px; }
-  .files a.btn { display: inline-block; font-size: 15px; border-radius: 8px; padding: 8px 14px; border: 1px solid var(--line);
-           background: var(--panel); color: var(--text); text-decoration: none; }
+  .summary { background: var(--raised); border-radius: 14px; padding: 22px; display: flex; flex-direction: column; gap: 14px; }
+  dl.kv { margin: 0; display: grid; grid-template-columns: auto 1fr; gap: 9px 16px; font-size: 14px; }
+  dl.kv dt { color: var(--muted); } dl.kv dd { margin: 0; font-weight: 500; }
+  details.adv { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 0 22px; }
+  details.adv summary { min-height: 54px; display: flex; align-items: center; font-weight: 600; cursor: pointer; }
+  details.adv > div { padding-bottom: 22px; display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 16px; }
+  .radio { display: flex; gap: 10px; flex-wrap: wrap; }
+  .radio label { flex: 1 1 200px; border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; cursor: pointer; display: flex; gap: 10px; align-items: flex-start; }
+  .radio label:has(input:checked) { border-color: var(--orange); background: var(--pick-bg); }
+  .radio input { accent-color: var(--orange); margin-top: 4px; }
+  .radio b { display: block; }
+
+  /* training */
+  .overall { background: var(--raised); border-radius: 14px; padding: 22px; display: flex; flex-wrap: wrap; gap: 22px; align-items: center; }
+  .overall .big { font: 500 26px var(--mono); color: #fff; }
+  .bar { height: 10px; background: #34405a; border-radius: 999px; overflow: hidden; }
+  .bar > div { height: 100%; background: var(--orange); width: 0; transition: width .4s; border-radius: 999px; }
+  .bar.sm { height: 6px; background: var(--info-bg); } .bar.sm > div { background: var(--cyan); }
+  ol.stages { list-style: none; margin: 0; padding: 0; }
+  ol.stages li { display: flex; gap: 14px; padding: 13px 0; border-top: 1px solid var(--line2); align-items: flex-start; }
+  ol.stages li:first-child { border-top: 0; }
+  .sdot { flex: none; display: inline-flex; width: 28px; height: 28px; border-radius: 50%; align-items: center; justify-content: center; background: var(--inset); color: var(--muted); }
+  .done .sdot { background: var(--raised); color: var(--text); } .running .sdot { background: var(--cyan); color: var(--on-accent); }
+  .failed .sdot { background: var(--warn-bg); color: var(--warn); }
+  .sbody { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 4px; }
+  .sline { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 8px; }
+  .sline b { font-size: 15px; } .sline span { font: 13px var(--mono); color: var(--muted); }
+  .failed .sline span { color: var(--warn); } .off { opacity: .55; }
+  pre.log { background: var(--side); border: 1px solid var(--line2); border-radius: 9px; padding: 12px; font: 12px/1.6 var(--mono);
+            max-height: 320px; overflow: auto; white-space: pre-wrap; margin: 0; color: #d0d8e4; }
+
+  /* results */
+  .tablebox { overflow-x: auto; }
+  table { border-collapse: collapse; width: 100%; font-variant-numeric: tabular-nums; font-size: 14px; }
+  th { text-align: left; color: var(--muted); font-size: 12px; font-weight: 600; padding: 8px 10px; }
+  td { padding: 10px; border-top: 1px solid var(--line2); }
+  tr[data-t] { cursor: pointer; } tr[data-t]:hover td { background: #1f2c42; }
+  tr.pick td { background: var(--pick-bg); } tr.pick td:first-child { box-shadow: inset 2px 0 0 var(--orange); }
+  .hbar { display: flex; align-items: center; gap: 10px; }
+  .hbar .track { flex: 1; min-width: 80px; height: 12px; background: var(--inset); border-radius: 4px; overflow: hidden; }
+  .hbar .track div { height: 100%; border-radius: 0 4px 4px 0; }
+  .files a { display: block; font-size: 14px; } .files a.btn { display: flex; justify-content: flex-start; }
+
+  /* help */
+  .gs { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 14px; }
+  .gs li { background: var(--inset); border-radius: 10px; padding: 14px; display: flex; flex-direction: column; gap: 6px; font-size: 14px; color: var(--soft); }
+  .gs li b { color: var(--text); font-size: 15px; } .gs li span:first-child { font: 13px var(--mono); color: var(--cyan); }
+  details.qa { border-top: 1px solid var(--line2); }
+  details.qa summary { min-height: 48px; display: flex; align-items: center; cursor: pointer; font-weight: 600; }
+  details.qa p { margin: 0 0 14px; font-size: 14px; color: var(--soft); line-height: 1.6; }
+  .vendor { padding: 3px 12px; border-radius: 999px; border: 1px solid; font-weight: 600; font-size: 13px; }
 </style>
 </head>
 <body>
-<header><div class="wrap top">
-  <a class="brand" href="#/"><svg width="22" height="22" viewBox="0 0 24 24" aria-hidden="true">
-    <path d="M3 15c3-1 5-1 7-1h11v3h-4c-1 1-1 2-1 3h2v2H6v-2h2c0-1 0-2-1-3H7c-2 0-3-1-4-2z" fill="currentColor" opacity=".85"/>
-    <rect x="9" y="8" width="2" height="5" rx="1" fill="#ff9f1c"/><rect x="12" y="5" width="2" height="8" rx="1" fill="#ff9f1c"/>
-    <rect x="15" y="9" width="2" height="4" rx="1" fill="#ff9f1c"/></svg>wakesmith</a>
-  <span class="hw" id="hw">detecting hardware…</span>
-</div></header>
-<main><div class="wrap" id="view"></div></main>
+<div class="app">
+  <nav class="side" aria-label="Main">
+    <a class="brand" href="#/"><img src="/static/wakesmith-w.png" alt="" width="40" height="40"><span>wake<b>smith</b></span></a>
+    <div id="nav"></div>
+    <div class="machine" id="hw"><strong>This machine</strong>detecting hardware…</div>
+  </nav>
+  <main id="view"></main>
+</div>
 <script>
 const $ = (s, el = document) => el.querySelector(s);
 const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
-const STAGE_NAMES = {"generate":"Synthetic speech","real":"Your recordings","mww-features":"mWW features",
-  "mww-train":"mWW training","oww-features":"oWW features","oww-train":"oWW training","test":"Held-out test","export":"Export"};
-let es = null;
+const enc = encodeURIComponent;
+const STAGE_NAMES = {"generate":"Synthetic speech","real":"Your recordings","mww-features":"microWakeWord features",
+  "mww-train":"microWakeWord training","oww-features":"openWakeWord features","oww-train":"openWakeWord training","test":"Held-out test","export":"Export"};
+const STAGE_HELP = {"generate":"Thousands of synthetic speakers saying the phrase and its sound-alikes.",
+  "real":"Your recordings: training takes trimmed, held-out takes set aside.",
+  "mww-features":"Room echo and noise mixed in; audio turned into what the model hears.",
+  "mww-train":"Learning from the synthetic and real takes.", "oww-features":"Audio turned into openWakeWord's embeddings.",
+  "oww-train":"Training the openWakeWord head.", "test":"Scoring your held-out recordings.", "export":"Writing the model files."};
+// stroke icons (24-unit grid), drawn in currentColor
+const I = {
+  grid: '<rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/>',
+  plus: '<path d="M12 5v14M5 12h14"/>',
+  mic: '<rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/>',
+  pulse: '<path d="M4 12h3l2-6 4 12 2-6h5"/>',
+  bars: '<path d="M5 20V10M12 20V4M19 20v-7"/>',
+  help: '<circle cx="12" cy="12" r="9"/><path d="M9.5 9.5a2.5 2.5 0 1 1 3.5 2.3c-.6.3-1 .9-1 1.6v.6M12 17v.5"/>',
+  chip: '<rect x="6" y="6" width="12" height="12" rx="2"/><path d="M9 2v4M15 2v4M9 18v4M15 18v4M2 9h4M2 15h4M18 9h4M18 15h4"/>',
+  doc: '<path d="M6 3h9l4 4v14H6z"/><path d="M14 3v5h5M9 13h7M9 17h7"/>',
+  check: '<path d="M5 12l5 5 9-10"/>', bang: '<path d="M12 7v6M12 17v.5"/>', info: '<path d="M12 11v6M12 7v.5"/>',
+  play: '<path d="M7 4l13 8-13 8z" fill="currentColor"/>', x: '<path d="M6 6l12 12M18 6L6 18"/>',
+  arrow: '<path d="M5 12h14M13 6l6 6-6 6"/>', down: '<path d="M12 4v11M7 10l5 5 5-5M5 20h14"/>',
+  spin: '<path d="M12 3a9 9 0 1 0 9 9"/>', clock: '<circle cx="12" cy="12" r="8"/><path d="M12 8v4l3 2"/>',
+  esp: '<circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="3"/><path d="M12 2v2M12 20v2"/>',
+  home: '<path d="M3 11l9-7 9 7"/><path d="M5 10v10h14V10"/><path d="M10 20v-5h4v5"/>',
+  screen: '<rect x="3" y="5" width="18" height="12" rx="2"/><path d="M8 21h8M12 17v4"/>',
+  bolt: '<path d="M13 3L5 14h6l-1 7 8-11h-6z"/>', refresh: '<path d="M20 12a8 8 0 1 1-2.3-5.7M20 4v5h-5"/>',
+};
+const icon = (n, size = 20, w = 1.75) => `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="${w}" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${I[n]}</svg>`;
+let es = null, HW = null;
 
 async function api(path, opts = {}) {
   const r = await fetch(path, {headers: {"Content-Type": "application/json"}, ...opts,
@@ -108,118 +231,207 @@ async function api(path, opts = {}) {
   return r.headers.get("content-type")?.includes("json") ? r.json() : r;
 }
 
+// ---- shell: sidebar and machine box ----------------------------------------------------------------
+function nav(here, project) {
+  const a = (href, ic, label) => `<a href="${href}"${href === here ? ' aria-current="page"' : ""}>${icon(ic)}${esc(label)}</a>`;
+  const pg = project ? `<div class="navgroup"><div class="navlabel" title="${esc(project.label)}">${esc(project.label)}</div>
+      ${a(`#/p/${enc(project.name)}/voices`, "mic", "Real voices")}${a(`#/p/${enc(project.name)}/train`, "pulse", "Training")}
+      ${a(`#/p/${enc(project.name)}/results`, "bars", "Compare & cutoff")}</div>` : "";
+  $("#nav").innerHTML = `<div class="navgroup">${a("#/", "grid", "Wake words")}${a("#/new", "plus", "New wake word")}</div>${pg}
+    <div class="navgroup">${a("#/help", "help", "Help")}${a("#/hardware", "chip", "Hardware")}${a("#/data", "doc", "Data & licenses")}</div>`;
+}
+
 async function hardware() {
   try {
-    const h = await api("/api/hardware");
-    const gpus = h.gpus.length ? `${h.gpus.length}× ${h.gpus[0].name.replace(/\(R\)/g, "")} (${h.accel})` : "CPU only";
-    if (h.problem) { $("#hw").textContent = "⚠ " + h.problem; return; }
-    $("#hw").textContent = `${gpus} · ${h.cpus} cores · ${Math.round(h.ram_free_gb)}/${Math.round(h.ram_gb)} GB RAM free · ${Math.round(h.disk_free_gb)} GB disk`
-      + (h.disk_warning ? ` · ⚠ ${h.disk_warning}` : "") + (h.ram_warning ? ` · ⚠ ${h.ram_warning}` : "");
-  } catch { $("#hw").textContent = ""; }
+    HW = await api("/api/hardware");
+    const h = HW, gpus = h.gpus.length ? `${h.gpus.length} × ${esc(h.gpus[0].name.replace(/\(R\)/g, ""))}` : "CPU only";
+    const warn = [h.problem, h.disk_warning, h.ram_warning].filter(Boolean);
+    $("#hw").innerHTML = `<strong>This machine</strong>${gpus}<br>${h.cpus} cores · ${Math.round(h.ram_free_gb)}/${Math.round(h.ram_gb)} GB RAM free<br>${Math.round(h.disk_free_gb)} GB disk free`
+      + warn.map(w => `<div class="warn">${icon("bang", 14, 2.5)} ${esc(w)}</div>`).join("");
+  } catch { $("#hw").innerHTML = ""; }
 }
 
 function route() {
   if (es) { es.close(); es = null; }
   const h = location.hash.slice(1) || "/";
-  const m = h.match(/^\/p\/([^/]+)$/);
+  window.scrollTo(0, 0);
+  const m = h.match(/^\/p\/([^/]+)(?:\/(voices|train|results))?$/);
   if (h === "/new") return viewNew();
-  if (m) return viewProject(decodeURIComponent(m[1]));
+  if (h === "/help") return viewHelp();
+  if (h === "/hardware") return viewHardware();
+  if (h === "/data") return viewData();
+  if (m) return viewProject(decodeURIComponent(m[1]), m[2] || "train");
   return viewHome();
 }
 window.addEventListener("hashchange", route);
 
-// ---- home ---------------------------------------------------------------------------------------
+// ---- wake words (dashboard) -------------------------------------------------------------------------
+const MODEL_NAMES = { mww: "microWakeWord", oww: "openWakeWord" };
+function cardState(p) {
+  if (p.job.running) return { key: "run", badge: `<span class="badge info">${icon("spin", 14, 2.5)}Training</span>` };
+  if (p.failed.length) return { key: "work", badge: `<span class="badge warn">${icon("bang", 14, 2.5)}Stopped</span>` };
+  if (p.done.includes("export")) return { key: "ready", badge: `<span class="badge ok">${icon("check", 14, 2.5)}Ready</span>` };
+  return { key: "work", badge: `<span class="badge idle">${icon("clock", 14, 2.25)}Not trained</span>` };
+}
 async function viewHome() {
+  nav("#/");
   const v = $("#view");
-  v.innerHTML = `<h1>Your wake words</h1><p class="sub">Train a wake word for ESPHome / Home Assistant devices
-    (microWakeWord) and openWakeWord, from synthetic speech plus your own recordings.</p><div class="grid" id="list"></div>`;
+  v.innerHTML = `<div class="head"><div><h1>Your wake words</h1><p class="sub" id="count"></p></div>
+    <a class="btn primary" href="#/new">${icon("plus", 18, 2.25)}New wake word</a></div>
+    <div class="filters" role="group" aria-label="Show" id="filters"></div><div class="grid" id="list"></div>`;
   const list = await api("/api/projects");
-  $("#list").innerHTML = list.map(p => `<a class="card" href="#/p/${encodeURIComponent(p.name)}">
-      <div class="t">${esc(p.label)}</div>
-      <div class="hint">${p.job.running ? "training…" : p.done.includes("export") ? "ready to export" :
-        p.done.length ? `${p.done.length} of 8 stages done` : "not trained yet"}</div></a>`).join("")
-    + `<a class="card new" href="#/new">+ New wake word</a>`;
+  let f = "all";
+  const draw = () => {
+    const groups = [["all", "All"], ["run", "Training"], ["ready", "Ready"], ["work", "Needs work"]];
+    $("#filters").innerHTML = groups.map(([k, l]) => `<button type="button" data-f="${k}" aria-pressed="${f === k}">${l}
+      <span class="mono" style="opacity:.75;font-size:13px">${k === "all" ? list.length : list.filter(p => cardState(p).key === k).length}</span></button>`).join("");
+    $("#list").innerHTML = list.filter(p => f === "all" || cardState(p).key === f).map(p => {
+      const s = cardState(p), kinds = ["mww", "oww"].filter(k => p.models[k]);
+      const b = kinds.map(k => p.brief[k]).find(Boolean), bk = kinds.find(k => p.brief[k]);
+      const stats = b ? `<div class="stats"><div class="stat"><div class="k">Caught</div><div class="v">${b.caught}/${b.positives}</div><div class="hint">held-out @ ${b.cutoff.toFixed(2)}</div></div>
+          <div class="stat"><div class="k">False triggers</div><div class="v">${b.false}/${b.negatives}</div><div class="hint">${MODEL_NAMES[bk]}</div></div></div>`
+        : `<p class="hint" style="margin:0">${p.job.running ? "Results appear when the held-out test has run." : "No held-out results yet: add real recordings under Real voices to get them."}</p>`;
+      const where = `#/p/${enc(p.name)}`;
+      return `<article class="card"><div class="row" style="justify-content:space-between;align-items:flex-start">
+          <div><h2>${esc(p.label)}</h2><div class="hint">${kinds.map(k => MODEL_NAMES[k]).join(" · ") || "no model selected"}</div></div>${s.badge}</div>
+        ${stats}<div class="acts"><a class="btn" style="background:var(--raised);border-color:var(--raised)" href="${where}/train">Open</a>
+        <a class="btn" href="${where}/results">Results</a></div></article>`;
+    }).join("") + `<a class="newcard" href="#/new">${icon("plus", 36)}New wake word</a>`;
+  };
+  $("#count").textContent = list.length ? `${list.length} wake word${list.length > 1 ? "s" : ""}.` : "Make your first one: it takes a few minutes to set up.";
+  $("#filters").onclick = e => { const b = e.target.closest("button[data-f]"); if (b) { f = b.dataset.f; draw(); } };
+  draw();
 }
 
-// ---- new project --------------------------------------------------------------------------------
+// ---- new wake word ------------------------------------------------------------------------------
+const SCENARIOS = {
+  esp: { icon: "esp", title: "ESPHome voice satellite", desc: "microWakeWord model plus manifest for an ESP32-S3 running ESPHome.",
+         mww: true, oww: false, model: "microWakeWord", export: ".tflite + ESPHome manifest and YAML" },
+  ha: { icon: "home", title: "Home Assistant", desc: "openWakeWord model for the Wyoming openWakeWord add-on.",
+        mww: false, oww: true, model: "openWakeWord", export: ".tflite for openWakeWord" },
+  dev: { icon: "screen", title: "Echo-style device / other", desc: "Both model types; you choose the audio front end your device runs.",
+         mww: true, oww: true, model: "microWakeWord and openWakeWord", export: "both, each tagged with its front end" },
+  quick: { icon: "bolt", title: "Just trying it out", desc: "A small model in minutes, to hear how the phrase works.",
+           mww: true, oww: true, quick: true, model: "both, small", export: ".tflite files" },
+};
+const TIME = { quick: "about 8 min with a GPU, about 20 min on 6 CPU cores", standard: "about an hour with a GPU (measured on first run)" };
+const syllables = t => t.toLowerCase().split(/[^a-z']+/).filter(Boolean)
+  .reduce((n, w) => n + Math.max(1, (w.replace(/e\b/, "").match(/[aeiouy]+/g) || []).length), 0);
+
 async function viewNew() {
+  nav("#/new");
   const v = $("#view");
-  v.innerHTML = `<h1>New wake word</h1><p class="sub">Pick a phrase, check how the synthetic voices say it, and choose what the model should reject.</p>
-  <div class="panel">
-    <label for="phrase">Wake phrase <span class="hint">2–4 syllables or more works best, e.g. "hey jarvis"</span></label>
-    <div class="row"><input type="text" id="phrase" placeholder="hey jarvis" autocomplete="off">
-      <button id="hear">▶ Hear it</button><button id="sugg">Suggest sound-alikes</button></div>
-    <div class="hint" id="hearnote"></div>
-  </div>
-  <div class="panel">
-    <h2>Sound-alikes to reject</h2>
-    <div class="hint">Phrases that sound close but shouldn't wake the device. Click one to hear it, × to remove it.
-      Add anything that falsely triggered an earlier model.</div>
-    <div class="chips" id="chips"></div>
-    <div class="row" style="margin-top:8px"><input type="text" id="add" placeholder="add a phrase and press Enter"></div>
-  </div>
-  <div class="panel">
-    <h2>Your recordings <span class="hint">(optional, but they make the biggest difference)</span></h2>
-    <label for="pos">Folder of real "wake phrase" recordings <span class="hint">16 kHz WAV · optional labels.csv and HELDOUT.txt</span></label>
-    <input type="text" id="pos" placeholder="/home/you/recordings/wake">
-    <label for="neg">Folder of real "not the phrase" recordings <span class="hint">ideally what falsely triggered an older model</span></label>
-    <input type="text" id="neg" placeholder="/home/you/recordings/false-triggers">
-    <div class="note">Put every clip from your last day or two of recordings in HELDOUT.txt: those are never trained on,
-      and the results page scores them, so you see how the model does on your real house.</div>
-  </div>
-  <div class="panel">
-    <h2>Size</h2>
-    <div class="choice">
-      <label><input type="radio" name="preset" value="quick"> <b>Quick test</b><span class="hint">2,000 clips per class · see if the phrase works</span></label>
-      <label><input type="radio" name="preset" value="standard" checked> <b>Standard</b><span class="hint">25,000 clips per class · a model to deploy</span></label>
+  let sc = "esp", negs = [];
+  v.innerHTML = `<ol class="steps" aria-label="Steps"><li class="on"><span>1</span>Purpose &amp; phrase</li><li><span>2</span>Real voices</li>
+      <li><span>3</span>Train</li><li><span>4</span>Pick &amp; export</li></ol>
+    <div class="cols"><div class="wide">
+      <section aria-labelledby="h-p" style="display:flex;flex-direction:column;gap:14px">
+        <div><h1 id="h-p">What is it for?</h1><p class="sub">This sets the model type, the export and sensible defaults. You can change them under Advanced.</p></div>
+        <div class="scen" id="scen"></div></section>
+      <section class="panel" aria-labelledby="h-ph"><h2 id="h-ph">The phrase</h2>
+        <div class="row" style="align-items:flex-end"><label class="f grow" for="phrase">Wake phrase
+          <input type="text" id="phrase" placeholder="hey jarvis" autocomplete="off"></label>
+          <button type="button" id="hear">${icon("play", 14)}Hear it</button></div>
+        <div class="hint" id="hearnote"></div>
+        <ul class="checks" id="checks" aria-live="polite"></ul>
+        <div class="row" style="justify-content:space-between"><h3>Sound-alikes it must ignore <span class="hint" id="nneg"></span></h3>
+          <button type="button" id="sugg">Suggest sound-alikes</button></div>
+        <div class="chips" id="chips"></div>
+        <label class="f" for="add">Add one <input type="text" id="add" placeholder="e.g. something that falsely woke an older model, then Enter"></label>
+      </section>
+      <details class="adv"><summary>Advanced</summary><div>
+        <div><div class="hint" style="margin-bottom:6px;font-weight:600;color:var(--text)">Size</div><div class="radio">
+          <label><input type="radio" name="preset" value="quick"><span><b>Quick test</b><span class="hint">2,000 takes per class</span></span></label>
+          <label><input type="radio" name="preset" value="standard" checked><span><b>Standard</b><span class="hint">25,000 takes per class</span></span></label></div></div>
+        <div><div class="hint" style="margin-bottom:6px;font-weight:600;color:var(--text)">Models</div><div class="radio">
+          <label><input type="checkbox" id="mww"><span><b>microWakeWord</b><span class="hint">ESPHome, Voice PE</span></span></label>
+          <label><input type="checkbox" id="oww"><span><b>openWakeWord</b><span class="hint">Wyoming add-on</span></span></label></div></div>
+        <label class="f" for="fe">microWakeWord audio front end <select id="fe"><option value="tflm">TFLite Micro (ESPHome)</option>
+          <option value="zserge">zserge (some custom devices)</option></select><span class="hint">Match what your device runs; the export is tagged with it.</span></label>
+      </div></details>
+      <div class="err" id="err"></div>
     </div>
-    <h2 style="margin-top:14px">Models</h2>
-    <div class="choice">
-      <label><input type="checkbox" id="mww" checked> <b>microWakeWord</b><span class="hint">ESPHome devices, Home Assistant Voice PE</span></label>
-      <label><input type="checkbox" id="oww" checked> <b>openWakeWord</b><span class="hint">Wyoming openWakeWord, Home Assistant add-on</span></label>
-    </div>
-    <div class="row" style="margin-top:14px"><button class="primary" id="create">Create and start training</button>
-      <button id="createonly">Create only</button></div>
-    <div class="err" id="err"></div>
-  </div>`;
-  let negs = [];
-  const chips = () => $("#chips").innerHTML = negs.map((n, i) =>
-    `<span class="chip"><a href="#" data-say="${esc(n)}" style="color:inherit;text-decoration:none">${esc(n)}</a><button data-rm="${i}" aria-label="remove">×</button></span>`).join("")
-    || `<span class="hint">Type a phrase above and press "Suggest sound-alikes".</span>`;
-  chips();
+    <aside class="narrow"><div class="summary" aria-labelledby="h-sum"><h2 id="h-sum">What you'll get</h2>
+      <dl class="kv" id="sum"></dl><p class="hint" style="margin:0" id="sumnote"></p>
+      <button type="button" class="primary" id="next">Next: real voices ${icon("arrow", 16, 2.25)}</button>
+      <button type="button" id="skip">Skip, train on synthetic voices only</button></div></aside></div>`;
+
+  const drawScen = () => {
+    $("#scen").innerHTML = Object.entries(SCENARIOS).map(([k, s]) => `<button type="button" data-sc="${k}" aria-pressed="${sc === k}">
+      <span class="ic">${icon(s.icon, 24)}</span><b>${s.title}</b><small>${s.desc}</small></button>`).join("");
+    const s = SCENARIOS[sc];
+    $("#mww").checked = s.mww; $("#oww").checked = s.oww;
+    document.querySelector(`input[name=preset][value=${s.quick ? "quick" : "standard"}]`).checked = true;
+    drawSum();
+  };
+  const drawSum = () => {
+    const s = SCENARIOS[sc], preset = document.querySelector("input[name=preset]:checked").value;
+    const models = [$("#mww").checked && "microWakeWord", $("#oww").checked && "openWakeWord"].filter(Boolean).join(" and ") || "none selected";
+    $("#sum").innerHTML = `<dt>Model</dt><dd>${models}</dd><dt>Export</dt><dd>${s.export}</dd>
+      <dt>Size</dt><dd>${preset === "quick" ? "Quick test" : "Standard"}</dd><dt>Time</dt><dd>${TIME[preset]}</dd>`;
+    $("#sumnote").textContent = preset === "quick" ? "Good for a first listen. Train a Standard model before it goes on a device."
+      : "Real recordings in the next step make the biggest difference.";
+  };
+  const drawChecks = () => {
+    const t = $("#phrase").value.trim(), out = [];
+    const ok = (m) => out.push(`<li><span class="dot" style="background:var(--ok-bg);color:var(--ok)">${icon("check", 13, 3)}</span><span>${m}</span></li>`);
+    const warn = (m) => out.push(`<li><span class="dot" style="background:var(--warn-bg);color:var(--warn)">${icon("bang", 13, 3)}</span><span>${m}</span></li>`);
+    if (t) {
+      const n = syllables(t);
+      if (n < 2) warn(`<b>Short phrase.</b> About ${n} syllable: one-syllable words are easy to trigger by accident. Two to four work best.`);
+      else if (n > 5) warn(`<b>Long phrase.</b> About ${n} syllables: people may not say all of it. Two to four work best.`);
+      else ok(`<b>Good length.</b> About ${n} syllables; two to four work best.`);
+      if (/\d/.test(t)) warn("<b>Digits.</b> Write numbers out as words (\"two\", not \"2\") so the voices say them the way you will.");
+      if (t.split(/\s+/).length === 1) warn("<b>A single word.</b> Everyday words come up in talk and on TV, so expect false triggers; real recordings from the room help most.");
+    }
+    $("#checks").innerHTML = out.join("");
+  };
+  const chips = () => {
+    $("#nneg").textContent = negs.length ? `(${negs.length})` : "";
+    $("#chips").innerHTML = negs.map((n, i) => `<span class="chip"><a href="#" data-say="${esc(n)}" title="hear it">${esc(n)}</a>
+      <button type="button" data-rm="${i}" aria-label="Remove ${esc(n)}">${icon("x", 14, 2.25)}</button></span>`).join("")
+      || `<span class="hint">Type the phrase and press "Suggest sound-alikes". If you skip this, wakesmith picks them for you.</span>`;
+  };
   const play = async (text, note) => {
-    if (note) $("#hearnote").textContent = "generating…";
+    if (note) $("#hearnote").textContent = "making a voice…";
     try {
-      const r = await api("/api/preview?text=" + encodeURIComponent(text));
-      const a = new Audio(URL.createObjectURL(await r.blob())); await a.play();
+      const r = await api("/api/preview?text=" + enc(text));
+      await new Audio(URL.createObjectURL(await r.blob())).play();
       if (note) $("#hearnote").textContent = "a random synthetic voice; press again for another";
     } catch (e) { $("#hearnote").textContent = e.message; }
   };
+  drawScen(); chips(); drawChecks();
+  $("#scen").onclick = e => { const b = e.target.closest("button[data-sc]"); if (b) { sc = b.dataset.sc; drawScen(); } };
+  v.querySelectorAll("input[name=preset], #mww, #oww").forEach(el => el.onchange = drawSum);
+  $("#phrase").oninput = drawChecks;
   $("#hear").onclick = () => $("#phrase").value.trim() && play($("#phrase").value.trim(), true);
   $("#sugg").onclick = async () => {
-    const p = $("#phrase").value.trim(); if (!p) return;
+    const p = $("#phrase").value.trim(); if (!p) { $("#phrase").focus(); return; }
     $("#sugg").disabled = true;
-    try { negs = await api("/api/suggest?n=50&phrase=" + encodeURIComponent(p)); chips(); }
+    try { negs = await api("/api/suggest?n=50&phrase=" + enc(p)); chips(); } catch (e) { $("#err").textContent = e.message; }
     finally { $("#sugg").disabled = false; }
   };
   $("#chips").onclick = e => {
-    if (e.target.dataset.rm !== undefined) { negs.splice(+e.target.dataset.rm, 1); chips(); }
-    if (e.target.dataset.say) { e.preventDefault(); play(e.target.dataset.say); }
+    const rm = e.target.closest("[data-rm]"), say = e.target.closest("[data-say]");
+    if (rm) { negs.splice(+rm.dataset.rm, 1); chips(); }
+    if (say) { e.preventDefault(); play(say.dataset.say); }
   };
   $("#add").onkeydown = e => { if (e.key === "Enter" && e.target.value.trim()) { negs.unshift(e.target.value.trim()); e.target.value = ""; chips(); } };
   const create = async train => {
     $("#err").textContent = "";
-    const body = { phrase: $("#phrase").value.trim(), negatives: negs, positives: $("#pos").value.trim(),
-      negatives_dir: $("#neg").value.trim(), preset: document.querySelector("input[name=preset]:checked").value,
-      microwakeword: { enabled: $("#mww").checked }, openwakeword: { enabled: $("#oww").checked } };
+    const phrase = $("#phrase").value.trim();
+    if (!phrase) { $("#err").textContent = "Type the wake phrase first."; $("#phrase").focus(); return; }
+    if (!$("#mww").checked && !$("#oww").checked) { $("#err").textContent = "Pick at least one model under Advanced."; return; }
+    const body = { phrase, negatives: negs, preset: document.querySelector("input[name=preset]:checked").value,
+      microwakeword: { enabled: $("#mww").checked, frontend: $("#fe").value }, openwakeword: { enabled: $("#oww").checked } };
     try {
       const p = await api("/api/projects", { method: "POST", body });
-      if (train) await api(`/api/projects/${encodeURIComponent(p.name)}/train`, { method: "POST", body: {} });
-      location.hash = "#/p/" + encodeURIComponent(p.name);
+      if (train) await api(`/api/projects/${enc(p.name)}/train`, { method: "POST", body: {} });
+      location.hash = `#/p/${enc(p.name)}/${train ? "train" : "voices"}`;
     } catch (e) { $("#err").textContent = e.message; }
   };
-  $("#create").onclick = () => create(true);
-  $("#createonly").onclick = () => create(false);
+  $("#next").onclick = () => create(false);
+  $("#skip").onclick = () => create(true);
 }
 
 // ---- time estimates -----------------------------------------------------------------------------
@@ -235,12 +447,9 @@ function timeLeft(d, s, pct) {
   const keys = Object.keys(STAGE_NAMES), later = keys.slice(keys.indexOf(s) + 1, keys.indexOf(to) + 1);
   const rest = later.filter(k => !d.off?.[k]).reduce((a, k) => a + (est[k] || 0), 0);
   const total = left + rest, end = new Date(Date.now() + total * 1000);
-  return {
-    stage: `about ${dur(left)} left in this step`,
-    overall: `About <b>${dur(total)}</b> to go · done around <b>${end.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}</b>`,
-  };
+  return { stage: `about ${dur(left)} left in this step`, total: dur(total),
+           end: end.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }) };
 }
-
 // Is stage s still to come in the running job? Stages run in order: those after the running one,
 // up to the job's --to stage.
 function pending(d, s) {
@@ -251,82 +460,94 @@ function pending(d, s) {
   return run >= 0 && i > run && i <= keys.indexOf(to);
 }
 
-// ---- project ------------------------------------------------------------------------------------
-async function viewProject(name) {
-  const v = $("#view"), base = `/api/projects/${encodeURIComponent(name)}`;
+// ---- one project: real voices, training, compare & cutoff -------------------------------------------
+async function viewProject(name, tab) {
+  const v = $("#view"), base = `/api/projects/${enc(name)}`;
   let p;
-  try { p = await api(base); } catch (e) { v.innerHTML = `<p class="err">${esc(e.message)}</p>`; return; }
-  const picks = { mww: p.microwakeword.cutoff, oww: p.openwakeword.threshold };
-  v.innerHTML = `<h1>${esc(p.label)}</h1><p class="sub">${esc(p.dir)}</p>
-  <div class="panel"><div class="row" style="justify-content:space-between"><h2 style="margin:0">Training</h2>
-    <div class="row"><button class="primary" id="go">Train</button>
-      <button id="retrain" title="After changing recordings or review verdicts: reuses the synthetic clips">Retrain from recordings</button>
-      <button class="danger" id="stop">Stop</button></div></div>
-    <div class="stages" id="stages" style="margin-top:12px"></div>
-    <div id="prog"></div>
-    <details><summary class="hint" style="cursor:pointer;margin-top:8px">Log</summary><pre class="log" id="log"></pre></details>
-    <div class="err" id="err"></div></div>
-  <div class="panel"><h2>Results on your held-out recordings</h2><div class="two" id="results"></div>
-    <div class="note">Click a row to choose the cutoff for that model, then export. A higher cutoff means fewer false
-      wake-ups but more missed ones.</div>
-    <div class="row" style="margin-top:10px"><button class="primary" id="export">Export with these cutoffs</button></div>
-    <div class="files" id="files"></div>
-    ${p.data_profile === "personal" ? `<div class="note">Trained with datasets that allow non-commercial use only: these models are for personal use.</div>` : ""}</div>
-  <div class="panel"><h2>Review labels</h2>
-    <div class="hint">Lists your recordings the model disagrees with: usually labelling mistakes. Mark what was really said,
-      then "Retrain from recordings". Held-out clips are never moved.</div>
-    <div class="row" style="margin-top:8px"><select id="rmodel" style="width:auto"><option value="mww">microWakeWord</option><option value="oww">openWakeWord</option></select>
-      <button id="rbuild">Build review list</button>
-      <a id="ropen" href="/p/${encodeURIComponent(name)}/review/" target="_blank">Open review page (${p.review_clips} clips)</a></div></div>`;
+  try { p = await api(base); } catch (e) { nav(""); v.innerHTML = `<p class="err">${esc(e.message)}</p>`; return; }
+  nav(`#/p/${enc(name)}/${tab}`, p);
+  const steps = (on) => `<ol class="steps" aria-label="Steps"><li class="done"><span>${icon("check", 13, 3)}</span>Purpose &amp; phrase</li>
+    ${[["voices", 2, "Real voices"], ["train", 3, "Train"], ["results", 4, "Pick & export"]].map(([k, n, l]) =>
+      `<li class="${k === on ? "on" : ""}"><span>${n}</span>${l}</li>`).join("")}</ol>`;
+  if (tab === "voices") return voicesTab(p, base, steps);
+  if (tab === "results") return resultsTab(p, base, steps);
+  return trainTab(p, base, steps);
+}
 
-  // d: an events snapshot while a job runs. Stages still to come in it show "waiting" and their
-  // estimate, not the result of an earlier run.
-  const renderStages = (stages, d) => $("#stages").innerHTML = Object.keys(STAGE_NAMES).map(s => {
-    const st = stages[s] || {}, off = (s.startsWith("mww") && !p.microwakeword.enabled) || (s.startsWith("oww") && !p.openwakeword.enabled);
-    let status = off ? "off" : st.status || "waiting";
-    let t = st.time ? ` · ${st.time < 90 ? Math.round(st.time) + " s" : Math.round(st.time / 60) + " min"}` : "";
-    if (!off && d?.job.running && pending(d, s)) { status = "waiting"; t = d.estimates?.[s] ? ` · ${d.estimates[s] < 60 ? "<1 min" : "~" + dur(d.estimates[s])}` : ""; }
-    return `<div class="stage ${status}" title="${esc(st.error || "")}"><div>${STAGE_NAMES[s]}</div><div class="s">${status}${t}</div></div>`;
-  }).join("");
-  const renderResults = res => {
-    $("#results").innerHTML = ["mww", "oww"].filter(k => res[k]).map(k => {
-      const r = res[k];
-      return `<div><b>${k === "mww" ? "microWakeWord" : "openWakeWord"}</b> <span class="hint">${r.positives} phrase clips, ${r.negatives} other clips</span>
-        <table data-k="${k}"><tr><th>Cutoff</th><th>Caught</th><th>False wake-ups</th></tr>${r.table.map(row =>
-        `<tr data-t="${row.threshold}" class="${Math.abs(row.threshold - picks[k]) < 1e-9 ? "pick" : ""}"><td>${row.threshold.toFixed(2)}</td>
-         <td>${row.caught}/${r.positives} (${Math.round(100 * row.caught / Math.max(1, r.positives))}%)</td><td>${row.false}/${r.negatives}</td></tr>`).join("")}</table></div>`;
-    }).join("") || `<span class="hint">No results yet: they appear after the "Held-out test" stage (needs your recordings with a HELDOUT.txt).</span>`;
+function voicesTab(p, base, steps) {
+  const v = $("#view"), hasVoices = p.stages.generate?.status === "done";
+  v.innerHTML = `${steps("voices")}<div><div class="kicker">${esc(p.label)}</div><h1>Real voices</h1>
+      <p class="sub">Synthetic voices train the model; real ones tell you whether it works. Recordings listed in HELDOUT.txt are kept aside and never trained on, so the test is honest.</p></div>
+    <div class="cols"><div class="wide"><section class="panel" aria-labelledby="h-f"><h2 id="h-f">Folders of recordings</h2>
+      <label class="f" for="pos">Recordings of the phrase <span class="hint">16 kHz WAV; optional labels.csv and HELDOUT.txt</span>
+        <input type="text" id="pos" value="${esc(p.real.positives || "")}" placeholder="/home/you/recordings/wake"></label>
+      <label class="f" for="neg">"Not the phrase" clips <span class="hint">ideally what falsely woke an older model, or room sound</span>
+        <input type="text" id="neg" value="${esc(p.real.negatives || "")}" placeholder="/home/you/recordings/false-triggers"></label>
+      <div class="callout info">${icon("info", 18, 2)}<span>Put your newest recordings (the last day or two) in HELDOUT.txt. Clips you haven't listened to belong there too: an unchecked near miss may hold the real phrase.</span></div>
+      <div class="row"><button type="button" id="save">Save folders</button><span class="hint" id="saved"></span></div><div class="err" id="err"></div></section>
+      <section class="panel" aria-labelledby="h-soon"><h2 id="h-soon">Coming next</h2>
+        <p class="hint" style="margin:0">Recording takes straight from this page (prompted, near and far, with a level meter), and adding real volunteer voices from Mozilla Common Voice for common words.</p></section></div>
+    <aside class="narrow"><div class="summary"><h2>Then train</h2>
+      <p class="hint" style="margin:0">${hasVoices ? "Already trained? Retrain from recordings reuses the synthetic voices and only redoes what your recordings change." : "Training uses the folders saved here. You can come back and add recordings later."}</p>
+      <button type="button" class="primary" id="go">Save and train ${icon("arrow", 16, 2.25)}</button>
+      ${hasVoices ? `<button type="button" id="retrain">Save and retrain from recordings</button>` : ""}</div></aside></div>`;
+  const save = async () => {
+    $("#err").textContent = "";
+    try { await api(base, { method: "PUT", body: { positives: $("#pos").value.trim(), negatives_dir: $("#neg").value.trim() } }); $("#saved").textContent = "saved"; return true; }
+    catch (e) { $("#err").textContent = e.message; return false; }
   };
-  const kinds = files => [["microwakeword", "microWakeWord (ESPHome)"], ["openwakeword", "openWakeWord"]]
-    .filter(([k]) => files.some(f => f.startsWith(k + "/")));
-  const renderFiles = files => $("#files").innerHTML = files.length ? `<div class="row" style="margin-top:10px">` +
-    kinds(files).map(([k, label]) => `<a class="btn" href="${base}/zip/${k}" download>⬇ ${label} (.zip)</a>`).join("") +
-    `</div><div class="hint" style="margin-top:10px">Single files:</div>` +
-    files.map(f => `<a href="${base}/files/${f.split("/").map(encodeURIComponent).join("/")}" download>${esc(f)}</a>`).join("") : "";
-  renderStages(p.stages); renderResults(p.results); renderFiles(p.exported);
-  $("#results").onclick = e => {
-    const tr = e.target.closest("tr[data-t]"); if (!tr) return;
-    const k = tr.closest("table").dataset.k; picks[k] = +tr.dataset.t; renderResults(p.results);
+  const train = async from => {
+    if (!await save()) return;
+    try { await api(base + "/train", { method: "POST", body: from ? { from } : {} }); location.hash = `#/p/${enc(p.name)}/train`; }
+    catch (e) { $("#err").textContent = e.message; }
   };
+  $("#save").onclick = save; $("#go").onclick = () => train(); if (hasVoices) $("#retrain").onclick = () => train("real");
+}
+
+function trainTab(p, base, steps) {
+  const v = $("#view");
+  const off = k => (k.startsWith("mww") && !p.microwakeword.enabled) || (k.startsWith("oww") && !p.openwakeword.enabled);
+  v.innerHTML = `${steps("train")}<div class="head"><div><div class="kicker">${esc(p.label)}</div><h1>Training</h1></div>
+      <div class="row"><button type="button" class="primary" id="go">Train</button>
+        <button type="button" id="retrain" title="After changing recordings or review verdicts: reuses the synthetic clips">Retrain from recordings</button>
+        <button type="button" class="danger" id="stop">Stop</button></div></div>
+    <div id="prog"></div><div class="err" id="err"></div>
+    <div class="cols"><section class="panel wide" aria-labelledby="h-st" style="gap:4px"><h2 id="h-st">Stages</h2><ol class="stages" id="stages"></ol></section>
+      <aside class="narrow"><section class="panel" aria-labelledby="h-run"><h2 id="h-run">This project</h2><dl class="kv" id="recipe"></dl></section>
+        <details class="adv"><summary>Log</summary><pre class="log" id="log"></pre></details>
+        <p class="hint" style="margin:0">You can close this page: training keeps running, and Wake words shows when it's done.</p></aside></div>`;
+  $("#recipe").innerHTML = `<dt>Models</dt><dd>${[p.microwakeword.enabled && "microWakeWord", p.openwakeword.enabled && "openWakeWord"].filter(Boolean).join(", ")}</dd>
+    <dt>Synthetic takes</dt><dd class="mono">${p.samples.positive.toLocaleString()}</dd><dt>Sound-alikes</dt><dd class="mono">${p.samples.negative.toLocaleString()} takes of ${p.negatives.length}</dd>
+    <dt>Real recordings</dt><dd>${p.real.positives ? "yes" : "none"}${p.real.negatives ? " · not-the-phrase clips" : ""}</dd>
+    ${p.microwakeword.enabled ? `<dt>Front end</dt><dd>${esc(p.microwakeword.frontend)}</dd>` : ""}`;
+  const renderStages = (stages, d) => {
+    $("#stages").innerHTML = Object.keys(STAGE_NAMES).map(s => {
+      const st = stages[s] || {};
+      let status = off(s) ? "off" : st.status || "waiting";
+      let t = st.time ? (st.time < 90 ? Math.round(st.time) + " s" : Math.round(st.time / 60) + " min") : "";
+      if (!off(s) && d?.job.running && pending(d, s)) { status = "waiting"; t = d.estimates?.[s] ? (d.estimates[s] < 60 ? "<1 min" : "~" + dur(d.estimates[s])) : ""; }
+      const mark = status === "done" ? icon("check", 14, 3) : status === "running" ? icon("spin", 14, 2.5) : status === "failed" ? icon("bang", 14, 3) : "";
+      const word = { done: "done", running: "running", failed: "stopped", off: "off", waiting: "waiting" }[status] || status;
+      return `<li class="${status}"><span class="sdot">${mark}</span><div class="sbody"><div class="sline"><b>${STAGE_NAMES[s]}</b><span>${word}${t ? " · " + t : ""}</span></div>
+        <div class="hint">${status === "failed" && st.error ? `<span style="color:var(--warn)">${esc(st.error)}</span>` : STAGE_HELP[s]}</div>
+        ${status === "running" ? `<div class="bar sm"><div id="sbar"></div></div>` : ""}</div></li>`;
+    }).join("");
+  };
+  renderStages(p.stages);
   const act = async (path, body) => { $("#err").textContent = ""; try { await api(base + path, { method: "POST", body: body || {} }); } catch (e) { $("#err").textContent = e.message; } };
   $("#go").onclick = () => act("/train");
   $("#retrain").onclick = () => act("/train", { from: "real" });
   $("#stop").onclick = () => act("/stop");
-  $("#rbuild").onclick = () => act("/review/build", { model: $("#rmodel").value });
-  $("#export").onclick = async () => {
-    try { renderFiles(await api(base + "/export", { method: "POST", body: { cutoff: picks.mww, threshold: picks.oww } })); }
-    catch (e) { $("#err").textContent = e.message; }
-  };
 
   let wasRunning = p.job.running;
   es = new EventSource(base + "/events");
-  es.onmessage = async ev => {
+  es.onmessage = ev => {
     const d = JSON.parse(ev.data), log = $("#log");
-    d.off = Object.fromEntries(Object.keys(STAGE_NAMES).map(k => [k, (k.startsWith("mww") && !p.microwakeword.enabled) || (k.startsWith("oww") && !p.openwakeword.enabled)]));
     if (!log) return;
+    d.off = Object.fromEntries(Object.keys(STAGE_NAMES).map(k => [k, off(k)]));
     renderStages(d.stages, d);
     if (d.lines.length) { log.textContent += d.lines.join("\n") + "\n"; log.scrollTop = log.scrollHeight; }
-    $("#go").disabled = $("#retrain").disabled = $("#rbuild").disabled = d.job.running;
+    $("#go").disabled = $("#retrain").disabled = d.job.running;
     $("#stop").disabled = !d.job.running;
     const pr = d.progress, run = Object.entries(d.stages).find(([, s]) => s?.status === "running");
     let pct = null, label = "";
@@ -339,9 +560,7 @@ async function viewProject(name) {
         // a part's progress file holds only its current split: count earlier splits as done
         const order = { positive: ["positive_train", "positive_test"], negative: ["negative_train", "negative_test"] };
         const sizes = { positive_train: p.samples.positive, positive_test: p.samples.positive_test, negative_train: p.samples.negative, negative_test: p.samples.negative_test };
-        const tot = Object.values(sizes).reduce((a, b) => a + b, 0);
-        let done = 0;
-        let work = tot;
+        let done = 0, work = Object.values(sizes).reduce((a, b) => a + b, 0);
         for (const [part, splits] of Object.entries(order)) {
           const x = pr["generate-" + part]; if (!x) continue;
           if (x.time < (d.stages.generate?.started || 0)) {  // left from an earlier run: no work this time
@@ -350,7 +569,7 @@ async function viewProject(name) {
           const i = splits.indexOf(x.split); splits.slice(0, i).forEach(sp => done += sizes[sp]); done += x.done;
         }
         if (work > 0) pct = 100 * done / work;
-      } else if (s === "mww-train" && pr["mww-train"]) { pct = 100 * pr["mww-train"].done / pr["mww-train"].total; label = `step ${pr["mww-train"].done} of ${pr["mww-train"].total}`; }
+      } else if (s === "mww-train" && pr["mww-train"]) { pct = 100 * pr["mww-train"].done / pr["mww-train"].total; label = `step ${pr["mww-train"].done.toLocaleString()} of ${pr["mww-train"].total.toLocaleString()}`; }
       else if (s === "oww-train" && pr["oww-train"]) {
         const o = pr["oww-train"], n = p.openwakeword.steps;
         pct = 100 * (o.phase === 1 ? o.done : n + (o.phase - 2) * n / 10 + o.done) / (1.2 * n);
@@ -358,19 +577,143 @@ async function viewProject(name) {
       }
       else if (pr.bar && s.endsWith("features")) { pct = pr.bar.percent; label = `${pr.bar.desc} ${pr.bar.done}/${pr.bar.total}`; }
       const t = timeLeft(d, s, pct);
-      $("#prog").innerHTML = `<div class="bar"><div style="width:${pct ?? 3}%"></div></div>
-        <div class="row" style="justify-content:space-between"><div class="hint">${esc(STAGE_NAMES[s])}${label ? ": " + esc(label) : ""}</div>
-        <div class="hint">${t.stage}</div></div>
-        <div class="eta">${t.overall}</div>`;
+      if ($("#sbar")) $("#sbar").style.width = (pct ?? 3) + "%";
+      $("#prog").innerHTML = `<section class="overall" aria-label="Progress"><div style="flex:1 1 320px;display:flex;flex-direction:column;gap:10px">
+          <div class="row" style="justify-content:space-between"><b style="color:#fff">${esc(STAGE_NAMES[s])}${label ? ": " + esc(label) : ""}</b><span class="hint">${t.stage}</span></div>
+          <div class="bar" role="progressbar" aria-label="This step" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${Math.round(pct ?? 0)}"><div style="width:${pct ?? 3}%"></div></div>
+          <div class="hint">Estimated from this machine's measured rates.</div></div>
+        <div class="row" style="gap:28px"><div><div class="big">${t.total}</div><div class="hint">to go</div></div>
+          <div><div class="big">${t.end}</div><div class="hint">done around</div></div></div></section>`;
     } else if (d.job.running) {
-      $("#prog").innerHTML = `<div class="hint" style="margin-top:8px">${esc(d.job.title)} running…</div>`;
+      $("#prog").innerHTML = `<div class="callout info">${icon("spin", 18, 2)}<span>${esc(d.job.title)} running…</span></div>`;
     } else $("#prog").innerHTML = "";
-    if (wasRunning && !d.job.running) {  // a job just finished: refresh results and review count
-      const q = await api(base); p.results = q.results; renderResults(q.results); renderFiles(q.exported);
-      $("#ropen").textContent = `Open review page (${q.review_clips} clips)`;
-    }
+    if (wasRunning && !d.job.running) { hardware(); }
     wasRunning = d.job.running;
   };
+}
+
+async function resultsTab(p, base, steps) {
+  const v = $("#view");
+  const picks = { mww: p.microwakeword.cutoff, oww: p.openwakeword.threshold };
+  v.innerHTML = `${steps("results")}<div><div class="kicker">${esc(p.label)}</div><h1>Compare &amp; pick the cutoff</h1>
+      <p class="sub">The cutoff is the score a sound must reach to count as the wake word. Higher means fewer false triggers and more misses. Click a row to choose it.</p></div>
+    <div id="results" style="display:flex;flex-direction:column;gap:22px"></div><div class="err" id="err"></div>
+    <div class="cols"><section class="panel wide" aria-labelledby="h-rv"><h2 id="h-rv">Review labels</h2>
+        <p class="hint" style="margin:0">Lists your recordings the model disagrees with: usually labelling mistakes. Mark what was really said, then "Retrain from recordings" on the Training page. Held-out clips are never moved.</p>
+        <div class="row"><select id="rmodel" style="width:auto"><option value="mww">microWakeWord</option><option value="oww">openWakeWord</option></select>
+          <button type="button" id="rbuild">Build review list</button>
+          <a id="ropen" href="/p/${enc(p.name)}/review/" target="_blank">Open review page (${p.review_clips} clips)</a></div></section>
+      <aside class="narrow"><div class="summary"><h2>Export</h2><p class="hint" style="margin:0;color:var(--soft)">The chosen cutoffs go into the exported files.</p>
+        <button type="button" class="primary" id="export">${icon("down", 18, 2)}Export with these cutoffs</button><div class="files" id="files"></div>
+        ${p.data_profile === "personal" ? `<p class="hint" style="margin:0">Trained with data that allows non-commercial use only: these models are for personal use. <a href="#/data">Why</a></p>` : ""}</div></aside></div>`;
+  const renderResults = res => {
+    $("#results").innerHTML = ["mww", "oww"].filter(k => res[k]).map(k => {
+      const r = res[k], maxf = Math.max(1, ...r.table.map(row => row.false));
+      return `<section class="panel" aria-labelledby="h-${k}"><div class="row" style="justify-content:space-between"><h2 id="h-${k}">${MODEL_NAMES[k]}</h2>
+          <span class="hint">${r.positives} held-out phrase clips · ${r.negatives} other clips</span></div>
+        <div class="tablebox"><table data-k="${k}"><thead><tr><th scope="col">Cutoff</th>
+          <th scope="col" style="width:42%"><span class="row" style="gap:6px"><span aria-hidden="true" style="width:10px;height:10px;border-radius:2px;background:var(--bar-caught)"></span>Caught</span></th>
+          <th scope="col" style="width:30%"><span class="row" style="gap:6px"><span aria-hidden="true" style="width:10px;height:10px;border-radius:2px;background:var(--bar-false)"></span>False triggers</span></th></tr></thead><tbody>
+        ${r.table.map(row => { const c = 100 * row.caught / Math.max(1, r.positives), on = Math.abs(row.threshold - picks[k]) < 1e-9;
+          return `<tr data-t="${row.threshold}" class="${on ? "pick" : ""}" aria-selected="${on}"><td class="mono">${row.threshold.toFixed(2)}${on ? ` <span class="badge warn" style="padding:2px 8px">chosen</span>` : ""}</td>
+          <td><div class="hbar" title="${row.caught} of ${r.positives} caught"><div class="track"><div style="width:${c.toFixed(1)}%;background:var(--bar-caught)"></div></div><span class="mono">${row.caught}/${r.positives}</span></div></td>
+          <td><div class="hbar" title="${row.false} of ${r.negatives} false"><div class="track"><div style="width:${(100 * row.false / maxf).toFixed(1)}%;background:var(--bar-false)"></div></div><span class="mono">${row.false}/${r.negatives}</span></div></td></tr>`; }).join("")}
+        </tbody></table></div></section>`;
+    }).join("") || `<div class="callout info">${icon("info", 18, 2)}<span>No results yet. They appear after the held-out test, which needs real recordings with a HELDOUT.txt: add them under <a href="#/p/${enc(p.name)}/voices">Real voices</a>. You can still export the trained models.</span></div>`;
+  };
+  const kinds = files => [["microwakeword", "microWakeWord (ESPHome)"], ["openwakeword", "openWakeWord"]].filter(([k]) => files.some(f => f.startsWith(k + "/")));
+  const renderFiles = files => $("#files").innerHTML = files.length ? kinds(files).map(([k, label]) =>
+      `<a class="btn" style="margin-top:8px" href="${base}/zip/${k}" download>${icon("down", 16, 2)}${label} (.zip)</a>`).join("") +
+    `<details class="qa" style="margin-top:10px"><summary>Single files</summary>${files.map(f => `<a href="${base}/files/${f.split("/").map(enc).join("/")}" download>${esc(f)}</a>`).join("")}</details>` : "";
+  renderResults(p.results); renderFiles(p.exported);
+  $("#results").onclick = e => {
+    const tr = e.target.closest("tr[data-t]"); if (!tr) return;
+    picks[tr.closest("table").dataset.k] = +tr.dataset.t; renderResults(p.results);
+  };
+  $("#export").onclick = async () => {
+    $("#err").textContent = "";
+    try { renderFiles(await api(base + "/export", { method: "POST", body: { cutoff: picks.mww, threshold: picks.oww } })); }
+    catch (e) { $("#err").textContent = e.message; }
+  };
+  $("#rbuild").onclick = async () => {
+    $("#err").textContent = "";
+    try { await api(base + "/review/build", { method: "POST", body: { model: $("#rmodel").value } }); $("#ropen").textContent = "Review list is being built (see Training)…"; }
+    catch (e) { $("#err").textContent = e.message; }
+  };
+}
+
+// ---- help, hardware, data & licenses -----------------------------------------------------------
+function viewHelp() {
+  nav("#/help");
+  const qa = (q, a) => `<details class="qa"><summary>${q}</summary><p>${a}</p></details>`;
+  $("#view").innerHTML = `<div><h1>Help</h1><p class="sub">How wakesmith works, what the numbers mean, and what to do when something goes wrong.</p></div>
+    <section class="panel" aria-labelledby="h-gs"><h2 id="h-gs">Getting started</h2><ol class="gs">
+      <li><span>1</span><b>Say what it's for</b>ESPHome, Home Assistant or your own device. That picks the model type and export.</li>
+      <li><span>2</span><b>Type the phrase</b>Two to four syllables. Listen to it, then trim the sound-alikes list.</li>
+      <li><span>3</span><b>Add real voices</b>Folders of your own takes, near and far. Optional, but it is the biggest gain.</li>
+      <li><span>4</span><b>Train, compare, export</b>Pick the cutoff with the fewest misses you can live with.</li></ol></section>
+    <div class="cols"><section class="panel wide" aria-labelledby="h-gl" style="gap:0"><h2 id="h-gl" style="margin-bottom:6px">What the words mean</h2>
+      ${qa("Cutoff", "The score (0 to 1) a sound must reach to count as the wake word. Higher means fewer false triggers and more misses. You choose it on Compare &amp; cutoff; it goes into the exported file.")}
+      ${qa("Held-out recordings", "Real recordings listed in HELDOUT.txt and never trained on. They are the honest test: a model always looks good on what it learned from.")}
+      ${qa("False trigger", "The model fires on something that is not the phrase: TV, talk, a sound-alike. Counted on your not-the-phrase clips.")}
+      ${qa("Sound-alikes", "Words and phrases close to yours (\"commuter\" for \"computer\"). Synthetic voices say them so the model learns to ignore them.")}
+      ${qa("Front end", "How a device turns audio into the features a model sees. ESPHome uses the TFLite Micro front end; some custom devices use another. The export is tagged with the one it was trained on.")}
+      ${qa("microWakeWord and openWakeWord", "The two model types. microWakeWord runs on small ESP32 boards (ESPHome); openWakeWord runs in Home Assistant's Wyoming add-on and on bigger devices.")}</section>
+    <aside class="narrow"><section class="panel" aria-labelledby="h-tr" style="gap:0"><h2 id="h-tr" style="margin-bottom:6px">Something wrong?</h2>
+      ${qa("Training is slow", "Training runs on the CPU; synthetic voices use the GPU if there is one. Close other big programs. The Training page shows the time left from this machine's measured rates.")}
+      ${qa("A stage says stopped", "The training process ended before the stage finished: Stop was pressed, it ran out of memory, or the machine restarted. Press Train to resume from there. microWakeWord needs about 16 GB of RAM.")}
+      ${qa("Intel GPU stopped responding", "A crashed GPU job can leave the driver stuck until a reboot. Reboot, or start wakesmith with --cpu (see Hardware).")}
+      ${qa("Not enough disk", "Each project needs about 23 GB. Delete project folders you no longer need from ~/.local/share/wakesmith/projects/.")}
+      ${qa("It misses the word on my device", "Add real recordings from the room the device is in (near and far), retrain from recordings, and compare cutoffs.")}</section>
+      <section class="panel dark"><a href="https://github.com/HuskerMinion/wakesmith#readme" target="_blank" rel="noopener">Full guide (README)</a>
+        <a href="https://github.com/HuskerMinion/wakesmith/issues" target="_blank" rel="noopener">Report a problem</a>
+        <span class="hint">Include the output of <code class="mono">wakesmith doctor</code>.</span></section></aside></div>`;
+}
+
+async function viewHardware() {
+  nav("#/hardware");
+  const v = $("#view");
+  v.innerHTML = `<div class="head"><div><h1>Hardware</h1><p class="sub">What wakesmith found on this machine and the settings that follow from it.</p></div>
+    <button type="button" id="again">${icon("refresh", 16, 2)}Detect again</button></div><div id="hwbody"><p class="hint">detecting…</p></div>`;
+  const draw = h => {
+    const vendor = (name, col, fg) => `<span class="vendor" style="border-color:${col};color:${fg}">${name}</span>`;
+    const warn = [h.problem, h.disk_warning, h.ram_warning].filter(Boolean);
+    $("#hwbody").innerHTML = `${warn.map(w => `<div class="callout warn" style="margin-bottom:16px">${icon("bang", 18, 2)}<span>${esc(w)}</span></div>`).join("")}
+      <div class="grid">${h.gpus.map(g => `<article class="card"><div class="row" style="justify-content:space-between">${vendor(/intel/i.test(g.name) ? "Intel" : /nvidia|geforce|rtx/i.test(g.name) ? "NVIDIA" : "GPU",
+          /intel/i.test(g.name) ? "#4a90e2" : "#76b900", /intel/i.test(g.name) ? "#a9c9f0" : "#b5e06a")}<span class="badge ok">${icon("check", 14, 2.5)}working</span></div>
+          <h2>${esc(g.device)}</h2><dl class="kv"><dt>Name</dt><dd>${esc(g.name.replace(/\(R\)/g, ""))}</dd><dt>Memory</dt><dd class="mono">${g.memory_gb} GB</dd><dt>Used for</dt><dd>synthetic voices</dd></dl></article>`).join("")}
+        <article class="card"><div class="row" style="justify-content:space-between">${vendor("CPU", "#9aa8bd", "#e6ecf5")}<span class="badge ok">${icon("check", 14, 2.5)}working</span></div>
+          <h2>Processor</h2><dl class="kv"><dt>Cores</dt><dd class="mono">${h.cpus}</dd><dt>RAM</dt><dd class="mono">${Math.round(h.ram_free_gb)} of ${Math.round(h.ram_gb)} GB free</dd>
+          <dt>Used for</dt><dd>${h.gpus.length ? "features and training" : "everything"}</dd></dl></article></div>
+      <div class="cols" style="margin-top:22px"><section class="panel wide" aria-labelledby="h-set"><h2 id="h-set">Settings that follow</h2><dl class="kv">
+        <dt>Synthetic voices</dt><dd>on ${esc(h.tts_devices.join(", "))}, batch ${h.tts_batch}</dd>
+        <dt>Training</dt><dd>on the CPU (microWakeWord's TensorFlow has no Intel GPU support; the openWakeWord head is small)</dd>
+        <dt>Workers</dt><dd>${h.workers}, from free RAM</dd><dt>Disk</dt><dd>${Math.round(h.disk_free_gb)} GB free; about 23 GB per project</dd></dl>
+        <p class="hint" style="margin:0">To ignore the GPU (for one that misbehaves), start wakesmith with <code class="mono">wakesmith serve --cpu</code>.</p></section>
+        <aside class="narrow"><section class="panel" aria-labelledby="h-sup"><h2 id="h-sup">Supported</h2>
+          <div class="row" style="justify-content:space-between">${vendor("Intel Arc", "#4a90e2", "#a9c9f0")}<span>tested</span></div>
+          <div class="row" style="justify-content:space-between">${vendor("NVIDIA", "#76b900", "#b5e06a")}<span style="color:var(--warn)">built, not tested yet</span></div>
+          <div class="row" style="justify-content:space-between">${vendor("AMD", "#ff4a4a", "#ff9c9c")}<span style="color:var(--muted)">CPU only for now</span></div>
+          <div class="row" style="justify-content:space-between">${vendor("CPU", "#9aa8bd", "#e6ecf5")}<span>works, slower voices</span></div></section></aside></div>`;
+  };
+  const load = async () => { try { await hardware(); draw(HW); } catch (e) { $("#hwbody").innerHTML = `<p class="err">${esc(e.message)}</p>`; } };
+  $("#again").onclick = load;
+  if (HW) draw(HW); else load();
+}
+
+async function viewData() {
+  nav("#/data");
+  const v = $("#view");
+  v.innerHTML = `<div><h1>Data &amp; licenses</h1><p class="sub">Everything a model is trained on, and the terms that come with it. wakesmith's own code is Apache-2.0; the models you make carry the terms of their training data.</p></div>
+    <div class="callout warn">${icon("bang", 18, 2)}<span><b>Personal profile (the default):</b> some of this data allows non-commercial use only (CC BY-NC), so the models you make are for personal use. An "open" profile with CC BY / CC0 data only is planned.</span></div>
+    <section class="panel" aria-labelledby="h-ds"><h2 id="h-ds">Downloaded data</h2><div class="tablebox" id="assets"><p class="hint">loading…</p></div></section>`;
+  try {
+    const list = await api("/api/assets");
+    const tag = l => /NC/.test(l) ? "warn" : /no license/i.test(l) ? "idle" : "ok";
+    $("#assets").innerHTML = `<table style="min-width:680px"><thead><tr><th scope="col">Data</th><th scope="col">Used for</th><th scope="col">Size</th><th scope="col">License</th></tr></thead><tbody>
+      ${list.map(a => `<tr><td><b>${esc(a.name)}</b>${a.present ? "" : ` <span class="badge idle">not downloaded</span>`}</td><td style="color:var(--soft)">${esc(a.used_for)}</td>
+        <td class="mono">${a.gb.toFixed(2)} GB</td><td><span class="badge ${tag(a.license)}" style="white-space:normal">${esc(a.license)}</span></td></tr>`).join("")}</tbody></table>`;
+  } catch (e) { $("#assets").innerHTML = `<p class="err">${esc(e.message)}</p>`; }
 }
 
 hardware(); route();

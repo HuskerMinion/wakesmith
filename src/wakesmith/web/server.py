@@ -21,6 +21,7 @@ from ..pipeline import STAGES
 from ..real import VERDICTS, RealData
 
 HERE = Path(__file__).resolve().parent
+STATIC = {"wakesmith-w.png": "image/png", "favicon.png": "image/png"}  # brand mark, from the branding kit
 PRESETS = {  # samples per class: quick look vs. a model worth deploying
     "quick": {
         "positive": 2000,
@@ -66,6 +67,12 @@ def create_app(token: str | None = None) -> FastAPI:
     @app.get("/", response_class=HTMLResponse)
     def index():
         return (HERE / "index.html").read_text()
+
+    @app.get("/static/{name}")
+    def static(name: str):
+        if name not in STATIC:
+            raise HTTPException(404, "not found")
+        return FileResponse(HERE / name, media_type=STATIC[name], headers={"Cache-Control": "max-age=86400"})
 
     @app.get("/p/{name}/review/", response_class=HTMLResponse)
     def review_page(name: str):
@@ -164,15 +171,37 @@ def create_app(token: str | None = None) -> FastAPI:
         out = []
         for f in sorted(home.glob("*/project.yaml")) if home.exists() else []:
             p = projects.load(f.parent)
-            st = p.state()
+            st = jobs.stages(p, STAGES)
             out.append(
                 {
                     "name": p.name,
                     "label": p.display,
                     "job": jobs.status(p),
                     "done": [s for s in STAGES if (st.get(s) or {}).get("status") == "done"],
+                    "failed": [s for s in STAGES if (st.get(s) or {}).get("status") == "failed"],
+                    "models": {"mww": p.microwakeword.enabled, "oww": p.openwakeword.enabled},
+                    "brief": _brief(p),
                 }
             )
+        return out
+
+    def _brief(p: projects.Project) -> dict:
+        """Held-out result at each model's chosen cutoff, for the dashboard cards."""
+        out = {}
+        for kind, cut in (("mww", p.microwakeword.cutoff), ("oww", p.openwakeword.threshold)):
+            f = p.path("results", f"{kind}.json")
+            if not f.exists():
+                continue
+            r = json.loads(f.read_text())
+            row = min(r["table"], key=lambda row: abs(row["threshold"] - cut), default=None)
+            if row:
+                out[kind] = {
+                    "cutoff": row["threshold"],
+                    "caught": row["caught"],
+                    "positives": r["positives"],
+                    "false": row["false"],
+                    "negatives": r["negatives"],
+                }
         return out
 
     @app.post("/api/projects")
@@ -215,6 +244,10 @@ def create_app(token: str | None = None) -> FastAPI:
             for k, v in (body.get(key) or {}).items():
                 if k in ("enabled", "cutoff", "threshold"):
                     setattr(obj, k, type(getattr(obj, k))(v))
+                elif k == "frontend" and key == "microwakeword":
+                    if v not in ("tflm", "zserge"):
+                        raise HTTPException(400, "frontend must be tflm or zserge")
+                    obj.frontend = v
         p.save()
 
     @app.get("/api/projects/{name}")
