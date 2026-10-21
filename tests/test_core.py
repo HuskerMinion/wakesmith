@@ -341,3 +341,30 @@ def test_recorded_takes_keep_speaker_and_extra_columns(proj):
         rows["take_001.wav"]["speaker"] == "voiceB" and rows["take_002.wav"]["speaker"] == "voiceA"
     )
     assert "note" in (d / "labels.csv").read_text().splitlines()[0]
+
+
+def test_runs_are_kept_labelled_and_listed(proj):
+    from wakesmith import runs
+
+    assert runs.snapshot(proj) is None  # nothing exported yet
+    (proj.path("export", "microwakeword")).mkdir(parents=True)
+    (proj.path("export", "microwakeword", "m.tflite")).write_bytes(b"x")
+    proj.path("results").mkdir()
+    table = {
+        "table": [{"threshold": 0.5, "caught": 3, "false": 1}],
+        "positives": 4,
+        "negatives": 10,
+    }
+    proj.path("results", "mww.json").write_text(json.dumps(table))
+    rid = runs.snapshot(proj)
+    runs.set_label(proj, rid, "first try")
+    (only,) = runs.listing(proj)
+    assert only["label"] == "first try" and only["results"]["mww"]["positives"] == 4
+    assert (
+        only["exported"] == ["microwakeword"]
+        and only["settings"]["microwakeword"]["frontend"] == "tflm"
+    )
+    with pytest.raises(ValueError):
+        runs.path(proj, "../..")
+    runs.delete(proj, rid)
+    assert runs.listing(proj) == []
