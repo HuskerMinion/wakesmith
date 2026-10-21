@@ -218,7 +218,8 @@ clean CPU-only virtual machine. Reports from other setups are the most useful th
   interesting.
 - **The install:** anything in the Quick start that didn't work on your distribution.
 
-Please open an [issue](https://github.com/HuskerMinion/wakesmith/issues) with the output of
+Reply in the [call for testers](https://github.com/HuskerMinion/wakesmith/discussions/2), or open an
+[issue](https://github.com/HuskerMinion/wakesmith/issues), with the output of
 `wakesmith doctor`, what you tried, and what happened. For results, the numbers from the Compare
 page (caught and false triggers at your cutoff) and how many real recordings you used are perfect.
 Please don't attach recordings of people who haven't agreed to share them.
