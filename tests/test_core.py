@@ -446,3 +446,15 @@ def test_wsl_nvidia_found_through_nvidia_smi(monkeypatch):
     assert se.choose_accel(se.find_gpus()) == "cuda"
     monkeypatch.setattr(se, "nvidia_smi_gpus", list)
     assert se.choose_accel(se.find_gpus()) == "cpu"
+
+
+def test_new_project_without_sound_alikes_gets_suggestions(tmp_path, monkeypatch):
+    from fastapi.testclient import TestClient
+
+    from wakesmith.web.server import create_app
+
+    monkeypatch.setenv("WAKESMITH_PROJECTS", str(tmp_path / "projects"))
+    c = TestClient(create_app())
+    r = c.post("/api/projects", json={"phrase": "ok husker", "negatives": [], "preset": "quick"})
+    assert r.status_code == 200, r.text
+    assert len(r.json()["negatives"]) >= 2 and "husker" in r.json()["negatives"]

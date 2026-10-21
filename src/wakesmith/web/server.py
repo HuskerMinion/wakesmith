@@ -236,7 +236,9 @@ def create_app(token: str | None = None) -> FastAPI:
             )
         except FileExistsError as e:
             raise HTTPException(409, str(e)) from None
-        _apply(p, body)
+        # negatives are settled above (the given ones, or suggestions when none were given): an
+        # empty list from the form must not wipe the suggestions again
+        _apply(p, {k: v for k, v in body.items() if k != "negatives"})
         return summary(p)
 
     def _apply(p: projects.Project, body: dict) -> None:
