@@ -153,8 +153,10 @@ wakesmith's gap:
      Found and fixed: README lacked the uv install (0b3e8d8); microWakeWord training was killed for
      lack of memory on 10 GB, fine on 16 GB, so doctor/train/UI now warn below 14 GB (306a832);
      a stage cut off by a dead job showed "running" forever, now "failed" with the reason
-     (db98922). Not yet re-run from scratch with those fixes, and the README's GitHub install
-     waits for the push.
+     (db98922). **Re-run 2026-10-21 on a brand-new 16 GB VM** with the merged app (redesigned UI):
+     README install word for word (wheel in place of the git URL), setup --yes, "Just trying it
+     out" > phrase > Hear it > sound-alikes > train, both zips downloaded, 21 min, no errors.
+     The README's GitHub install waits for the push.
 5. **UI redesign** (mockup 2026-10-21: https://claude.ai/artifact/C9hSMZb4Ye2qqHoNciiuJY, five
    linked screens; react to it before it is built).
    - **Look:** the user's branding kit (Wakesmith_Branding_Kit.zip,

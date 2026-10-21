@@ -65,6 +65,8 @@ free disk plus about 20 GB per project while it trains, and Python 3.10-3.12.
 3. **Real voices** (optional, and the biggest gain): record takes here, add folders, or Common Voice.
 4. **Train.** Live progress for every stage, with the time left measured on your machine. A Quick
    test takes about 8 minutes with a GPU and 20 on six CPU cores; a Standard model about an hour.
+
+   ![Training progress](docs/images/training.png)
 5. **Compare and export.** Caught and false triggers at every cutoff, every run side by side, then
    a `.tflite` with its manifest for ESPHome (plus a YAML snippet) and/or an openWakeWord `.tflite`.
 
