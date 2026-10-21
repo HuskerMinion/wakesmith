@@ -82,6 +82,13 @@ def test_trim_ends_at_phrase_and_ignores_chime():
     assert np.abs(t[-int(0.05 * 16000) :]).max() < 0.35  # ends just after the phrase, not the chime
 
 
+def test_trim_short_burst_at_clip_start_returns():
+    # speech from the first frame, shorter than a burst: used to loop forever in _last_burst
+    a = _tone(0.7, 0.0, 0.1)
+    trim_to_phrase(a, ignore_tail_s=0.3)  # returns at all (None is fine: too short to be a phrase)
+    assert trim_to_phrase(_tone(0.7, 0.0, 0.6), ignore_tail_s=0.3) is not None
+
+
 def test_windows_cover_every_position():
     w = windows(np.zeros(4 * 16000, np.float32))
     assert len(w) == 5 and all(len(x) == 32000 for x in w)

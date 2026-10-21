@@ -207,7 +207,7 @@ def _last_burst(on: np.ndarray) -> int | None:
                 gap = 0 if on[j] else gap + 1
             if i - j >= 15:
                 return i
-            i = j
+            i = min(j, i - 1)  # a short burst at frame 0 leaves j == i
         else:
             i -= 1
     return None
