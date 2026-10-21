@@ -127,6 +127,10 @@ wakesmith's gap:
    - **Accept when:** auto-configured correctly on this machine (2 × Arc), and in a CPU-only mode
      (`--cpu`).
    - NVIDIA is implemented but marked untested until someone with a card tries it.
+   - **Status (2026-10-20): passed.** `doctor` finds both Arc cards (TTS on xpu:0 and xpu:1,
+     batch 100, 12 workers). `--cpu` (or `WAKESMITH_CPU=1`) on doctor, train and serve gives
+     TTS on cpu at batch 16 and generated a small project on the CPU. Under 40 GB free disk,
+     doctor, train and the UI warn.
 3. **Web UI + job runner.**
    - **Accept when:** a fresh phrase goes from phrase entry to downloaded model in the browser,
      with progress, on this machine.

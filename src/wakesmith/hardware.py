@@ -6,6 +6,13 @@ import os
 import shutil
 from dataclasses import asdict, dataclass, field
 
+LOW_DISK_GB = 40  # a full run (clips, augmented features, models) needs about this much
+
+
+def forced_cpu() -> bool:
+    """WAKESMITH_CPU=1 (set by --cpu): behave as if there were no GPU."""
+    return os.environ.get("WAKESMITH_CPU", "") not in ("", "0")
+
 
 @dataclass
 class Gpu:
@@ -49,7 +56,7 @@ def detect(gpu: bool = True) -> Hardware:
     """gpu=False: CPU/RAM only, without opening the GPU driver (stages that don't use it)."""
     cpus = os.cpu_count() or 1
     ram, free = _ram_gb("MemTotal"), _ram_gb("MemAvailable")
-    if not gpu:
+    if not gpu or forced_cpu():
         return Hardware("cpu", [], cpus, ram, free)
     import torch
 
@@ -100,6 +107,13 @@ def disk_free_gb(path: str) -> float:
     return round(shutil.disk_usage(path).free / 2**30, 1)
 
 
+def disk_warning(path: str) -> str:
+    free = disk_free_gb(path)
+    if free >= LOW_DISK_GB:
+        return ""
+    return f"only {free:.0f} GB free on the data disk; a full run needs about {LOW_DISK_GB} GB"
+
+
 def detect_safe(timeout: float = 30.0) -> tuple[Hardware, str]:
     """detect() in a child process, so a hung GPU driver can't hang the caller.
 
@@ -109,6 +123,8 @@ def detect_safe(timeout: float = 30.0) -> tuple[Hardware, str]:
     import subprocess
     import sys
 
+    if forced_cpu():
+        return detect(gpu=False), ""
     code = (
         "import json; from dataclasses import asdict; from wakesmith import hardware; "
         "print(json.dumps(asdict(hardware.detect())))"

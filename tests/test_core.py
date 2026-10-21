@@ -181,3 +181,24 @@ def test_device_frontend_matches_zserge_go():
     assert hashlib.sha256(f.tobytes()).hexdigest() == (
         "ac03e26a32b186a4deb0f33a30c1a6906619adcaf9b70f3b22dbe2bb822d7043"
     )
+
+
+def test_cpu_only_mode(monkeypatch):
+    from wakesmith import hardware
+
+    monkeypatch.setenv("WAKESMITH_CPU", "1")
+    hw, problem = hardware.detect_safe()
+    assert (hw.accel, hw.gpus, problem) == ("cpu", [], "")
+    assert hw.tts_devices() == ["cpu"] and hw.tts_batch() == 16 and hw.workers() >= 1
+
+
+def test_disk_warning(monkeypatch):
+    from collections import namedtuple
+
+    from wakesmith import hardware
+
+    usage = namedtuple("usage", "total used free")
+    monkeypatch.setattr(hardware.shutil, "disk_usage", lambda p: usage(0, 0, 10 * 2**30))
+    assert "10 GB free" in hardware.disk_warning("/")
+    monkeypatch.setattr(hardware.shutil, "disk_usage", lambda p: usage(0, 0, 100 * 2**30))
+    assert hardware.disk_warning("/") == ""

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 import typer
@@ -13,11 +14,20 @@ app = typer.Typer(
 )
 
 
+CPU_HELP = "use only the CPU, even if a GPU is found"
+
+
+def _cpu_only(cpu: bool) -> None:
+    if cpu:
+        os.environ["WAKESMITH_CPU"] = "1"  # inherited by worker processes
+
+
 @app.command()
-def doctor() -> None:
+def doctor(cpu: bool = typer.Option(False, "--cpu", help=CPU_HELP)) -> None:
     """Show detected hardware, the settings that follow from it, and downloaded data."""
     from . import assets, hardware
 
+    _cpu_only(cpu)
     hw, problem = hardware.detect_safe()
     if problem:
         typer.echo(f"warning: {problem}")
@@ -32,6 +42,8 @@ def doctor() -> None:
         f"settings: TTS on {', '.join(hw.tts_devices())} (batch {hw.tts_batch()}), "
         f"{hw.workers()} CPU workers"
     )
+    if low := hardware.disk_warning(str(assets.home().parent)):
+        typer.echo(f"warning: {low}")
     typer.echo(f"data in {assets.home()}:")
     for a in assets.ASSETS.values():
         mark = "ok " if a.present() else "-- "
@@ -72,12 +84,14 @@ def train(
     project_: str = typer.Argument(..., metavar="PROJECT"),
     first: str = typer.Option("generate", "--from", help="first stage"),
     last: str = typer.Option("export", "--to", help="last stage"),
+    cpu: bool = typer.Option(False, "--cpu", help=CPU_HELP),
 ) -> None:
     """Run the pipeline (stages: generate real mww-features mww-train oww-features oww-train
     test export). Finished work is reused: generation resumes, `--from real` retrains after your
     recordings or labels change."""
     from . import pipeline, project
 
+    _cpu_only(cpu)
     pipeline.run(project.load(project_), first, last)
 
 
@@ -194,10 +208,12 @@ def review(
 def serve(
     host: str = typer.Option("127.0.0.1", help="0.0.0.0 to use it from other devices on your LAN"),
     port: int = typer.Option(8765),
+    cpu: bool = typer.Option(False, "--cpu", help=CPU_HELP),
 ) -> None:
     """Start the web UI."""
     import secrets
 
+    _cpu_only(cpu)
     import uvicorn
 
     from .web.server import create_app
