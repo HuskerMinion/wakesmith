@@ -147,6 +147,14 @@ wakesmith's gap:
      GPU; that also covers the CPU-only path).
    - **Accept when:** the README alone gets a new machine to a downloaded model, and every step
      that failed or needed a guess is fixed in the code or the README.
+   - **Status (2026-10-21): passed** on an Ubuntu 24.04 LXD VM (6 vCPU, CPU only), wheel built
+     from `app`, UI driven in headless Chromium: phrase, Hear it, sound-alikes, Quick, train,
+     both zips downloaded; about 21 min of work (voices 11, microWakeWord 4.6, openWakeWord 4.5).
+     Found and fixed: README lacked the uv install (0b3e8d8); microWakeWord training was killed for
+     lack of memory on 10 GB, fine on 16 GB, so doctor/train/UI now warn below 14 GB (306a832);
+     a stage cut off by a dead job showed "running" forever, now "failed" with the reason
+     (db98922). Not yet re-run from scratch with those fixes, and the README's GitHub install
+     waits for the push.
 5. **UI redesign** (mockup 2026-10-21: https://claude.ai/artifact/C9hSMZb4Ye2qqHoNciiuJY, five
    linked screens; react to it before it is built).
    - **Look:** the user's branding kit (Wakesmith_Branding_Kit.zip,
