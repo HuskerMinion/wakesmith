@@ -40,6 +40,24 @@ def status(p: Project) -> dict:
     return job
 
 
+STOPPED = (
+    "stopped before it finished: the training process ended (stopped, killed for lack of memory, "
+    "or the machine restarted). See the log; Train resumes from here."
+)
+
+
+def stages(p: Project, names) -> dict:
+    """Stage states for display. A stage still marked running when no job is alive was cut off
+    (out of memory, a reboot, Stop): it shows as failed instead of running forever."""
+    st = p.state()
+    out = {s: st.get(s) for s in names}
+    if not status(p)["running"]:
+        for s, v in out.items():
+            if v and v.get("status") == "running":
+                out[s] = {**v, "status": "failed", "error": STOPPED}
+    return out
+
+
 def running_anywhere() -> Project | None:
     home = projects.projects_home()
     for f in home.glob("*/job.json") if home.exists() else []:

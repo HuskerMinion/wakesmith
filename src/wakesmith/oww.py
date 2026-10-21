@@ -383,7 +383,7 @@ def export_tflite(model, path: Path) -> Path:
 
     layers = [l for l in model.layers if not isinstance(l, tf.keras.layers.InputLayer)]
     weights = {id(v): tf.constant(np.array(v)) for l in layers for v in l.weights}  # taken eagerly
-    const = lambda v: weights[id(v)]  # noqa: E731
+    const = lambda v: weights[id(v)]
 
     @tf.function(input_signature=[tf.TensorSpec([1, N_STEPS, 96], tf.float32)])
     def forward(x):
@@ -404,7 +404,7 @@ def export_tflite(model, path: Path) -> Path:
             elif isinstance(l, tf.keras.layers.ReLU):
                 h = tf.nn.relu(h)
             else:
-                raise ValueError(f"unsupported layer {l.name}")
+                raise TypeError(f"unsupported layer {l.name}")
         return h
 
     conv = tf.lite.TFLiteConverter.from_concrete_functions([forward.get_concrete_function()], model)

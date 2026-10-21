@@ -122,7 +122,6 @@ def create_app(token: str | None = None) -> FastAPI:
 
     # -- projects ----------------------------------------------------------------------------
     def summary(p: projects.Project) -> dict:
-        st = p.state()
         results = {}
         for kind in ("mww", "oww"):
             f = p.path("results", f"{kind}.json")
@@ -143,7 +142,7 @@ def create_app(token: str | None = None) -> FastAPI:
             "microwakeword": vars(p.microwakeword),
             "openwakeword": vars(p.openwakeword),
             "data_profile": p.data_profile,
-            "stages": {s: st.get(s) for s in STAGES},
+            "stages": jobs.stages(p, STAGES),
             "estimates": eta.estimates(p),
             "job": jobs.status(p),
             "results": results,
@@ -269,7 +268,7 @@ def create_app(token: str | None = None) -> FastAPI:
                 "lines": lines[-200:],
                 "progress": jobs.progress(p),
                 "job": jobs.status(p),
-                "stages": {s: p.state().get(s) for s in STAGES},
+                "stages": jobs.stages(p, STAGES),
                 "estimates": est["value"],
                 "now": time.time(),
             }

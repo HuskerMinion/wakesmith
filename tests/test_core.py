@@ -10,7 +10,7 @@ import numpy as np
 import pytest
 import soundfile as sf
 
-from wakesmith import export, project, real
+from wakesmith import export, jobs, project, real
 from wakesmith.real import RealData, trim_to_phrase, windows
 
 needs_espeak = pytest.mark.skipif(shutil.which("espeak-ng") is None, reason="espeak-ng missing")
@@ -249,3 +249,15 @@ def test_eta_learns_this_machines_rate(proj, monkeypatch, tmp_path):
     assert eta.estimates(proj)["mww-train"] == 200.0
     eta.record(proj, "generate", 5.0, {"skipped": "all clips present"})  # skipped: no rate
     assert "generate" not in (tmp_path / "timings.json").read_text()
+
+
+def test_stage_cut_off_by_a_dead_job_shows_failed(proj):
+    proj.path("state.json").write_text(
+        json.dumps({"generate": {"status": "done"}, "mww-train": {"status": "running"}})
+    )
+    proj.path("job.json").write_text(
+        json.dumps({"pid": 2**22 + 12345, "args": [], "title": "t", "started": 0})
+    )
+    st = jobs.stages(proj, ["generate", "mww-train", "test"])
+    assert st["generate"]["status"] == "done" and st["test"] is None
+    assert st["mww-train"]["status"] == "failed" and "memory" in st["mww-train"]["error"]
