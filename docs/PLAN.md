@@ -191,6 +191,12 @@ wakesmith's gap:
      and the front-end tag into the file.
    - **Accept when:** a new user (not us) gets from phrase to a model on a device from the UI
      alone, including real takes and a cutoff choice, and the screens work at phone width.
+   - **Status (2026-10-21): built** on branch `ui-redesign`: brand theme and fonts, sidebar,
+     dashboard, guided new-word flow, delete/cancel, Real voices (in-browser recorder with
+     speakers, folders, Common Voice), Training, Compare (runs side by side), Help, Hardware,
+     Data & licenses; serve --https for the microphone; per-model LICENSE-NOTE. Tested in headless
+     Chromium (fake microphone included) and used for real takes. Left: the "new user" acceptance
+     test, a re-run of the clean-VM install, merge into `app`.
 6. **Release v0.2.**
    - README rewrite with screenshots, licensing page, and the banner.
    - Move the v0.1 recipe docs to a `v0.1` tag and link to it.
@@ -202,7 +208,7 @@ wakesmith's gap:
    - **LICENSE-NOTE.txt per model:** list the actual sources that model was trained on (voices, noise,
      RIRs, negative sets, Common Voice, your recordings) with their licences, not one generic note;
      the family build's NOTICE needed exactly this (2026-10-21).
-   - **Real voices from Common Voice** (being tried on the Computer model, 2026-10-21): for a phrase
+   - **Real voices from Common Voice** (built 2026-10-21, see Milestone 5; Computer trial below): for a phrase
      made of common words, find the takes whose transcript contains it (English: "computer" 1,314
      takes from ~918 speakers, "help" 2,053; "cancel" only 55, two-word wake phrases mostly none),
      cut the word out by forced alignment on the known transcript (torchaudio MMS_FA, no new
