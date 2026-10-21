@@ -137,14 +137,25 @@ def test_project_roundtrip(proj):
         project.create("hey jarvis")
 
 
+def _tiny_tflite() -> bytes:
+    import tensorflow as tf
+
+    m = tf.keras.Sequential([tf.keras.Input((4,)), tf.keras.layers.Dense(1)])
+    return tf.lite.TFLiteConverter.from_keras_model(m).convert()
+
+
 def test_export_manifest(proj, monkeypatch):
     from wakesmith import mww
 
     model = mww.model_path(proj)
     model.parent.mkdir(parents=True)
-    model.write_bytes(b"tflite")
+    model.write_bytes(_tiny_tflite())
     proj.microwakeword.cutoff = 0.93
     files = export.export(proj)
+    exported = proj.path("export", "microwakeword", "hey_jarvis.tflite")
+    assert export.model_frontend(model) is None and export.model_frontend(exported) == "tflm"
+    export.tag_frontend(exported, exported, "zserge")  # re-tagging replaces the tag
+    assert export.model_frontend(exported) == "zserge"
     manifest = json.loads(proj.path("export", "microwakeword", "hey_jarvis.json").read_text())
     assert manifest["type"] == "micro" and manifest["micro"]["probability_cutoff"] == 0.93
     assert manifest["wake_word"] == "Hey Jarvis"

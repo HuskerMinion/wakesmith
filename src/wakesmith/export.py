@@ -9,6 +9,12 @@ from pathlib import Path
 from . import mww
 from .project import Project
 
+# TFLite metadata entry naming the feature frontend the model was trained on, for runtimes that
+# offer more than one (zserge/microwakeword-based devices). It lives in the model file because
+# ESPHome refuses manifests with keys it doesn't know, and Home Assistant only passes the manifest
+# and model on. TFLite Micro ignores metadata.
+FRONTEND_METADATA = "mww_feature_frontend"
+
 ESPHOME_SNIPPET = """\
 # ESPHome: copy {name}.tflite and {name}.json somewhere your ESPHome device config can reach
 # (e.g. next to the YAML, or a web server), then:
@@ -23,7 +29,7 @@ def export(p: Project) -> list[Path]:
     if p.microwakeword.enabled and mww.model_path(p).exists():
         d = p.path("export", "microwakeword")
         d.mkdir(parents=True, exist_ok=True)
-        shutil.copy(mww.model_path(p), d / f"{p.name}.tflite")
+        tag_frontend(mww.model_path(p), d / f"{p.name}.tflite", "tflm")
         manifest = {
             "type": "micro",
             "wake_word": p.display,
@@ -65,3 +71,34 @@ def export(p: Project) -> list[Path]:
         )
         files.append(p.path("export", "LICENSE-NOTE.txt"))
     return files
+
+
+def tag_frontend(src: Path, dst: Path, frontend: str) -> None:
+    """Copy a .tflite model, recording `frontend` in its metadata (replacing an earlier tag)."""
+    from tensorflow.lite.python import schema_py_generated as schema
+    from tensorflow.lite.tools import flatbuffer_utils
+
+    model = flatbuffer_utils.read_model(str(src))
+    buf = schema.BufferT()
+    buf.data = list(frontend.encode())
+    model.buffers.append(buf)
+    entry = schema.MetadataT()
+    entry.name, entry.buffer = FRONTEND_METADATA, len(model.buffers) - 1
+    keep = [
+        m
+        for m in model.metadata or []
+        if m.name not in (FRONTEND_METADATA, FRONTEND_METADATA.encode())
+    ]
+    model.metadata = keep + [entry]
+    flatbuffer_utils.write_model(model, str(dst))
+
+
+def model_frontend(path: Path) -> str | None:
+    """The frontend tag of a .tflite model, or None if it has none."""
+    from tensorflow.lite.tools import flatbuffer_utils
+
+    model = flatbuffer_utils.read_model(str(path))
+    for m in model.metadata or []:
+        if m.name in (FRONTEND_METADATA, FRONTEND_METADATA.encode()):
+            return bytes(model.buffers[m.buffer].data).decode()
+    return None
