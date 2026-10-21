@@ -157,7 +157,10 @@ wakesmith's gap:
      (#1c95c4 caught, #d96500 false) that pass colour-blind and contrast checks on the dark
      surface; every state also has an icon and a word. Stroke icons, no emoji.
    - **Navigation:** a left sidebar (stacks on top on a phone): Wake words, New wake word, Real
-     voices, Training, Compare & cutoff, and below them Hardware and Data & licenses. A new wake
+     voices, Training, Compare & cutoff, and below them Help (getting started, a glossary of the
+     terms the app uses, troubleshooting, links to the README and issues), Hardware (what was found,
+     the settings that follow, a CPU-only switch, support status per vendor) and Data & licenses
+     (data profile, every dataset with its size and licence, optional source keys). A new wake
      word is a 4-step flow: Purpose & phrase, Real voices, Train, Pick & export.
    - **Wake words (dashboard):** one card per project with status (live / trial / ready / needs
      work), caught and false numbers at the chosen cutoff, and the next action; filters; recent
