@@ -203,6 +203,12 @@ wakesmith's gap:
      off Hugging Face in Oct 2025; it is now on the Mozilla Data Collective, which needs an account
      and accepted terms; the trial uses the fsicoli/common_voice_17_0 mirror). Add only if the
      Computer trial shows it helps.
+     **Trial result (2026-10-21, Computer, openWakeWord):** it helps a lot. Same recipe, tested on
+     436 takes from 349 Common Voice speakers held out by speaker: synthetic only 28% caught at
+     0.50; + 795 Common Voice takes from 506 other speakers 76% (64% at 0.70), with the false
+     fires on a real device's clips still near zero (0-2 of 43 wakes). The built-in fwartner model:
+     56% at 0.50, 44% at its device cutoff 0.99. Build it, test set first, training on by default
+     for single common words. Two short-clip bugs it surfaced are fixed (bdbbe72, 343a690).
 
 ## Risks and unknowns
 
