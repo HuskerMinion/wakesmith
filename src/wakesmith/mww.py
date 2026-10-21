@@ -233,19 +233,20 @@ def write_config(p: Project) -> Path:
                 "type": "mmap",
             }
         )
+    phases = 2 if p.microwakeword.finetune_steps else 1
     cfg = {
         "window_step_ms": 10,
         "train_dir": "trained",
         "features": feats,
-        "training_steps": [p.microwakeword.steps],
-        "positive_class_weight": [1],
-        "negative_class_weight": [p.microwakeword.negative_class_weight],
-        "learning_rates": [0.001],
+        "training_steps": [p.microwakeword.steps, p.microwakeword.finetune_steps][:phases],
+        "positive_class_weight": [1] * phases,
+        "negative_class_weight": [p.microwakeword.negative_class_weight] * phases,
+        "learning_rates": [0.001, 0.0002][:phases],
         "batch_size": 128,
-        "time_mask_max_size": [0],
-        "time_mask_count": [0],
-        "freq_mask_max_size": [0],
-        "freq_mask_count": [0],
+        "time_mask_max_size": [0] * phases,
+        "time_mask_count": [0] * phases,
+        "freq_mask_max_size": [0] * phases,
+        "freq_mask_count": [0] * phases,
         "eval_step_interval": EVAL_INTERVAL,
         "clip_duration_ms": 1500,
         "target_minimization": 0.9,

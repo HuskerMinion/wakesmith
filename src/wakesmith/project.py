@@ -52,6 +52,8 @@ class Real:
 class MicroWakeWord:
     enabled: bool = True
     steps: int = 20000
+    # a second phase at a fifth of the learning rate (round 2 of the echod Help words: 30k + 10k)
+    finetune_steps: int = 0
     negative_class_weight: float = 20.0
     # sampling weight of the synthetic sound-alikes (synthetic positives: 2.0); raise it when
     # near-copies of the phrase ("I needed help" for "I need help") still fire

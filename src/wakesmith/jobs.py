@@ -99,7 +99,8 @@ def progress(p: Project) -> dict:
         if m:
             k, mini = m[-1]
             done = (int(k) - 1) * mww.EVAL_INTERVAL + int(mini)
-            out["mww-train"] = {"done": done, "total": p.microwakeword.steps}
+            total = p.microwakeword.steps + p.microwakeword.finetune_steps
+            out["mww-train"] = {"done": done, "total": total}
     olog = p.path("logs", "oww-progress.json")
     if olog.exists():
         try:

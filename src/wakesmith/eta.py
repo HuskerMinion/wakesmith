@@ -42,7 +42,7 @@ def units(p: Project, stage: str) -> float:
     if stage in ("generate", "mww-features", "oww-features"):
         return clips
     if stage == "mww-train":
-        return p.microwakeword.steps
+        return p.microwakeword.steps + p.microwakeword.finetune_steps
     if stage == "oww-train":
         return p.openwakeword.steps * 1.2  # phases 2 and 3 add a tenth each
     if stage in ("real", "test"):
