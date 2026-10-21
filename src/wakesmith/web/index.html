@@ -6,6 +6,14 @@
 <link rel="icon" type="image/png" href="/static/favicon.png">
 <title>wakesmith</title>
 <style>
+  /* Brand fonts, bundled (SIL OFL 1.1: /static/FONTS-LICENSE.txt) */
+  @font-face { font-family: "Montserrat"; font-weight: 600; font-style: normal; font-display: swap; src: url(/static/montserrat-latin-600-normal.woff2) format("woff2"); }
+  @font-face { font-family: "Montserrat"; font-weight: 700; font-style: normal; font-display: swap; src: url(/static/montserrat-latin-700-normal.woff2) format("woff2"); }
+  @font-face { font-family: "Inter"; font-weight: 400; font-style: normal; font-display: swap; src: url(/static/inter-latin-400-normal.woff2) format("woff2"); }
+  @font-face { font-family: "Inter"; font-weight: 500; font-style: normal; font-display: swap; src: url(/static/inter-latin-500-normal.woff2) format("woff2"); }
+  @font-face { font-family: "Inter"; font-weight: 600; font-style: normal; font-display: swap; src: url(/static/inter-latin-600-normal.woff2) format("woff2"); }
+  @font-face { font-family: "JetBrains Mono"; font-weight: 400; font-style: normal; font-display: swap; src: url(/static/jetbrains-mono-latin-400-normal.woff2) format("woff2"); }
+  @font-face { font-family: "JetBrains Mono"; font-weight: 500; font-style: normal; font-display: swap; src: url(/static/jetbrains-mono-latin-500-normal.woff2) format("woff2"); }
   /* Brand kit: Deep Space ground, Neon Cyan accents, Forge Orange primary, Waveform Gold levels. */
   :root {
     --bg: #0f141e; --side: #0a0e15; --panel: #1a2536; --raised: #24324a; --inset: #141c2a;
@@ -223,10 +231,11 @@
 const $ = (s, el = document) => el.querySelector(s);
 const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 const enc = encodeURIComponent;
-const STAGE_NAMES = {"generate":"Synthetic speech","real":"Your recordings","mww-features":"microWakeWord features",
+const STAGE_NAMES = {"generate":"Synthetic speech","real":"Your recordings","commonvoice":"Common Voice","mww-features":"microWakeWord features",
   "mww-train":"microWakeWord training","oww-features":"openWakeWord features","oww-train":"openWakeWord training","test":"Held-out test","export":"Export"};
 const STAGE_HELP = {"generate":"Thousands of synthetic speakers saying the phrase and its sound-alikes.",
   "real":"Your recordings: training takes trimmed, held-out takes set aside.",
+  "commonvoice":"Real volunteer voices: the phrase cut out of Common Voice takes, split by speaker.",
   "mww-features":"Room echo and noise mixed in; audio turned into what the model hears.",
   "mww-train":"Learning from the synthetic and real takes.", "oww-features":"Audio turned into openWakeWord's embeddings.",
   "oww-train":"Training the openWakeWord head.", "test":"Scoring your held-out recordings.", "export":"Writing the model files."};
@@ -317,7 +326,7 @@ function route() {
 window.addEventListener("hashchange", route);
 
 // ---- wake words (dashboard) -------------------------------------------------------------------------
-const MODEL_NAMES = { mww: "microWakeWord", oww: "openWakeWord" };
+const MODEL_NAMES = { mww: "microWakeWord", oww: "openWakeWord", "mww-cv": "microWakeWord · Common Voice speakers", "oww-cv": "openWakeWord · Common Voice speakers" };
 function cardState(p) {
   if (p.job.running) return { key: "run", badge: `<span class="badge info">${icon("spin", 14, 2.5)}Training</span>` };
   if (p.failed.length) return { key: "work", badge: `<span class="badge warn">${icon("bang", 14, 2.5)}Stopped</span>` };
@@ -690,12 +699,39 @@ async function voicesTab(p, base, steps) {
         <input type="text" id="neg" value="${esc(rec.neg.setting || "")}" placeholder="/home/you/recordings/false-triggers"></label>
       <div class="callout info">${icon("info", 18, 2)}<span>Put your newest recordings (the last day or two) in HELDOUT.txt. Clips you haven't listened to belong there too: an unchecked near miss may hold the real phrase.</span></div>
       <div class="row"><button type="button" id="save">Save folders</button><span class="hint" id="saved"></span></div></section>`;
-  const cvPane = () => `<section class="panel"><h2>Mozilla Common Voice</h2><p class="hint" style="margin:0">Real volunteer voices (CC0) for common words: wakesmith finds the takes whose
-      transcript contains your phrase and cuts the word out. Coming in the next update.</p></section>`;
-
+  let cv = null;
+  const cvPane = () => {
+    if (!cv) return `<section class="panel"><h2>Mozilla Common Voice</h2><p class="hint" style="margin:0">Looking up "${esc(p.phrase)}" in Common Voice…</p></section>`;
+    if (cv.error) return `<div class="callout warn">${icon("bang", 18, 2)}<span>${esc(cv.error)}</span></div>`;
+    if (!cv.present) return `<section class="panel"><h2>Mozilla Common Voice</h2>
+      <p style="margin:0;color:var(--soft)">Real volunteer voices reading sentences aloud (CC0, free to use). For a phrase made of common words, wakesmith finds the takes that contain it and cuts it out.</p>
+      <div class="callout info">${icon("info", 18, 2)}<span>Common Voice isn't on this machine yet. It is about 47 GB: on the machine wakesmith runs on, run <code class="mono">wakesmith commonvoice-download</code>, then come back here. (Looked in <code class="mono">${esc(cv.dataset)}</code>.)</span></div></section>`;
+    const few = cv.takes < 50, st = cv.settings;
+    return `<section class="panel"><h2>Mozilla Common Voice</h2>
+      <div class="row" style="gap:28px"><div><div class="mono" style="font-size:32px">${cv.takes.toLocaleString()}</div><div class="hint">takes with "${esc(p.phrase)}"</div></div>
+        <div><div class="mono" style="font-size:32px">${cv.speakers.toLocaleString()}</div><div class="hint">different speakers</div></div>
+        <div><div class="mono" style="font-size:32px">CC0</div><div class="hint">free to use, no conditions</div></div></div>
+      ${few ? `<div class="callout warn">${icon("bang", 18, 2)}<span>That's too few to tell you much: Common Voice helps most for single common words. Phrases like "hey jarvis" are rarely in it.</span></div>` : ""}
+      <label style="display:flex;gap:12px;align-items:flex-start;min-height:44px;cursor:pointer"><input type="checkbox" id="cvon" ${st.enabled ? "checked" : ""} ${cv.takes ? "" : "disabled"} style="width:22px;height:22px;margin:2px 0 0;accent-color:var(--orange)">
+        <span><b>Use as a test set</b><br><span class="hint">${Math.round(st.test_share * 100)}% of the speakers are kept aside and never trained on: the honest check on real strangers. Results show as "Common Voice speakers" on Compare.</span></span></label>
+      <label style="display:flex;gap:12px;align-items:flex-start;min-height:44px;cursor:pointer"><input type="checkbox" id="cvtrain" ${st.train ? "checked" : ""} ${st.enabled ? "" : "disabled"} style="width:22px;height:22px;margin:2px 0 0;accent-color:var(--orange)">
+        <span><b>Also train on the other speakers</b><br><span class="hint">Up to ${st.max_train.toLocaleString()} takes. For "computer" this took real-voice recall from 28% to 76%.</span></span></label>
+      <p class="hint" style="margin:0">${cv.extracted ? "The phrase is already cut out of the takes, so training adds a few seconds." : "The next training run cuts the phrase out of the takes: one pass over the audio, about 20 minutes the first time, then it's kept."}
+        The alignment model wakesmith uses for cutting (MMS) is CC BY-NC 4.0, like the personal data profile.</p><span class="hint" id="cvsaved"></span></section>`;
+  };
+  const loadCv = async () => { try { cv = await api(base + "/commonvoice"); } catch (e) { cv = { error: e.message }; } if (tab === "cv") draw(); };
+  const saveCv = async () => {
+    err();
+    try { const r = await api(base, { method: "PUT", body: { commonvoice: { enabled: $("#cvon").checked, train: $("#cvon").checked && $("#cvtrain").checked } } });
+      cv.settings = r.commonvoice; p.commonvoice = r.commonvoice; draw(); $("#cvsaved").textContent = "saved: takes effect on the next training run"; }
+    catch (e) { err(e.message); }
+  };
   const draw = () => {
     tabs(); sofar();
     $("#pane").innerHTML = tab === "rec" ? recPane() : tab === "folders" ? foldersPane() : cvPane();
+    if (tab === "cv" && !cv) loadCv();
+    if ($("#cvon")) $("#cvon").onchange = saveCv;
+    if ($("#cvtrain")) $("#cvtrain").onchange = saveCv;
     if (tab === "rec" && $("#takes")) { drawTakes(); meter(0); }
     if ($("#mic")) $("#mic").onclick = () => take("pos");
     if ($("#room")) $("#room").onclick = () => take("neg");
@@ -727,7 +763,7 @@ async function voicesTab(p, base, steps) {
 
 function trainTab(p, base, steps) {
   const v = $("#view");
-  const off = k => (k.startsWith("mww") && !p.microwakeword.enabled) || (k.startsWith("oww") && !p.openwakeword.enabled);
+  const off = k => (k.startsWith("mww") && !p.microwakeword.enabled) || (k.startsWith("oww") && !p.openwakeword.enabled) || (k === "commonvoice" && !p.commonvoice?.enabled);
   v.innerHTML = `${steps("train")}<div class="head"><div><div class="kicker">${esc(p.label)}</div><h1>Training</h1></div>
       <div class="row"><button type="button" class="primary" id="go">Train</button>
         <button type="button" id="retrain" title="After changing recordings or review verdicts: reuses the synthetic clips">Retrain from recordings</button>
@@ -834,14 +870,14 @@ async function resultsTab(p, base, steps) {
         <button type="button" class="primary" id="export">${icon("down", 18, 2)}Export with these cutoffs</button><div class="files" id="files"></div>
         ${p.data_profile === "personal" ? `<p class="hint" style="margin:0">Trained with data that allows non-commercial use only: these models are for personal use. <a href="#/data">Why</a></p>` : ""}</div></aside></div>`;
   const renderResults = res => {
-    $("#results").innerHTML = ["mww", "oww"].filter(k => res[k]).map(k => {
-      const r = res[k], maxf = Math.max(1, ...r.table.map(row => row.false));
+    $("#results").innerHTML = ["mww", "mww-cv", "oww", "oww-cv"].filter(k => res[k]).map(k => {
+      const r = res[k], maxf = Math.max(1, ...r.table.map(row => row.false)), base = k.split("-")[0];
       return `<section class="panel" aria-labelledby="h-${k}"><div class="row" style="justify-content:space-between"><h2 id="h-${k}">${MODEL_NAMES[k]}</h2>
-          <span class="hint">${r.positives} held-out phrase clips · ${r.negatives} other clips</span></div>
+          <span class="hint">${k.endsWith("-cv") ? `${r.positives} takes from Common Voice speakers it never trained on` : `${r.positives} held-out phrase clips`} · ${r.negatives} other clips</span></div>
         <div class="tablebox"><table data-k="${k}"><thead><tr><th scope="col">Cutoff</th>
           <th scope="col" style="width:42%"><span class="row" style="gap:6px"><span aria-hidden="true" style="width:10px;height:10px;border-radius:2px;background:var(--bar-caught)"></span>Caught</span></th>
           <th scope="col" style="width:30%"><span class="row" style="gap:6px"><span aria-hidden="true" style="width:10px;height:10px;border-radius:2px;background:var(--bar-false)"></span>False triggers</span></th></tr></thead><tbody>
-        ${r.table.map(row => { const c = 100 * row.caught / Math.max(1, r.positives), on = Math.abs(row.threshold - picks[k]) < 1e-9;
+        ${r.table.map(row => { const c = 100 * row.caught / Math.max(1, r.positives), on = Math.abs(row.threshold - picks[base]) < 1e-9;
           return `<tr data-t="${row.threshold}" class="${on ? "pick" : ""}" aria-selected="${on}"><td class="mono">${row.threshold.toFixed(2)}${on ? ` <span class="badge warn" style="padding:2px 8px">chosen</span>` : ""}</td>
           <td><div class="hbar" title="${row.caught} of ${r.positives} caught"><div class="track"><div style="width:${c.toFixed(1)}%;background:var(--bar-caught)"></div></div><span class="mono">${row.caught}/${r.positives}</span></div></td>
           <td><div class="hbar" title="${row.false} of ${r.negatives} false"><div class="track"><div style="width:${(100 * row.false / maxf).toFixed(1)}%;background:var(--bar-false)"></div></div><span class="mono">${row.false}/${r.negatives}</span></div></td></tr>`; }).join("")}
@@ -863,15 +899,15 @@ async function resultsTab(p, base, steps) {
     const box = $("#runs");
     if (!runs.length) { box.hidden = true; return; }
     box.hidden = false;
-    const kinds = ["mww", "oww"].filter(k => runs.some(r => r.results[k]));
+    const kinds = ["mww", "mww-cv", "oww", "oww-cv"].filter(k => runs.some(r => r.results[k]));
     if (!kinds.includes(model)) model = kinds[0];
     const cuts = [...new Set(runs.flatMap(r => r.results[model]?.table.map(x => x.threshold) || []))].sort((a, b) => a - b);
-    if (cut == null || !cuts.includes(cut)) cut = cuts.includes(picks[model]) ? picks[model] : cuts[Math.floor(cuts.length / 2)];
+    if (cut == null || !cuts.includes(cut)) cut = cuts.includes(picks[model.split("-")[0]]) ? picks[model.split("-")[0]] : cuts[Math.floor(cuts.length / 2)];
     const shown = runs.filter(r => pick.has(r.id) && r.results[model]);
     const maxf = Math.max(1, ...shown.map(r => atCut(r, model)?.false || 0));
     const sameTest = new Set(shown.map(r => `${r.results[model].positives}/${r.results[model].negatives}`)).size <= 1;
     box.innerHTML = `<div class="row" style="justify-content:space-between"><h2 id="h-runs">Runs</h2>
-        <div class="row">${kinds.length > 1 ? `<div class="seg" role="group" aria-label="Model">${kinds.map(k => `<button type="button" data-model="${k}" aria-selected="${k === model}">${MODEL_NAMES[k]}</button>`).join("")}</div>` : ""}
+        <div class="row">${kinds.length > 1 ? `<div class="seg" role="group" aria-label="Model">${kinds.map(k => `<button type="button" data-model="${k}" aria-selected="${k === model}">${MODEL_NAMES[k].replace("Common Voice speakers", "CV")}</button>`).join("")}</div>` : ""}
         <label class="f" style="flex-direction:row;align-items:center;gap:8px">Cutoff <select id="rcut" style="width:auto">${cuts.map(c => `<option value="${c}" ${c === cut ? "selected" : ""}>${c.toFixed(2)}</option>`).join("")}</select></label></div></div>
       ${sameTest ? "" : `<div class="callout warn">${icon("bang", 18, 2)}<span>These runs were tested on different held-out recordings, so their numbers aren't directly comparable.</span></div>`}
       <div class="tablebox"><table><thead><tr><th scope="col">Compare</th><th scope="col">Run</th>
@@ -903,7 +939,7 @@ async function resultsTab(p, base, steps) {
   loadRuns().catch(e => $("#err").textContent = e.message);
   $("#results").onclick = e => {
     const tr = e.target.closest("tr[data-t]"); if (!tr) return;
-    picks[tr.closest("table").dataset.k] = +tr.dataset.t; renderResults(p.results);
+    picks[tr.closest("table").dataset.k.split("-")[0]] = +tr.dataset.t; renderResults(p.results);
   };
   $("#export").onclick = async () => {
     $("#err").textContent = "";

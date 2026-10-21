@@ -15,7 +15,7 @@ from pathlib import Path
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Response, StreamingResponse
 
-from .. import assets, eta, evaluate, hardware, jobs, phrases, recordings, review, runs
+from .. import assets, commonvoice, eta, evaluate, hardware, jobs, phrases, recordings, review, runs
 from .. import project as projects
 from ..pipeline import STAGES
 from ..real import VERDICTS, RealData
@@ -25,6 +25,16 @@ STATIC = {
     "wakesmith-w.png": "image/png",
     "favicon.png": "image/png",
 }  # brand mark, from the branding kit
+STATIC |= {  # the brand fonts, Latin subsets (SIL OFL 1.1, see FONTS-LICENSE.txt)
+    f"{fam}-latin-{w}-normal.woff2": "font/woff2"
+    for fam, weights in (
+        ("montserrat", (600, 700)),
+        ("inter", (400, 500, 600)),
+        ("jetbrains-mono", (400, 500)),
+    )
+    for w in weights
+}
+STATIC["FONTS-LICENSE.txt"] = "text/plain; charset=utf-8"
 PRESETS = {  # samples per class: quick look vs. a model worth deploying
     "quick": {
         "positive": 2000,
@@ -136,7 +146,7 @@ def create_app(token: str | None = None) -> FastAPI:
     # -- projects ----------------------------------------------------------------------------
     def summary(p: projects.Project) -> dict:
         results = {}
-        for kind in ("mww", "oww"):
+        for kind in ("mww", "oww", "mww-cv", "oww-cv"):
             f = p.path("results", f"{kind}.json")
             if f.exists():
                 r = json.loads(f.read_text())
@@ -154,6 +164,7 @@ def create_app(token: str | None = None) -> FastAPI:
             "samples": vars(p.samples),
             "microwakeword": vars(p.microwakeword),
             "openwakeword": vars(p.openwakeword),
+            "commonvoice": vars(p.commonvoice),
             "data_profile": p.data_profile,
             "stages": jobs.stages(p, STAGES),
             "estimates": eta.estimates(p),
@@ -245,6 +256,12 @@ def create_app(token: str | None = None) -> FastAPI:
             for k in ("positive", "negative", "positive_test", "negative_test"):
                 setattr(p.samples, k, preset[k])
             p.microwakeword.steps, p.openwakeword.steps = preset["mww_steps"], preset["oww_steps"]
+        cv = body.get("commonvoice") or {}
+        for k in ("enabled", "train"):
+            if k in cv:
+                setattr(p.commonvoice, k, bool(cv[k]))
+        if "dataset" in cv:
+            p.commonvoice.dataset = str(cv["dataset"] or "").strip()
         for key, obj in (("microwakeword", p.microwakeword), ("openwakeword", p.openwakeword)):
             for k, v in (body.get(key) or {}).items():
                 if k in ("enabled", "cutoff", "threshold"):
@@ -472,6 +489,22 @@ def create_app(token: str | None = None) -> FastAPI:
     def download_zip(name: str, kind: str):
         p = proj(name)
         return _zip(p, p.path("export"), kind, f"{p.name}-{kind}.zip")
+
+    # -- Mozilla Common Voice ---------------------------------------------------------------------
+    @app.get("/api/projects/{name}/commonvoice")
+    def cv_status(name: str):
+        """Is the dataset here, and how many takes and speakers have the phrase (a few seconds the
+        first time for a phrase: it reads the transcripts)."""
+        p = proj(name)
+        ds = commonvoice.dataset(p)
+        out = {
+            "dataset": str(ds),
+            "present": commonvoice.present(ds),
+            "settings": vars(p.commonvoice),
+        }
+        if out["present"]:
+            out.update(commonvoice.count(ds, p.phrase))
+        return out
 
     # -- past runs ------------------------------------------------------------------------------
     @app.get("/api/projects/{name}/runs")

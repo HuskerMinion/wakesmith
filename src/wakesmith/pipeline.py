@@ -18,13 +18,14 @@ import traceback
 from collections.abc import Callable
 from datetime import datetime
 
-from . import eta, evaluate, export, hardware, mww, oww, runs, synth
+from . import commonvoice, eta, evaluate, export, hardware, mww, oww, runs, synth
 from .project import Project
 from .real import RealData
 
 STAGES = [
     "generate",
     "real",
+    "commonvoice",
     "mww-features",
     "mww-train",
     "oww-features",
@@ -39,6 +40,8 @@ def enabled(p: Project, stage: str) -> bool:
         return p.microwakeword.enabled
     if stage.startswith("oww"):
         return p.openwakeword.enabled
+    if stage == "commonvoice":
+        return p.commonvoice.enabled
     return True
 
 
@@ -105,6 +108,8 @@ def _run_stage(p: Project, stage: str, hw: hardware.Hardware, say) -> dict | Non
     if stage == "real":
         real = RealData(p)
         return real.prepare() if real else {"skipped": "no real recordings"}
+    if stage == "commonvoice":
+        return commonvoice.prepare(p, log=say)
     if stage == "mww-features":
         mww.build_features(p, hw.workers(), log=say)
         return None
@@ -118,14 +123,20 @@ def _run_stage(p: Project, stage: str, hw: hardware.Hardware, say) -> dict | Non
         oww.train(p, log=say)
         return None
     if stage == "test":
-        if not RealData(p):
+        cv_test = p.path("commonvoice", "test")
+        has_cv = p.commonvoice.enabled and any(cv_test.glob("*.wav"))
+        if not RealData(p) and not has_cv:
             return {"skipped": "no held-out recordings"}
         out = {}
         for kind, on in (("mww", p.microwakeword.enabled), ("oww", p.openwakeword.enabled)):
-            if on:
+            if on and RealData(p):
                 r = evaluate.score(p, kind)
                 say(evaluate.format_table(r))
                 out[kind] = r["table"]
+            if on and has_cv:
+                r = evaluate.score(p, kind, positives=cv_test, tag="cv")
+                say("Common Voice speakers (never trained on): " + evaluate.format_table(r))
+                out[f"{kind}-cv"] = r["table"]
         return {"results": "results/*.json"} if out else None
     if stage == "export":
         return {"files": [str(f) for f in export.export(p)]}

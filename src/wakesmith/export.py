@@ -63,12 +63,8 @@ def export(p: Project) -> list[Path]:
         }
         (d / f"{p.name}.json").write_text(json.dumps(manifest, indent=2))
         files += [d / f"{p.name}.tflite", d / f"{p.name}.json"]
-    if p.data_profile == "personal" and files:
-        (p.path("export", "LICENSE-NOTE.txt")).write_text(
-            "These models were trained with datasets that allow non-commercial use only\n"
-            "(microWakeWord negative sets: CC BY-NC 4.0; openWakeWord ACAV100M features:\n"
-            "CC BY-NC-SA 4.0). Use them for personal, non-commercial purposes.\n"
-        )
+    if files:
+        p.path("export", "LICENSE-NOTE.txt").write_text(license_note(p))
         files.append(p.path("export", "LICENSE-NOTE.txt"))
     return files
 
@@ -102,3 +98,64 @@ def model_frontend(path: Path) -> str | None:
         if m.name in (FRONTEND_METADATA, FRONTEND_METADATA.encode()):
             return bytes(model.buffers[m.buffer].data).decode()
     return None
+
+
+def license_note(p: Project) -> str:
+    """What this project's models were trained on, with each source's license."""
+    from . import assets
+
+    a = assets.ASSETS
+    line = lambda name, what: f"- {what}: {a[name].license}"
+    out = [f"{p.display}: training data and licenses", ""]
+    out.append("Used by every model here:")
+    out.append(line("tts-libritts-high", "synthetic speech, Piper voice en_US-libritts-high"))
+    out.append(
+        line("tts-libritts-r-medium", "synthetic speech, Piper voice en_US-libritts_r-medium")
+    )
+    out.append(line("musan-noise", "background noise (MUSAN)"))
+    out.append(line("mit-rirs", "room reverb (MIT impulse responses)"))
+    nc = False
+    if p.microwakeword.enabled:
+        out += [
+            "",
+            "microWakeWord model:",
+            line(
+                "mww-speech",
+                "negative examples (microWakeWord speech, dinner party, no-speech sets)",
+            ),
+        ]
+        nc = True
+    if p.openwakeword.enabled:
+        out += [
+            "",
+            "openWakeWord model:",
+            line("oww-acav-features", "negative examples (ACAV100M features)"),
+            line("oww-validation-features", "false-trigger rate estimate"),
+            line("oww-melspectrogram", "frontend"),
+        ]
+        nc = True
+    real = []
+    if p.real.positives or p.real.negatives:
+        real.append("- your own recordings (not distributed with the model)")
+    if p.commonvoice.enabled:
+        use = "training and testing" if p.commonvoice.train else "testing only"
+        real.append(
+            f"- Mozilla Common Voice 17.0 English, {use}: CC0; cut with the MMS aligner "
+            "(torchaudio, weights CC BY-NC 4.0)"
+        )
+        nc = True
+    if real:
+        out += ["", "Real voices:"] + real
+    cmu = (
+        "Sound-alike phrases were chosen with the CMU Pronouncing Dictionary "
+        f"({a['cmudict'].license}); it is not part of the model."
+    )
+    out += ["", cmu]
+    out += [
+        "",
+        "Non-commercial: some of this data allows non-commercial use only (CC BY-NC / "
+        "BY-NC-SA), so use these models for personal, non-commercial purposes."
+        if nc
+        else "Commercial use: none of the data above carries a non-commercial term.",
+    ]
+    return "\n".join(out) + "\n"

@@ -46,14 +46,25 @@ def mww_scorer(tflite: Path, window: int = 5, frontend: str = "tflm") -> Callabl
     return peak
 
 
-def score(p: Project, kind: str, model: Path | None = None, frontend: str | None = None) -> dict:
+def score(
+    p: Project,
+    kind: str,
+    model: Path | None = None,
+    frontend: str | None = None,
+    positives: Path | None = None,
+    tag: str = "",
+) -> dict:
+    """positives: a folder of positive clips instead of the held-out recordings (e.g. Common Voice
+    speakers), saved as results/<kind>-<tag>.json."""
     project_frontend = p.microwakeword.frontend
     frontend = (frontend or project_frontend) if kind == "mww" else None
     if kind == "mww":
         peak = mww_scorer(model or mww.model_path(p), frontend=frontend)
     else:
         peak = oww.Scorer(model or p.path("oww", "model", "model.tflite")).peak
-    if frontend == "zserge":
+    if positives is not None:
+        pos = {f.name: peak(f) for f in sorted(positives.glob("*.wav"))}
+    elif frontend == "zserge":
         real = RealData(p)
         pos = {flat_name("pos", f): peak(real.file("pos", f)) for f in real.heldout("pos")}
     else:
@@ -78,6 +89,7 @@ def score(p: Project, kind: str, model: Path | None = None, frontend: str | None
         "neg": neg,
     }
     suffix = f"-{frontend}" if frontend and frontend != project_frontend else ""
+    suffix += f"-{tag}" if tag else ""
     out = p.path("results", f"{kind}{suffix}.json")
     out.parent.mkdir(exist_ok=True)
     out.write_text(json.dumps(result, indent=1))

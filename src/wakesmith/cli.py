@@ -206,6 +206,28 @@ def review(
     )
 
 
+@app.command("commonvoice-count")
+def commonvoice_count(phrase: str) -> None:
+    """How many Common Voice takes and speakers say PHRASE (needs the dataset)."""
+    from . import commonvoice
+
+    ds = commonvoice.dataset()
+    if not commonvoice.present(ds):
+        raise typer.Exit(f"no Common Voice at {ds}: run `wakesmith commonvoice-download` first")
+    c = commonvoice.count(ds, phrase)
+    typer.echo(
+        f"{phrase!r}: {c['takes']} takes from {c['speakers']} speakers in Common Voice 17.0 English"
+    )
+
+
+@app.command("commonvoice-download")
+def commonvoice_download() -> None:
+    """Download Mozilla Common Voice 17.0 English (CC0, about 47 GB) for real-voice tests."""
+    from . import commonvoice
+
+    typer.echo(f"done: {commonvoice.download(typer.echo)}")
+
+
 def _ui_token(secrets) -> str:
     """The LAN access token, kept between restarts so the printed link stays the same
     (delete the file to get a new one)."""

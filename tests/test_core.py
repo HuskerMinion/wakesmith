@@ -368,3 +368,69 @@ def test_runs_are_kept_labelled_and_listed(proj):
         runs.path(proj, "../..")
     runs.delete(proj, rid)
     assert runs.listing(proj) == []
+
+
+def _mms_cached() -> bool:
+    from pathlib import Path as P
+
+    return any((P.home() / ".cache/torch/hub/checkpoints").glob("model.pt"))
+
+
+@pytest.mark.skipif(not _mms_cached(), reason="MMS aligner weights not downloaded")
+def test_commonvoice_cuts_split_by_speaker(proj, tmp_path, monkeypatch):
+    import io
+    import tarfile
+
+    from wakesmith import assets, commonvoice
+
+    monkeypatch.setenv("WAKESMITH_HOME", str(tmp_path / "data"))
+    ds = tmp_path / "cv"
+    (ds / "transcript/en").mkdir(parents=True)
+    (ds / "audio/en/train").mkdir(parents=True)
+    head = "client_id\tpath\tsentence_id\tsentence\tsentence_domain\tup_votes\tdown_votes\tage\tgender\taccents\tvariant\tlocale\tsegment\n"
+    rows = [
+        ("spk1", "a.mp3", "Hey jarvis, are you there?"),
+        ("spk2", "b.mp3", "Say hey jarvis now."),
+        ("spk3", "c.mp3", "Nothing here."),
+    ]
+    (ds / "transcript/en/train.tsv").write_text(
+        head + "".join(f"{c}\t{p}\tx\t{s}\t\t1\t0\t\t\t\t\ten\t\n" for c, p, s in rows)
+    )
+    for s in ("dev", "test"):
+        (ds / "transcript/en" / f"{s}.tsv").write_text(head)
+    with tarfile.open(ds / "audio/en/train/en_train_0.tar", "w") as tf:
+        for _, name, _ in rows:
+            data = _wav(2.0)
+            ti = tarfile.TarInfo(f"en_train_0/{name}")
+            ti.size = len(data)
+            tf.addfile(ti, io.BytesIO(data))
+    assert commonvoice.present(ds)
+    assert commonvoice.count(ds, "hey jarvis") == {"takes": 2, "speakers": 2, "extracted": False}
+    home = commonvoice.extract(ds, "hey jarvis", log=lambda m: None)
+    assert sorted(f.name for f in (home / "cuts").glob("*.wav")) == ["a.wav", "b.wav"]
+    assert commonvoice.count(ds, "hey jarvis")["extracted"]
+    proj.commonvoice.dataset, proj.commonvoice.train, proj.commonvoice.test_share = (
+        str(ds),
+        True,
+        0.5,
+    )
+    monkeypatch.setattr(commonvoice, "MIN_ALIGN", -1.0)  # a tone aligns badly; keep it for the test
+    info = commonvoice.prepare(proj, log=lambda m: None)
+    assert info["cv_test"] + info["cv_train"] == 2
+    assert len(list(proj.path("real", "train").glob("cv__*.wav"))) == info["cv_train"]
+    assert assets.home() == tmp_path / "data"
+
+
+def test_license_note_lists_what_the_model_used(proj):
+    proj.openwakeword.enabled = False
+    note = export.license_note(proj)
+    assert (
+        "microWakeWord model" in note
+        and "openWakeWord model" not in note
+        and "Common Voice" not in note
+    )
+    proj.commonvoice.enabled, proj.commonvoice.train = True, True
+    note = export.license_note(proj)
+    assert (
+        "Common Voice 17.0 English, training and testing: CC0" in note and "Non-commercial" in note
+    )

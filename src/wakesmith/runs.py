@@ -81,7 +81,7 @@ def listing(p: Project) -> list[dict]:
     for d in sorted(_dir(p).glob("*/run.json"), reverse=True) if _dir(p).exists() else []:
         run = json.loads(d.read_text())
         res = {}
-        for kind in ("mww", "oww"):
+        for kind in ("mww", "oww", "mww-cv", "oww-cv"):
             f = d.parent / "results" / f"{kind}.json"
             if f.exists():
                 r = json.loads(f.read_text())

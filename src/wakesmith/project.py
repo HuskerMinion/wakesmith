@@ -50,6 +50,15 @@ class Real:
 
 
 @dataclass
+class CommonVoice:
+    enabled: bool = False  # real volunteer voices from Mozilla Common Voice (commonvoice.py)
+    dataset: str = ""  # Common Voice 17.0 English folder; empty: <data>/common_voice_17
+    train: bool = False  # also train on the non-test speakers' takes (test only otherwise)
+    test_share: float = 0.4  # share of speakers kept aside for the "Common Voice speakers" test
+    max_train: int = 1000  # cap on training takes, so real voices don't drown the synthetic set
+
+
+@dataclass
 class MicroWakeWord:
     enabled: bool = True
     steps: int = 20000
@@ -89,6 +98,7 @@ class Project:
     tts_models: list[str] = field(default_factory=lambda: ["libritts-high", "libritts-r-medium"])
     samples: Samples = field(default_factory=Samples)
     real: Real = field(default_factory=Real)
+    commonvoice: CommonVoice = field(default_factory=CommonVoice)
     microwakeword: MicroWakeWord = field(default_factory=MicroWakeWord)
     openwakeword: OpenWakeWord = field(default_factory=OpenWakeWord)
     data_profile: str = "personal"

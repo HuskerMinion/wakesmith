@@ -21,6 +21,7 @@ DEFAULT_SECONDS_PER_UNIT = {
     "oww-features": 0.024,
     "oww-train": 0.01,
     "test": 0.03,
+    "commonvoice": 5.0,
     "export": 1.0,
 }
 
