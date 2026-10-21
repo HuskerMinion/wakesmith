@@ -1003,7 +1003,7 @@ async function viewHardware() {
         <p class="hint" style="margin:0">To ignore the GPU (for one that misbehaves), start wakesmith with <code class="mono">wakesmith serve --cpu</code>.</p></section>
         <aside class="narrow"><section class="panel" aria-labelledby="h-sup"><h2 id="h-sup">Supported</h2>
           <div class="row" style="justify-content:space-between">${vendor("Intel Arc", "#4a90e2", "#a9c9f0")}<span>tested</span></div>
-          <div class="row" style="justify-content:space-between">${vendor("NVIDIA", "#76b900", "#b5e06a")}<span style="color:var(--warn)">built, not tested yet</span></div>
+          <div class="row" style="justify-content:space-between">${vendor("NVIDIA", "#76b900", "#b5e06a")}<span>tested on one card (WSL2)</span></div>
           <div class="row" style="justify-content:space-between">${vendor("AMD", "#ff4a4a", "#ff9c9c")}<span style="color:var(--warn)">experimental (ROCm), not tested yet</span></div>
           <div class="row" style="justify-content:space-between">${vendor("CPU", "#9aa8bd", "#e6ecf5")}<span>works, slower voices</span></div></section></aside></div>`;
   };

@@ -44,8 +44,9 @@ Recording in the browser needs the microphone, which browsers only allow on loca
 `--https` (a self-signed certificate; accept the browser's warning once).
 
 **Windows:** use WSL2 (Ubuntu) and run the same commands inside it. NVIDIA's Windows driver gives
-WSL2 CUDA, and wakesmith finds the card through `nvidia-smi` there (this path is new: reports
-welcome). The page then opens in your Windows browser at the printed link.
+WSL2 CUDA, and wakesmith finds the card through `nvidia-smi` there (tested on an RTX 5060 Ti).
+The page then opens in your Windows browser at the printed link. If something else on Windows
+already uses port 8765, add `--port 8780`.
 
 You need about 16 GB of RAM (microWakeWord's training holds its negative sets in memory), 50 GB of
 free disk plus about 20 GB per project while it trains, and Python 3.10-3.12.
@@ -183,12 +184,16 @@ one generation process per GPU, and worker counts from free RAM. `--cpu` on `doc
 | | Synthetic speech | Training | Status |
 |---|---|---|---|
 | Intel Arc (XPU) | GPU, ~50-130 clips/s per card | CPU | tested: 2 × Arc Pro B70 |
-| NVIDIA (CUDA) | GPU | CPU (TensorFlow GPU if it works) | built, **not tested yet: reports welcome** (Linux, or Windows via WSL2) |
+| NVIDIA (CUDA) | GPU, ~80 clips/s on an RTX 5060 Ti | CPU | tested: RTX 5060 Ti + i9-13900K, Windows 11 via WSL2; Linux not yet |
 | AMD (ROCm) | GPU, **experimental**: supported Radeon cards on Linux | CPU | built, **not tested yet: reports welcome** |
 | CPU only | ~3-30 clips/s | CPU | tested: Ubuntu 24.04, 6 cores, 16 GB |
 
-Both trainers run on the CPU: microWakeWord needs TensorFlow 2.18+, which has no Intel GPU support,
-and the openWakeWord head is small. More cores make feature building and training faster. Close
+A full-size (Standard) ESPHome model took about 52 minutes on the RTX 5060 Ti machine: 11 minutes of
+synthetic speech on the GPU, 40 minutes of microWakeWord training on the CPU.
+
+Both trainers run on the CPU: microWakeWord needs TensorFlow 2.18+, which has no Intel GPU support
+and predates NVIDIA's RTX 50 series, and the openWakeWord head is small. wakesmith keeps TensorFlow
+off the GPU after the speech step (`WAKESMITH_TF_GPU=0` lets it try). More cores make feature building and training faster. Close
 other big programs (a local LLM, say) while training: worker counts follow free RAM, and below
 about 16 GB microWakeWord's training runs out of memory (doctor and the page warn).
 
@@ -202,8 +207,8 @@ of hanging. If `wakesmith doctor` says the GPU driver isn't responding, reboot.
 wakesmith is young, and so far it has been used in one household on two Intel Arc cards, plus a
 clean CPU-only virtual machine. Reports from other setups are the most useful thing right now:
 
-- **NVIDIA:** does `wakesmith setup` pick the CUDA build, and does a Quick test finish? On Linux,
-  or on Windows through WSL2.
+- **NVIDIA:** tested on one card (RTX 5060 Ti, Windows 11 + WSL2). Other cards, and NVIDIA on plain
+  Linux, are still untested: does `wakesmith setup` pick the CUDA build, and does a Quick test finish?
 - **AMD Radeon on Linux:** does `wakesmith setup` pick the ROCm build and pass its GPU check?
   If your card isn't supported it should fall back to the CPU by itself; please say which card.
 - **ESPHome devices:** does an exported microWakeWord model load and wake reliably on your
