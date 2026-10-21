@@ -53,6 +53,9 @@ class MicroWakeWord:
     enabled: bool = True
     steps: int = 20000
     negative_class_weight: float = 20.0
+    # sampling weight of the synthetic sound-alikes (synthetic positives: 2.0); raise it when
+    # near-copies of the phrase ("I needed help" for "I need help") still fire
+    adversarial_weight: float = 3.0
     cutoff: float = 0.9  # probability cutoff in the exported manifest (pick from test results)
     # Feature frontend of the devices the model is for, used by `wakesmith test` and review:
     # "tflm" (ESPHome, microWakeWord's own runtime) or "zserge" (zserge/microwakeword, pure Go).

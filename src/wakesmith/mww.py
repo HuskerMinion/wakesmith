@@ -191,7 +191,7 @@ def write_config(p: Project) -> Path:
         },
         {
             "features_dir": "features/adversarial",
-            "sampling_weight": 3.0,
+            "sampling_weight": p.microwakeword.adversarial_weight,
             "penalty_weight": 1.0,
             "truth": False,
             "truncation_strategy": "truncate_start",
