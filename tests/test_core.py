@@ -434,3 +434,15 @@ def test_license_note_lists_what_the_model_used(proj):
     assert (
         "Common Voice 17.0 English, training and testing: CC0" in note and "Non-commercial" in note
     )
+
+
+def test_wsl_nvidia_found_through_nvidia_smi(monkeypatch):
+    from wakesmith import setup_env as se
+
+    monkeypatch.setattr(
+        se, "pci_gpus", lambda: [("other", "0000:00:08.0")]
+    )  # WSL2: no NVIDIA on PCI
+    monkeypatch.setattr(se, "nvidia_smi_gpus", lambda: [("nvidia", "00000000:01:00.0")])
+    assert se.choose_accel(se.find_gpus()) == "cuda"
+    monkeypatch.setattr(se, "nvidia_smi_gpus", list)
+    assert se.choose_accel(se.find_gpus()) == "cpu"

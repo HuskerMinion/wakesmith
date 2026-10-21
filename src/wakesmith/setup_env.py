@@ -41,6 +41,34 @@ def pci_gpus() -> list[tuple[str, str]]:
     return out
 
 
+def nvidia_smi_gpus() -> list[tuple[str, str]]:
+    """NVIDIA GPUs that nvidia-smi sees but sysfs doesn't: under WSL2 the card reaches Linux
+    through /dev/dxg, not the PCI bus. Windows ships nvidia-smi into /usr/lib/wsl/lib."""
+    exe = shutil.which("nvidia-smi") or next(
+        (str(p) for p in (Path("/usr/lib/wsl/lib/nvidia-smi"),) if p.exists()), None
+    )
+    if not exe:
+        return []
+    try:
+        out = subprocess.run(
+            [exe, "--query-gpu=pci.bus_id", "--format=csv,noheader"],
+            capture_output=True,
+            text=True,
+            timeout=20,
+            check=False,
+        ).stdout
+    except (OSError, subprocess.TimeoutExpired):
+        return []
+    return [("nvidia", line.strip()) for line in out.splitlines() if line.strip()]
+
+
+def find_gpus() -> list[tuple[str, str]]:
+    gpus = pci_gpus()
+    if not any(v == "nvidia" for v, _ in gpus):
+        gpus += nvidia_smi_gpus()
+    return gpus
+
+
 def choose_accel(gpus: list[tuple[str, str]]) -> str:
     vendors = {v for v, _ in gpus}
     if "nvidia" in vendors:

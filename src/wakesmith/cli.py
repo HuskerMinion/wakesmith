@@ -159,7 +159,7 @@ def setup(
     if missing:
         typer.echo(f"missing: {', '.join(missing)} (e.g. sudo apt install {' '.join(missing)})")
         raise typer.Exit(1)
-    gpus = se.pci_gpus()
+    gpus = se.find_gpus()
     accel = "cpu" if cpu else se.choose_accel(gpus)
     typer.echo(f"GPUs: {', '.join(f'{v} {a}' for v, a in gpus) or 'none'} -> torch build: {accel}")
     try:
