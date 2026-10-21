@@ -458,3 +458,12 @@ def test_new_project_without_sound_alikes_gets_suggestions(tmp_path, monkeypatch
     r = c.post("/api/projects", json={"phrase": "ok husker", "negatives": [], "preset": "quick"})
     assert r.status_code == 200, r.text
     assert len(r.json()["negatives"]) >= 2 and "husker" in r.json()["negatives"]
+
+
+def test_gpu_build_choice_prefers_nvidia_then_intel_then_amd():
+    from wakesmith import setup_env as se
+
+    assert se.choose_accel([("amd", "a")]) == "rocm"
+    assert se.choose_accel([("intel", "i"), ("amd", "a")]) == "xpu"  # e.g. Arc + a Ryzen's iGPU
+    assert se.choose_accel([("nvidia", "n"), ("amd", "a")]) == "cuda"
+    assert se.torch_sees("cpu")

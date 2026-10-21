@@ -82,7 +82,9 @@ def detect(gpu: bool = True) -> Hardware:
             )
             for i in range(torch.cuda.device_count())
         ]
-        return Hardware("cuda", gpus, cpus, ram, free)
+        # ROCm builds of torch drive AMD cards through the same cuda:N devices
+        accel = "rocm" if getattr(torch.version, "hip", None) else "cuda"
+        return Hardware(accel, gpus, cpus, ram, free)
     if torch.backends.mps.is_available():
         return Hardware("mps", [Gpu("mps", "Apple GPU", ram)], cpus, ram, free)
     return Hardware("cpu", [], cpus, ram, free)

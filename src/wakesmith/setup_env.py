@@ -22,6 +22,8 @@ MWW_COMMIT = "4665173cd35f1cff9a61e06fc427f124766c488e"
 TORCH_INDEX = {
     "xpu": "https://download.pytorch.org/whl/xpu",
     "cuda": "https://download.pytorch.org/whl/cu128",
+    # experimental: Radeon cards ROCm supports, on Linux; others fail the check after install
+    "rocm": "https://download.pytorch.org/whl/rocm7.2",
     "cpu": "https://download.pytorch.org/whl/cpu",
 }
 VENDORS = {"0x8086": "intel", "0x10de": "nvidia", "0x1002": "amd"}
@@ -75,6 +77,8 @@ def choose_accel(gpus: list[tuple[str, str]]) -> str:
         return "cuda"
     if "intel" in vendors:
         return "xpu"  # verified after install: integrated GPUs may not be supported
+    if "amd" in vendors:
+        return "rocm"  # experimental, verified after install (integrated Radeons usually fail)
     return "cpu"
 
 
@@ -101,13 +105,29 @@ def install_torch(accel: str) -> None:
     )
 
 
+# A matrix product on the device, not just "is a device there": an installed build can list a
+# card it has no kernels for (a new GPU generation, an integrated Radeon under ROCm).
+_RUNS = "x = torch.ones(64, 64, device={dev!r}); print(float((x @ x)[0, 0]) == 64.0)"
+_SEES = {
+    "xpu": "import torch; assert torch.xpu.is_available(); " + _RUNS.format(dev="xpu"),
+    "cuda": "import torch; assert torch.cuda.is_available(); " + _RUNS.format(dev="cuda"),
+    "rocm": "import torch; assert torch.cuda.is_available() and torch.version.hip; "
+    + _RUNS.format(dev="cuda"),
+    "cpu": "import torch; print(True)",
+}
+
+
 def torch_sees(accel: str) -> bool:
-    code = {
-        "xpu": "import torch; print(torch.xpu.is_available())",
-        "cuda": "import torch; print(torch.cuda.is_available())",
-        "cpu": "import torch; print(True)",
-    }[accel]
-    r = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, check=False)
+    try:
+        r = subprocess.run(
+            [sys.executable, "-c", _SEES[accel]],
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=300,
+        )
+    except subprocess.TimeoutExpired:  # a stuck driver: treat as not working
+        return False
     return r.stdout.strip().endswith("True")
 
 

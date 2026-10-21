@@ -5,7 +5,7 @@
 Train your own wake word ("hey jarvis", "computer", anything) for **ESPHome / Home Assistant Voice
 devices (microWakeWord)** and **openWakeWord**, from synthetic speech plus real voices: your own
 takes, recorded right in the browser, and volunteers from Mozilla Common Voice. It detects your
-hardware and sets itself up for Intel Arc, NVIDIA or a plain CPU. Everything runs locally, from a
+hardware and sets itself up for Intel Arc, NVIDIA, AMD (experimental) or a plain CPU. Everything runs locally, from a
 web page or the command line.
 
 **Testers wanted.** wakesmith works well in one household with Intel Arc cards. If you have an
@@ -182,7 +182,7 @@ one generation process per GPU, and worker counts from free RAM. `--cpu` on `doc
 |---|---|---|---|
 | Intel Arc (XPU) | GPU, ~50-130 clips/s per card | CPU | tested: 2 × Arc Pro B70 |
 | NVIDIA (CUDA) | GPU | CPU (TensorFlow GPU if it works) | built, **not tested yet: reports welcome** (Linux, or Windows via WSL2) |
-| AMD | CPU | CPU | detected, runs on the CPU for now |
+| AMD (ROCm) | GPU, **experimental**: supported Radeon cards on Linux | CPU | built, **not tested yet: reports welcome** |
 | CPU only | ~3-30 clips/s | CPU | tested: Ubuntu 24.04, 6 cores, 16 GB |
 
 Both trainers run on the CPU: microWakeWord needs TensorFlow 2.18+, which has no Intel GPU support,
@@ -202,6 +202,8 @@ clean CPU-only virtual machine. Reports from other setups are the most useful th
 
 - **NVIDIA:** does `wakesmith setup` pick the CUDA build, and does a Quick test finish? On Linux,
   or on Windows through WSL2.
+- **AMD Radeon on Linux:** does `wakesmith setup` pick the ROCm build and pass its GPU check?
+  If your card isn't supported it should fall back to the CPU by itself; please say which card.
 - **ESPHome devices:** does an exported microWakeWord model load and wake reliably on your
   satellite (and at which cutoff)?
 - **Home Assistant / openWakeWord:** does the exported `.tflite` work in the Wyoming add-on?

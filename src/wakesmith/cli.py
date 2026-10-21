@@ -168,13 +168,15 @@ def setup(
         current = torch.__version__
     except ImportError:
         current = ""
-    tag = {"xpu": "+xpu", "cuda": "+cu", "cpu": "+cpu"}[accel]
+    tag = {"xpu": "+xpu", "cuda": "+cu", "rocm": "+rocm", "cpu": "+cpu"}[accel]
+    if accel == "rocm":
+        typer.echo("AMD GPU support (ROCm) is experimental and untested: reports welcome")
     if tag in current and se.torch_sees(accel):
         typer.echo(f"torch {current} already fits")
     else:
         se.install_torch(accel)
         if not se.torch_sees(accel):
-            typer.echo(f"torch {accel} build doesn't see the GPU; falling back to CPU")
+            typer.echo(f"torch {accel} build can't run on the GPU; falling back to CPU")
             accel = "cpu"
             se.install_torch("cpu")
     typer.echo(f"microWakeWord: {se.install_microwakeword()}")

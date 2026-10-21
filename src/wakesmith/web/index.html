@@ -990,8 +990,8 @@ async function viewHardware() {
     const vendor = (name, col, fg) => `<span class="vendor" style="border-color:${col};color:${fg}">${name}</span>`;
     const warn = [h.problem, h.disk_warning, h.ram_warning].filter(Boolean);
     $("#hwbody").innerHTML = `${warn.map(w => `<div class="callout warn" style="margin-bottom:16px">${icon("bang", 18, 2)}<span>${esc(w)}</span></div>`).join("")}
-      <div class="grid">${h.gpus.map(g => `<article class="card"><div class="row" style="justify-content:space-between">${vendor(/intel/i.test(g.name) ? "Intel" : /nvidia|geforce|rtx/i.test(g.name) ? "NVIDIA" : "GPU",
-          /intel/i.test(g.name) ? "#4a90e2" : "#76b900", /intel/i.test(g.name) ? "#a9c9f0" : "#b5e06a")}<span class="badge ok">${icon("check", 14, 2.5)}working</span></div>
+      <div class="grid">${h.gpus.map(g => `<article class="card"><div class="row" style="justify-content:space-between">${(([n, c, f]) => vendor(n, c, f))(/intel/i.test(g.name) ? ["Intel", "#4a90e2", "#a9c9f0"] : /amd|radeon/i.test(g.name) ? ["AMD", "#ff4a4a", "#ff9c9c"]
+          : /nvidia|geforce|rtx|quadro|tesla/i.test(g.name) ? ["NVIDIA", "#76b900", "#b5e06a"] : ["GPU", "#9aa8bd", "#e6ecf5"])}<span class="badge ok">${icon("check", 14, 2.5)}working</span></div>
           <h2>${esc(g.device)}</h2><dl class="kv"><dt>Name</dt><dd>${esc(g.name.replace(/\(R\)/g, ""))}</dd><dt>Memory</dt><dd class="mono">${g.memory_gb} GB</dd><dt>Used for</dt><dd>synthetic voices</dd></dl></article>`).join("")}
         <article class="card"><div class="row" style="justify-content:space-between">${vendor("CPU", "#9aa8bd", "#e6ecf5")}<span class="badge ok">${icon("check", 14, 2.5)}working</span></div>
           <h2>Processor</h2><dl class="kv"><dt>Cores</dt><dd class="mono">${h.cpus}</dd><dt>RAM</dt><dd class="mono">${Math.round(h.ram_free_gb)} of ${Math.round(h.ram_gb)} GB free</dd>
@@ -1004,7 +1004,7 @@ async function viewHardware() {
         <aside class="narrow"><section class="panel" aria-labelledby="h-sup"><h2 id="h-sup">Supported</h2>
           <div class="row" style="justify-content:space-between">${vendor("Intel Arc", "#4a90e2", "#a9c9f0")}<span>tested</span></div>
           <div class="row" style="justify-content:space-between">${vendor("NVIDIA", "#76b900", "#b5e06a")}<span style="color:var(--warn)">built, not tested yet</span></div>
-          <div class="row" style="justify-content:space-between">${vendor("AMD", "#ff4a4a", "#ff9c9c")}<span style="color:var(--muted)">CPU only for now</span></div>
+          <div class="row" style="justify-content:space-between">${vendor("AMD", "#ff4a4a", "#ff9c9c")}<span style="color:var(--warn)">experimental (ROCm), not tested yet</span></div>
           <div class="row" style="justify-content:space-between">${vendor("CPU", "#9aa8bd", "#e6ecf5")}<span>works, slower voices</span></div></section></aside></div>`;
   };
   const load = async () => { try { await hardware(); draw(HW); } catch (e) { $("#hwbody").innerHTML = `<p class="err">${esc(e.message)}</p>`; } };
