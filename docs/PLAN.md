@@ -191,6 +191,9 @@ wakesmith's gap:
    - Docker images (NVIDIA, Intel).
    - Non-English voices (de/fr/nl generators exist).
    - Recording clips straight from the browser.
+   - **LICENSE-NOTE.txt per model:** list the actual sources that model was trained on (voices, noise,
+     RIRs, negative sets, Common Voice, your recordings) with their licences, not one generic note;
+     the family build's NOTICE needed exactly this (2026-10-21).
    - **Real voices from Common Voice** (being tried on the Computer model, 2026-10-21): for a phrase
      made of common words, find the takes whose transcript contains it (English: "computer" 1,314
      takes from ~918 speakers, "help" 2,053; "cancel" only 55, two-word wake phrases mostly none),
