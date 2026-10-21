@@ -437,6 +437,8 @@ class Scorer:
         a = np.concatenate([np.zeros(SR, np.int16), a[:, 0], np.zeros(SR // 2, np.int16)])
         a = a.astype(np.float32)  # openWakeWord's frontend takes int16-scaled float samples
         win, hop = int(CLIP_S * SR), 1280
+        if len(a) < win:  # a very short take: still one full window
+            a = np.concatenate([np.zeros(win - len(a), np.float32), a])
         clips = [a[e - win : e] for e in range(win, len(a) + 1, hop)]
         feats = self.fe.features(clips)
         return max(self.score(f) for f in feats)
