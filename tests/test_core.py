@@ -467,3 +467,17 @@ def test_gpu_build_choice_prefers_nvidia_then_intel_then_amd():
     assert se.choose_accel([("intel", "i"), ("amd", "a")]) == "xpu"  # e.g. Arc + a Ryzen's iGPU
     assert se.choose_accel([("nvidia", "n"), ("amd", "a")]) == "cuda"
     assert se.torch_sees("cpu")
+
+
+def test_tensorflow_kept_off_the_gpu_after_generation(monkeypatch):
+    import os
+
+    from wakesmith import pipeline
+
+    monkeypatch.delenv("WAKESMITH_TF_GPU", raising=False)
+    monkeypatch.setenv("CUDA_VISIBLE_DEVICES", "0")
+    pipeline._tf_off_gpu()
+    assert os.environ["CUDA_VISIBLE_DEVICES"] == "-1"
+    monkeypatch.setenv("WAKESMITH_TF_GPU", "0")
+    pipeline._tf_off_gpu()
+    assert os.environ["CUDA_VISIBLE_DEVICES"] == "0"

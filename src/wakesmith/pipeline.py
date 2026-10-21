@@ -13,6 +13,7 @@ export        device-ready files in <project>/export
 from __future__ import annotations
 
 import logging
+import os
 import time
 import traceback
 from collections.abc import Callable
@@ -100,7 +101,17 @@ def run(
         say(f"run kept as {rid} (compare it with earlier runs on the Compare page)")
 
 
+def _tf_off_gpu() -> None:
+    """Training runs on the CPU (the tested path; the trainers' own processes already hide the
+    GPU). Hide it from this process too: TensorFlow, loaded here for the features, otherwise takes
+    a CUDA card's whole memory and keeps it while doing nothing on it (RTX 5060 Ti under WSL2:
+    15.8 of 16 GB held at 1% load). WAKESMITH_TF_GPU=<devices> (e.g. 0) lets TensorFlow use them."""
+    os.environ["CUDA_VISIBLE_DEVICES"] = os.environ.get("WAKESMITH_TF_GPU", "-1")
+
+
 def _run_stage(p: Project, stage: str, hw: hardware.Hardware, say) -> dict | None:
+    if stage != "generate":  # only speech generation uses the GPU
+        _tf_off_gpu()
     if stage == "generate":
         if synth.complete(p):
             return {"skipped": "all clips present"}
