@@ -57,6 +57,7 @@ wakesmith's gap:
 | MIT room impulse responses | **no stated license** | personal profile; find a CC replacement for "open" |
 | AudioSet / FMA (upstream notebook's noise) | unclear / partly NC | not used |
 | openWakeWord ACAV100M negative features | **CC BY-NC-SA 4.0** | openWakeWord head, personal profile |
+| Mozilla Common Voice (real volunteer voices, transcribed) | CC0 | both (planned, see Later) |
 | Your recordings | yours | both |
 
 - **Two data profiles:**
@@ -147,6 +148,18 @@ wakesmith's gap:
    - Docker images (NVIDIA, Intel).
    - Non-English voices (de/fr/nl generators exist).
    - Recording clips straight from the browser.
+   - **Real voices from Common Voice** (being tried on the Computer model, 2026-10-21): for a phrase
+     made of common words, find the takes whose transcript contains it (English: "computer" 1,314
+     takes from ~918 speakers, "help" 2,053; "cancel" only 55, two-word wake phrases mostly none),
+     cut the word out by forced alignment on the known transcript (torchaudio MMS_FA, no new
+     dependency), and offer it in the data step: "Common Voice: N takes, M speakers" with *use as
+     test* (an honest recall test on real strangers) and, separately, *also train on them*. Only
+     offered when the count is worth it. Open: the takes are spread over every audio shard (47 GB
+     for English validated), so the app needs a one-time byte-offset index of the tars to fetch
+     only the takes it needs with HTTP range requests; and the source (Mozilla took Common Voice
+     off Hugging Face in Oct 2025; it is now on the Mozilla Data Collective, which needs an account
+     and accepted terms; the trial uses the fsicoli/common_voice_17_0 mirror). Add only if the
+     Computer trial shows it helps.
 
 ## Risks and unknowns
 
