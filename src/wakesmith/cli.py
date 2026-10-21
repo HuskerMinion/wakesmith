@@ -211,6 +211,12 @@ def serve(
     host: str = typer.Option("127.0.0.1", help="0.0.0.0 to use it from other devices on your LAN"),
     port: int = typer.Option(8765),
     cpu: bool = typer.Option(False, "--cpu", help=CPU_HELP),
+    https: bool = typer.Option(
+        False,
+        "--https",
+        help="serve over HTTPS (self-signed): browsers only allow the microphone "
+        "on localhost or HTTPS, so use this to record takes from another device",
+    ),
 ) -> None:
     """Start the web UI."""
     import secrets
@@ -223,8 +229,18 @@ def serve(
     local = host in ("127.0.0.1", "localhost", "::1")
     token = None if local else secrets.token_urlsafe(16)
     shown = "localhost" if local else host
-    url = f"http://{shown}:{port}/" + ("" if local else f"?token={token}")
+    tls = {}
+    if https:
+        from . import tls as tlsmod
+
+        cert, key = tlsmod.certificate()
+        tls = {"ssl_certfile": str(cert), "ssl_keyfile": str(key)}
+    url = f"{'https' if https else 'http'}://{shown}:{port}/" + ("" if local else f"?token={token}")
     typer.echo(f"wakesmith UI: {url}")
     if token:
         typer.echo("anyone with this link (token included) can use the UI: keep it on your LAN")
-    uvicorn.run(create_app(token), host=host, port=port, log_level="warning")
+    if https:
+        typer.echo("self-signed certificate: the browser warns once; accept it to continue")
+    elif not local:
+        typer.echo("recording takes in the browser needs HTTPS from other devices: add --https")
+    uvicorn.run(create_app(token), host=host, port=port, log_level="warning", **tls)

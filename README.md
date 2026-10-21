@@ -28,6 +28,11 @@ wakesmith setup                         # right PyTorch for your GPU; downloads 
 wakesmith serve                         # then open http://localhost:8765/
 ```
 
+To use it from another computer or phone on your LAN, run `wakesmith serve --host 0.0.0.0` and open
+the link it prints (it carries an access token). Recording takes in the browser needs the microphone,
+which browsers only allow on localhost or HTTPS: add `--https` (a self-signed certificate; accept the
+browser's warning once).
+
 In the browser:
 
 1. **New wake word:** type the phrase, press *Hear it* to check how the synthetic voices say it,

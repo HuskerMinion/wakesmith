@@ -268,3 +268,46 @@ def test_ram_warning_below_16_gb():
 
     assert "16 GB" in hardware.ram_warning(hardware.Hardware("cpu", [], 6, 9.6, 9.0))
     assert hardware.ram_warning(hardware.Hardware("cpu", [], 6, 15.6, 14.8)) == ""
+
+
+def _wav(seconds: float, sr: int = 16000) -> bytes:
+    import io
+
+    a = (0.2 * np.sin(np.arange(int(seconds * sr)) * 2 * np.pi * 220 / sr)).astype(np.float32)
+    buf = io.BytesIO()
+    sf.write(buf, a, sr, format="WAV", subtype="PCM_16")
+    return buf.getvalue()
+
+
+def test_recorded_takes_feed_the_held_out_split(proj):
+    from wakesmith import recordings
+
+    a = recordings.add(proj, "pos", _wav(1.2), "desk, close")
+    b = recordings.add(proj, "pos", _wav(1.0), "kitchen, 3 m", heldout=True)
+    assert (a["file"], b["file"]) == ("take_001.wav", "take_002.wav")
+    proj = project.load(proj.dir)  # add() switched the project to its recordings folder
+    assert recordings.active(proj, "pos")
+    r = RealData(proj)
+    files, held, rows = r.listing("pos")
+    assert files == ["take_001.wav", "take_002.wav"] and held == {"take_002.wav"}
+    assert rows["take_001.wav"]["condition"] == "desk, close"
+    recordings.set_heldout(proj, "pos", "take_001.wav", True)
+    recordings.delete(proj, "pos", "take_002.wav")
+    files, held, _ = RealData(proj).listing("pos")
+    assert files == ["take_001.wav"] and held == {"take_001.wav"}
+    with pytest.raises(ValueError, match="16000 Hz"):
+        recordings.add(proj, "pos", _wav(1.0, 22050))
+    with pytest.raises(ValueError):
+        recordings.delete(proj, "pos", "../project.yaml")
+
+
+def test_recorder_wont_mix_into_a_chosen_folder(proj, tmp_path):
+    from wakesmith import recordings
+
+    (tmp_path / "mine").mkdir()
+    proj.real.positives = str(tmp_path / "mine")
+    proj.save()
+    with pytest.raises(PermissionError):
+        recordings.add(proj, "pos", _wav(1.0))
+    recordings.use(proj, "pos")
+    assert recordings.add(proj, "pos", _wav(1.0))["file"] == "take_001.wav"

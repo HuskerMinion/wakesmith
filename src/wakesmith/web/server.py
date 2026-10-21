@@ -15,13 +15,16 @@ from pathlib import Path
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Response, StreamingResponse
 
-from .. import assets, eta, evaluate, hardware, jobs, phrases, review
+from .. import assets, eta, evaluate, hardware, jobs, phrases, recordings, review
 from .. import project as projects
 from ..pipeline import STAGES
 from ..real import VERDICTS, RealData
 
 HERE = Path(__file__).resolve().parent
-STATIC = {"wakesmith-w.png": "image/png", "favicon.png": "image/png"}  # brand mark, from the branding kit
+STATIC = {
+    "wakesmith-w.png": "image/png",
+    "favicon.png": "image/png",
+}  # brand mark, from the branding kit
 PRESETS = {  # samples per class: quick look vs. a model worth deploying
     "quick": {
         "positive": 2000,
@@ -72,7 +75,9 @@ def create_app(token: str | None = None) -> FastAPI:
     def static(name: str):
         if name not in STATIC:
             raise HTTPException(404, "not found")
-        return FileResponse(HERE / name, media_type=STATIC[name], headers={"Cache-Control": "max-age=86400"})
+        return FileResponse(
+            HERE / name, media_type=STATIC[name], headers={"Cache-Control": "max-age=86400"}
+        )
 
     @app.get("/p/{name}/review/", response_class=HTMLResponse)
     def review_page(name: str):
@@ -261,6 +266,66 @@ def create_app(token: str | None = None) -> FastAPI:
             raise HTTPException(409, "a job is running; stop it before changing settings")
         _apply(p, await request.json())
         return summary(p)
+
+    # -- takes recorded in the browser --------------------------------------------------------
+    def _idle(p: projects.Project) -> None:
+        if jobs.status(p)["running"]:
+            raise HTTPException(409, "a job is running; recordings can change after it ends")
+
+    @app.get("/api/projects/{name}/recordings")
+    def rec_list(name: str):
+        p = proj(name)
+        return {k: recordings.listing(p, k) for k in recordings.KINDS}
+
+    @app.post("/api/projects/{name}/recordings/{kind}")
+    async def rec_add(
+        name: str, kind: str, request: Request, condition: str = "", heldout: bool = False
+    ):
+        p = proj(name)
+        _idle(p)
+        try:
+            return recordings.add(p, kind, await request.body(), condition, heldout)
+        except PermissionError as e:
+            raise HTTPException(409, str(e)) from None
+        except (ValueError, RuntimeError) as e:  # soundfile raises RuntimeError on non-WAV bytes
+            raise HTTPException(400, str(e)) from None
+
+    @app.post("/api/projects/{name}/recordings/{kind}/use")
+    def rec_use(name: str, kind: str):
+        p = proj(name)
+        _idle(p)
+        try:
+            recordings.use(p, kind)
+        except ValueError as e:
+            raise HTTPException(400, str(e)) from None
+        return recordings.listing(p, kind)
+
+    @app.get("/api/projects/{name}/recordings/{kind}/{file}")
+    def rec_audio(name: str, kind: str, file: str):
+        try:
+            return FileResponse(recordings.path(proj(name), kind, file), media_type="audio/wav")
+        except (ValueError, FileNotFoundError):
+            raise HTTPException(404, "no such take") from None
+
+    @app.delete("/api/projects/{name}/recordings/{kind}/{file}")
+    def rec_delete(name: str, kind: str, file: str):
+        p = proj(name)
+        _idle(p)
+        try:
+            recordings.delete(p, kind, file)
+        except (ValueError, FileNotFoundError):
+            raise HTTPException(404, "no such take") from None
+        return {"deleted": file}
+
+    @app.post("/api/projects/{name}/recordings/{kind}/{file}/heldout")
+    async def rec_heldout(name: str, kind: str, file: str, request: Request):
+        p = proj(name)
+        _idle(p)
+        try:
+            recordings.set_heldout(p, kind, file, bool((await request.json()).get("held")))
+        except (ValueError, FileNotFoundError):
+            raise HTTPException(404, "no such take") from None
+        return {"file": file}
 
     # -- jobs --------------------------------------------------------------------------------
     @app.post("/api/projects/{name}/train")

@@ -141,6 +141,23 @@
   .radio input { accent-color: var(--orange); margin-top: 4px; }
   .radio b { display: block; }
 
+  /* real voices: tabs, recorder, takes */
+  .seg { display: flex; flex-wrap: wrap; gap: 4px; padding: 4px; background: var(--inset); border-radius: 12px; align-self: flex-start; }
+  .seg button { border: 0; background: transparent; min-height: 44px; }
+  .seg button[aria-selected="true"] { background: var(--line); color: #fff; font-weight: 600; }
+  button.mic { flex: none; width: 120px; height: 120px; border-radius: 50%; border: 0; background: var(--cyan); color: var(--on-accent); padding: 0; }
+  button.mic.on { background: var(--orange); box-shadow: 0 0 0 12px rgba(255,123,0,.25); }
+  button.mic:hover { border: 0; filter: brightness(1.08); }
+  .meter { display: flex; align-items: flex-end; gap: 3px; height: 40px; }
+  .meter span { width: 8px; height: 4px; border-radius: 2px; background: #34405a; transition: height .06s; }
+  ul.takes { list-style: none; margin: 0; padding: 0; }
+  ul.takes li { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; padding: 8px 0; border-top: 1px solid var(--line2); font-size: 14px; }
+  ul.takes li:first-child { border-top: 0; }
+  button.round { width: 44px; min-height: 44px; padding: 0; border-radius: 50%; }
+  button.round.flat { border: 0; border-radius: 10px; background: transparent; color: var(--muted); }
+  .tag { padding: 4px 12px; min-height: 32px; border-radius: 999px; font-size: 12px; font-weight: 600; background: var(--raised); color: var(--soft); border: 0; display: inline-flex; align-items: center; }
+  button.tag.test { background: var(--info-bg); color: var(--info); }
+
   /* training */
   .overall { background: var(--raised); border-radius: 14px; padding: 22px; display: flex; flex-wrap: wrap; gap: 22px; align-items: center; }
   .overall .big { font: 500 26px var(--mono); color: #fff; }
@@ -474,34 +491,178 @@ async function viewProject(name, tab) {
   return trainTab(p, base, steps);
 }
 
-function voicesTab(p, base, steps) {
+// ---- recording in the browser: raw mic (no echo cancelling or gain), 16 kHz mono WAV -------------
+const PROMPTS = ["close to the device, in your normal voice", "across the room, normal voice", "from the doorway, a bit louder",
+  "close, quietly", "across the room, with the TV or music on", "close, quickly", "from the next room, calling out",
+  "close, slowly", "facing away from the device", "while something else is going on (kettle, tap, fan)"];
+const WORKLET = `class Tap extends AudioWorkletProcessor { process(i) { if (i[0][0]) this.port.postMessage(i[0][0].slice()); return true; } }
+registerProcessor("tap", Tap);`;
+function wav16(f32) {  // Float32 [-1, 1] at 16 kHz -> WAV bytes
+  const b = new ArrayBuffer(44 + f32.length * 2), d = new DataView(b), s = (o, t) => [...t].forEach((c, i) => d.setUint8(o + i, c.charCodeAt(0)));
+  s(0, "RIFF"); d.setUint32(4, 36 + f32.length * 2, true); s(8, "WAVEfmt "); d.setUint32(16, 16, true); d.setUint16(20, 1, true); d.setUint16(22, 1, true);
+  d.setUint32(24, 16000, true); d.setUint32(28, 32000, true); d.setUint16(32, 2, true); d.setUint16(34, 16, true); s(36, "data"); d.setUint32(40, f32.length * 2, true);
+  f32.forEach((x, i) => d.setInt16(44 + i * 2, Math.max(-1, Math.min(1, x)) * 32767, true));
+  return new Blob([b], { type: "audio/wav" });
+}
+async function to16k(chunks, rate) {
+  const n = chunks.reduce((a, c) => a + c.length, 0), all = new Float32Array(n);
+  let o = 0; for (const c of chunks) { all.set(c, o); o += c.length; }
+  if (rate === 16000) return all;
+  const off = new OfflineAudioContext(1, Math.ceil(n * 16000 / rate), 16000), buf = off.createBuffer(1, n, rate);
+  buf.copyToChannel(all, 0); const src = off.createBufferSource(); src.buffer = buf; src.connect(off.destination); src.start();
+  return (await off.startRendering()).getChannelData(0);
+}
+// One take: starts at once, stops ~1 s after speech ends (or at maxS); fixedS records exactly that long.
+// onLevel(rms) feeds the meter. Returns 16 kHz Float32 trimmed to a little before and after the speech.
+async function recordTake({ onLevel, maxS = 8, fixedS = 0, signal }) {
+  const stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false, channelCount: 1 } });
+  const ctx = new AudioContext(), url = URL.createObjectURL(new Blob([WORKLET], { type: "text/javascript" }));
+  try {
+    await ctx.audioWorklet.addModule(url);
+    const node = new AudioWorkletNode(ctx, "tap"), src = ctx.createMediaStreamSource(stream), rate = ctx.sampleRate;
+    src.connect(node);
+    const chunks = [], hop = 0.02;
+    let got = 0, noise = 0.005, speechStart = -1, lastLoud = -1, acc = [], accN = 0;
+    await new Promise((resolve, reject) => {
+      signal?.addEventListener("abort", () => resolve());
+      node.port.onmessage = e => {
+        chunks.push(e.data); got += e.data.length; acc.push(e.data); accN += e.data.length;
+        if (accN < rate * hop) return;
+        let sq = 0; for (const c of acc) for (const x of c) sq += x * x;
+        const rms = Math.sqrt(sq / accN), t = got / rate; acc = []; accN = 0;
+        onLevel?.(rms);
+        if (fixedS) { if (t >= fixedS) resolve(); return; }
+        if (speechStart < 0) noise = 0.95 * noise + 0.05 * Math.min(rms, 0.05);
+        if (rms > Math.max(0.015, noise * 4)) { if (speechStart < 0) speechStart = t; lastLoud = t; }
+        if ((speechStart >= 0 && t - lastLoud > 1.0 && lastLoud - speechStart > 0.15) || t >= maxS) resolve();
+      };
+      setTimeout(() => reject(new Error("no audio from the microphone")), (Math.max(maxS, fixedS) + 3) * 1000);
+    });
+    src.disconnect(); node.disconnect();
+    let a = await to16k(chunks, rate);
+    if (!fixedS && speechStart >= 0) a = a.slice(Math.max(0, Math.floor((speechStart - 0.5) * 16000)), Math.ceil((lastLoud + 0.5) * 16000));
+    return { audio: a, heard: fixedS > 0 || speechStart >= 0 };
+  } finally { stream.getTracks().forEach(t => t.stop()); ctx.close(); URL.revokeObjectURL(url); }
+}
+
+async function voicesTab(p, base, steps) {
   const v = $("#view"), hasVoices = p.stages.generate?.status === "done";
+  let tab = "rec", rec = null, levels = Array(32).fill(0), busy = false;
   v.innerHTML = `${steps("voices")}<div><div class="kicker">${esc(p.label)}</div><h1>Real voices</h1>
-      <p class="sub">Synthetic voices train the model; real ones tell you whether it works. Recordings listed in HELDOUT.txt are kept aside and never trained on, so the test is honest.</p></div>
-    <div class="cols"><div class="wide"><section class="panel" aria-labelledby="h-f"><h2 id="h-f">Folders of recordings</h2>
+      <p class="sub">Synthetic voices train the model; real ones tell you whether it works. Some takes are kept aside for testing and never trained on, so the test is honest.</p></div>
+    <div role="tablist" aria-label="Where the voices come from" class="seg" id="tabs"></div>
+    <div class="cols"><div class="wide" id="pane"></div>
+    <aside class="narrow"><div class="summary"><h2>So far</h2><dl class="kv" id="sofar"></dl><div id="sofarnote"></div>
+      <button type="button" class="primary" id="go">Train ${icon("arrow", 16, 2.25)}</button>
+      ${hasVoices ? `<button type="button" id="retrain">Retrain from recordings</button><p class="hint" style="margin:0">Retrain reuses the synthetic voices and only redoes what your recordings change.</p>` : ""}
+      <div class="err" id="err"></div></div></aside></div>`;
+  const err = m => $("#err").textContent = m || "";
+  const tabs = () => $("#tabs").innerHTML = [["rec", "Record here"], ["folders", "Folders"], ["cv", "Common Voice"]].map(([k, l]) =>
+    `<button type="button" role="tab" aria-selected="${tab === k}" data-tab="${k}">${l}</button>`).join("");
+  $("#tabs").onclick = e => { const b = e.target.closest("[data-tab]"); if (b && !busy) { tab = b.dataset.tab; draw(); } };
+
+  const load = async () => { rec = await api(base + "/recordings"); };
+  const sofar = () => {
+    const pos = rec.pos.takes, neg = rec.neg.takes, held = pos.filter(t => t.held).length;
+    $("#sofar").innerHTML = `<dt>Takes recorded here</dt><dd class="mono">${pos.length}</dd><dt>for training</dt><dd class="mono">${pos.length - held}</dd>
+      <dt>kept aside to test</dt><dd class="mono">${held}</dd><dt>Room sound clips</dt><dd class="mono">${neg.length}</dd>
+      <dt>Phrase folder</dt><dd style="word-break:break-all">${rec.pos.active ? "recorded here" : esc(rec.pos.setting || "none")}</dd>`;
+    $("#sofarnote").innerHTML = pos.length >= 8 && pos.length < 40 ? `<div class="callout warn">${icon("bang", 18, 2)}<span>If these are all one voice, ask someone else to record five or so too: the test is far more trustworthy with a second voice.</span></div>`
+      : pos.length && !held ? `<div class="callout warn">${icon("bang", 18, 2)}<span>No take is kept aside yet, so there is no honest test. Mark a few as "test".</span></div>` : "";
+  };
+
+  const recPane = () => {
+    if (!window.isSecureContext || !navigator.mediaDevices?.getUserMedia) return `<div class="callout warn">${icon("bang", 18, 2)}<span>
+      This browser only allows the microphone on HTTPS or on this computer itself. Restart wakesmith with
+      <code class="mono">wakesmith serve --host 0.0.0.0 --https</code> and open the https link (accept the certificate warning once),
+      or open wakesmith at localhost on the machine it runs on. Until then, use Folders.</span></div>`;
+    const blocked = rec.pos.setting && !rec.pos.active;
+    const n = rec.pos.takes.length + 1, prompt = PROMPTS[(n - 1) % PROMPTS.length];
+    return `${blocked ? `<div class="callout warn">${icon("bang", 18, 2)}<span>This project trains on the folder <code class="mono">${esc(rec.pos.setting)}</code>.
+        Takes recorded here go to the project's own folder, so it has to switch to that one.</span></div>
+        <div><button type="button" id="usehere">Switch to takes recorded here</button></div>` : ""}
+      <section class="panel" aria-label="Record" style="flex-direction:row;flex-wrap:wrap;align-items:center;gap:28px">
+        <button type="button" class="mic" id="mic" aria-label="Start recording" ${blocked ? "disabled" : ""}>${icon("mic", 40)}</button>
+        <div style="flex:1 1 300px;display:flex;flex-direction:column;gap:12px">
+          <div class="kicker" style="color:var(--warn);font-weight:600;letter-spacing:.04em;text-transform:uppercase;margin:0">Take ${n}${n % 4 === 0 ? " · kept aside to test" : ""}</div>
+          <div style="font:600 24px/1.25 var(--head)">Say "${esc(p.phrase)}" ${esc(prompt)}.</div>
+          <div class="meter" id="meter" role="img" aria-label="Microphone level">${levels.map(() => "<span></span>").join("")}</div>
+          <div class="hint" id="rechint">Press the microphone, then say it once. It stops by itself when you finish.</div></div></section>
+      <section class="panel" aria-labelledby="h-takes"><div class="row" style="justify-content:space-between"><h2 id="h-takes">Your takes</h2>
+        <button type="button" id="room" ${blocked ? "disabled" : ""}>${icon("mic", 16)}Record 10 s of room sound</button></div>
+        <ul class="takes" id="takes"></ul></section>`;
+  };
+  const drawTakes = () => {
+    const rows = [...rec.pos.takes.map(t => ({ ...t, kind: "pos" })), ...rec.neg.takes.map(t => ({ ...t, kind: "neg" }))].reverse();
+    $("#takes").innerHTML = rows.map(t => `<li><button type="button" class="round" data-play="${t.kind}/${t.file}" aria-label="Play ${t.file}">${icon("play", 14)}</button>
+      <span class="mono" style="min-width:84px">${t.file.replace(".wav", "").replace("take_", t.kind === "neg" ? "room " : "take ")}</span>
+      <span style="flex:1 1 160px">${esc(t.condition || (t.kind === "neg" ? "room sound" : ""))}</span>
+      ${t.kind === "pos" ? `<button type="button" class="tag ${t.held ? "test" : ""}" data-held="${t.file}" aria-pressed="${t.held}" title="kept aside to test, or used for training">${t.held ? "test" : "train"}</button>` : `<span class="tag">not the phrase</span>`}
+      <span class="mono hint">${t.seconds.toFixed(1)} s</span>
+      <button type="button" class="round flat" data-del="${t.kind}/${t.file}" aria-label="Delete ${t.file}">${icon("x", 16, 2)}</button></li>`).join("")
+      || `<li class="hint">No takes yet. Twenty or so, in different spots and voices, make a good start.</li>`;
+  };
+  const meter = rms => {
+    levels.push(Math.min(1, Math.sqrt(rms) * 2.2)); levels = levels.slice(-32);
+    const m = $("#meter"); if (!m) return;
+    [...m.children].forEach((s, i) => { const h = levels[i]; s.style.height = `${4 + h * 36}px`; s.style.background = h > 0.85 ? "var(--orange)" : h > 0.05 ? "var(--gold)" : "#34405a"; });
+  };
+  const upload = async (kind, audio, condition, heldout) => {
+    const r = await fetch(`${base}/recordings/${kind}?condition=${enc(condition)}&heldout=${heldout}`, { method: "POST", body: wav16(audio) });
+    if (!r.ok) { let m = r.statusText; try { m = (await r.json()).detail || m; } catch {} throw new Error(m); }
+  };
+  const take = async (kind) => {
+    if (busy) return; busy = true; err();
+    const n = rec.pos.takes.length + 1, mic = $("#mic");
+    mic?.classList.add("on"); $("#rechint").textContent = kind === "neg" ? "Recording 10 s of room sound: stay quiet…" : "Listening… say it now.";
+    try {
+      const r = kind === "neg" ? await recordTake({ onLevel: meter, fixedS: 10 }) : await recordTake({ onLevel: meter });
+      if (!r.heard) { $("#rechint").textContent = "I didn't hear anything: check the microphone, then try again."; return; }
+      await upload(kind, r.audio, kind === "neg" ? "room sound" : PROMPTS[(n - 1) % PROMPTS.length], kind === "pos" && n % 4 === 0);
+      await load(); draw();
+    } catch (e) { err(e.name === "NotAllowedError" ? "The browser blocked the microphone: allow it for this page and try again." : e.message); }
+    finally { busy = false; mic?.classList.remove("on"); }
+  };
+
+  const foldersPane = () => `<section class="panel" aria-labelledby="h-f"><h2 id="h-f">Folders of recordings</h2>
       <label class="f" for="pos">Recordings of the phrase <span class="hint">16 kHz WAV; optional labels.csv and HELDOUT.txt</span>
-        <input type="text" id="pos" value="${esc(p.real.positives || "")}" placeholder="/home/you/recordings/wake"></label>
+        <input type="text" id="pos" value="${esc(rec.pos.setting || "")}" placeholder="/home/you/recordings/wake"></label>
       <label class="f" for="neg">"Not the phrase" clips <span class="hint">ideally what falsely woke an older model, or room sound</span>
-        <input type="text" id="neg" value="${esc(p.real.negatives || "")}" placeholder="/home/you/recordings/false-triggers"></label>
+        <input type="text" id="neg" value="${esc(rec.neg.setting || "")}" placeholder="/home/you/recordings/false-triggers"></label>
       <div class="callout info">${icon("info", 18, 2)}<span>Put your newest recordings (the last day or two) in HELDOUT.txt. Clips you haven't listened to belong there too: an unchecked near miss may hold the real phrase.</span></div>
-      <div class="row"><button type="button" id="save">Save folders</button><span class="hint" id="saved"></span></div><div class="err" id="err"></div></section>
-      <section class="panel" aria-labelledby="h-soon"><h2 id="h-soon">Coming next</h2>
-        <p class="hint" style="margin:0">Recording takes straight from this page (prompted, near and far, with a level meter), and adding real volunteer voices from Mozilla Common Voice for common words.</p></section></div>
-    <aside class="narrow"><div class="summary"><h2>Then train</h2>
-      <p class="hint" style="margin:0">${hasVoices ? "Already trained? Retrain from recordings reuses the synthetic voices and only redoes what your recordings change." : "Training uses the folders saved here. You can come back and add recordings later."}</p>
-      <button type="button" class="primary" id="go">Save and train ${icon("arrow", 16, 2.25)}</button>
-      ${hasVoices ? `<button type="button" id="retrain">Save and retrain from recordings</button>` : ""}</div></aside></div>`;
+      <div class="row"><button type="button" id="save">Save folders</button><span class="hint" id="saved"></span></div></section>`;
+  const cvPane = () => `<section class="panel"><h2>Mozilla Common Voice</h2><p class="hint" style="margin:0">Real volunteer voices (CC0) for common words: wakesmith finds the takes whose
+      transcript contains your phrase and cuts the word out. Coming in the next update.</p></section>`;
+
+  const draw = () => {
+    tabs(); sofar();
+    $("#pane").innerHTML = tab === "rec" ? recPane() : tab === "folders" ? foldersPane() : cvPane();
+    if (tab === "rec" && $("#takes")) { drawTakes(); meter(0); }
+    if ($("#mic")) $("#mic").onclick = () => take("pos");
+    if ($("#room")) $("#room").onclick = () => take("neg");
+    if ($("#usehere")) $("#usehere").onclick = async () => { try { await api(`${base}/recordings/pos/use`, { method: "POST" }); await load(); draw(); } catch (e) { err(e.message); } };
+    if ($("#takes")) $("#takes").onclick = async e => {
+      const pl = e.target.closest("[data-play]"), dl = e.target.closest("[data-del]"), hd = e.target.closest("[data-held]");
+      try {
+        if (pl) new Audio(`${base}/recordings/${pl.dataset.play}`).play();
+        if (dl && confirm(`Delete ${dl.dataset.del.split("/")[1]}?`)) { await api(`${base}/recordings/${dl.dataset.del}`, { method: "DELETE" }); await load(); draw(); }
+        if (hd) { await api(`${base}/recordings/pos/${hd.dataset.held}/heldout`, { method: "POST", body: { held: hd.getAttribute("aria-pressed") !== "true" } }); await load(); draw(); }
+      } catch (x) { err(x.message); }
+    };
+    if ($("#save")) $("#save").onclick = save;
+  };
   const save = async () => {
-    $("#err").textContent = "";
-    try { await api(base, { method: "PUT", body: { positives: $("#pos").value.trim(), negatives_dir: $("#neg").value.trim() } }); $("#saved").textContent = "saved"; return true; }
-    catch (e) { $("#err").textContent = e.message; return false; }
+    err();
+    try { await api(base, { method: "PUT", body: { positives: $("#pos").value.trim(), negatives_dir: $("#neg").value.trim() } }); $("#saved").textContent = "saved"; await load(); sofar(); return true; }
+    catch (e) { err(e.message); return false; }
   };
   const train = async from => {
-    if (!await save()) return;
+    if (tab === "folders" && !await save()) return;
     try { await api(base + "/train", { method: "POST", body: from ? { from } : {} }); location.hash = `#/p/${enc(p.name)}/train`; }
-    catch (e) { $("#err").textContent = e.message; }
+    catch (e) { err(e.message); }
   };
-  $("#save").onclick = save; $("#go").onclick = () => train(); if (hasVoices) $("#retrain").onclick = () => train("real");
+  $("#go").onclick = () => train(); if (hasVoices) $("#retrain").onclick = () => train("real");
+  try { await load(); draw(); } catch (e) { err(e.message); }
 }
 
 function trainTab(p, base, steps) {
