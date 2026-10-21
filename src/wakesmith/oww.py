@@ -375,12 +375,40 @@ def train(p: Project, log=print) -> Path:
 
 
 def export_tflite(model, path: Path) -> Path:
-    """Float32 .tflite with a fixed [1, 16, 96] input, as the openWakeWord runtime feeds it."""
+    """Float32 .tflite with a fixed [1, 16, 96] input, as the openWakeWord runtime feeds it.
+
+    The layers are written out as plain ops: Keras's LayerNormalization converts with a NEG op that
+    small device interpreters lack, so it becomes Mean, Sub, Mul, Add and Rsqrt here."""
     import tensorflow as tf
 
-    inp = tf.keras.Input((N_STEPS, 96), batch_size=1, name="embeddings")
-    fixed = tf.keras.Model(inp, model(inp))
-    path.write_bytes(tf.lite.TFLiteConverter.from_keras_model(fixed).convert())
+    layers = [l for l in model.layers if not isinstance(l, tf.keras.layers.InputLayer)]
+    weights = {id(v): tf.constant(np.array(v)) for l in layers for v in l.weights}  # taken eagerly
+    const = lambda v: weights[id(v)]  # noqa: E731
+
+    @tf.function(input_signature=[tf.TensorSpec([1, N_STEPS, 96], tf.float32)])
+    def forward(x):
+        h = x
+        for l in layers:
+            if isinstance(l, tf.keras.layers.Flatten):
+                h = tf.reshape(h, [1, -1])
+            elif isinstance(l, tf.keras.layers.Dense):
+                h = tf.matmul(h, const(l.kernel)) + const(l.bias)
+                if l.activation is tf.keras.activations.sigmoid:
+                    h = tf.sigmoid(h)
+                elif l.activation is not tf.keras.activations.linear:
+                    raise ValueError(f"unsupported activation in {l.name}")
+            elif isinstance(l, tf.keras.layers.LayerNormalization):
+                d = h - tf.reduce_mean(h, axis=-1, keepdims=True)
+                var = tf.reduce_mean(d * d, axis=-1, keepdims=True)
+                h = d * tf.math.rsqrt(var + l.epsilon) * const(l.gamma) + const(l.beta)
+            elif isinstance(l, tf.keras.layers.ReLU):
+                h = tf.nn.relu(h)
+            else:
+                raise ValueError(f"unsupported layer {l.name}")
+        return h
+
+    conv = tf.lite.TFLiteConverter.from_concrete_functions([forward.get_concrete_function()], model)
+    path.write_bytes(conv.convert())
     return path
 
 
