@@ -149,10 +149,13 @@ wakesmith's gap:
      that failed or needed a guess is fixed in the code or the README.
 5. **UI redesign** (mockup 2026-10-21: https://claude.ai/artifact/C9hSMZb4Ye2qqHoNciiuJY, five
    linked screens; react to it before it is built).
-   - **Look:** warm paper ground, ink sidebar, one ember accent (the "smith"); Space Grotesk for
-     headings, Inter for text, JetBrains Mono for numbers; a custom anvil-and-sound mark and a
-     small set of stroke icons (no emoji, no icon font). Blue = caught, orange = false, checked
-     for colour blindness; every state also has an icon and a word.
+   - **Look:** the user's branding kit (Wakesmith_Branding_Kit.zip,
+     the glowing W app mark and banners): dark "neon forge" theme, Deep Space #0f141e ground,
+     Neon Cyan #4ad5ff accents, Forge Orange #ff7b00 for the primary action (dark text on it for
+     contrast), Waveform Gold #ffcc00 for audio levels; Montserrat headings, Inter text, a mono
+     face for numbers; wordmark "wake" white + "smith" orange-to-cyan. Charts use deeper shades
+     (#1c95c4 caught, #d96500 false) that pass colour-blind and contrast checks on the dark
+     surface; every state also has an icon and a word. Stroke icons, no emoji.
    - **Navigation:** a left sidebar (stacks on top on a phone): Wake words, New wake word, Real
      voices, Training, Compare & cutoff, and below them Hardware and Data & licenses. A new wake
      word is a 4-step flow: Purpose & phrase, Real voices, Train, Pick & export.
