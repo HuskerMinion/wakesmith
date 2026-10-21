@@ -189,6 +189,15 @@
   .hbar .track div { height: 100%; border-radius: 0 4px 4px 0; }
   .files a { display: block; font-size: 14px; } .files a.btn { display: flex; justify-content: flex-start; }
 
+  /* confirm dialog and danger zone */
+  dialog.ask { background: var(--panel); color: var(--text); border: 1px solid var(--line); border-radius: 14px; padding: 24px; max-width: min(480px, calc(100vw - 32px)); }
+  dialog.ask::backdrop { background: rgba(5, 8, 14, .7); }
+  dialog.ask h2 { margin-bottom: 10px; } dialog.ask p { margin: 0 0 18px; color: var(--soft); font-size: 14px; line-height: 1.55; }
+  dialog.ask .row { justify-content: flex-end; }
+  button.bad { background: var(--warn); border-color: var(--warn); color: var(--on-accent); font-weight: 600; }
+  button.bad:hover { background: #ffc48a; }
+  .danger-zone { border-color: #5a3a1a; }
+
   /* help */
   .gs { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 14px; }
   .gs li { background: var(--inset); border-radius: 10px; padding: 14px; display: flex; flex-direction: column; gap: 6px; font-size: 14px; color: var(--soft); }
@@ -208,6 +217,8 @@
   </nav>
   <main id="view"></main>
 </div>
+<dialog class="ask" id="ask" aria-labelledby="ask-t"><h2 id="ask-t"></h2><p id="ask-b"></p>
+  <div class="row"><button type="button" id="ask-no">Keep it</button><button type="button" class="bad" id="ask-yes"></button></div></dialog>
 <script>
 const $ = (s, el = document) => el.querySelector(s);
 const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
@@ -236,7 +247,7 @@ const I = {
   esp: '<circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="3"/><path d="M12 2v2M12 20v2"/>',
   home: '<path d="M3 11l9-7 9 7"/><path d="M5 10v10h14V10"/><path d="M10 20v-5h4v5"/>',
   screen: '<rect x="3" y="5" width="18" height="12" rx="2"/><path d="M8 21h8M12 17v4"/>',
-  bolt: '<path d="M13 3L5 14h6l-1 7 8-11h-6z"/>', refresh: '<path d="M20 12a8 8 0 1 1-2.3-5.7M20 4v5h-5"/>',
+  bolt: '<path d="M13 3L5 14h6l-1 7 8-11h-6z"/>', trash: '<path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/>', refresh: '<path d="M20 12a8 8 0 1 1-2.3-5.7M20 4v5h-5"/>',
 };
 const icon = (n, size = 20, w = 1.75) => `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="${w}" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${I[n]}</svg>`;
 let es = null, HW = null;
@@ -247,6 +258,29 @@ async function api(path, opts = {}) {
   if (!r.ok) { let m = r.statusText; try { m = (await r.json()).detail || m; } catch {} throw new Error(m); }
   return r.headers.get("content-type")?.includes("json") ? r.json() : r;
 }
+
+// A confirm dialog: resolves true when the person confirms. Esc or "Keep it" cancels.
+function ask(title, body, yes) {
+  const d = $("#ask");
+  $("#ask-t").textContent = title; $("#ask-b").textContent = body; $("#ask-yes").textContent = yes;
+  return new Promise(res => {
+    const done = v => { d.close(); res(v); };
+    $("#ask-yes").onclick = () => done(true); $("#ask-no").onclick = () => done(false); d.oncancel = e => { e.preventDefault(); done(false); };
+    d.showModal(); $("#ask-no").focus();
+  });
+}
+const gb = b => b >= 1e9 ? `${(b / 1e9).toFixed(1)} GB` : `${Math.max(1, Math.round(b / 1e6))} MB`;
+// Delete a wake word after saying what goes with it. unfinished: the wizard's "cancel" wording.
+async function deleteWakeWord(name, label, unfinished) {
+  const base = `/api/projects/${enc(name)}`;
+  let info;
+  try { info = await api(base + "/size"); } catch (e) { alert(e.message); return false; }
+  const takes = info.recorded_takes.pos + info.recorded_takes.neg;
+  const body = `This removes ${label}'s folder: generated voices, features${takes ? `, ${takes} take${takes > 1 ? "s" : ""} you recorded here` : ""} and any trained models (${gb(info.bytes)}). Folders of your own recordings that it points to are not touched. This can't be undone.`;
+  if (!await ask(unfinished ? `Cancel ${label}?` : `Delete ${label}?`, body, unfinished ? "Cancel and delete" : "Delete wake word")) return false;
+  try { await api(base, { method: "DELETE" }); location.hash = "#/"; return true; } catch (e) { alert(e.message); return false; }
+}
+const unfinished = p => !p.job?.running && !Object.values(p.stages || {}).some(s => s?.status === "done");
 
 // ---- shell: sidebar and machine box ----------------------------------------------------------------
 function nav(here, project) {
@@ -312,11 +346,13 @@ async function viewHome() {
       return `<article class="card"><div class="row" style="justify-content:space-between;align-items:flex-start">
           <div><h2>${esc(p.label)}</h2><div class="hint">${kinds.map(k => MODEL_NAMES[k]).join(" · ") || "no model selected"}</div></div>${s.badge}</div>
         ${stats}<div class="acts"><a class="btn" style="background:var(--raised);border-color:var(--raised)" href="${where}/train">Open</a>
-        <a class="btn" href="${where}/results">Results</a></div></article>`;
+        <a class="btn" href="${where}/results">Results</a>
+        <button type="button" class="round flat" style="margin-left:auto" data-delete="${esc(p.name)}" data-label="${esc(p.label)}" aria-label="Delete ${esc(p.label)}" title="Delete" ${p.job.running ? "disabled" : ""}>${icon("trash", 18)}</button></div></article>`;
     }).join("") + `<a class="newcard" href="#/new">${icon("plus", 36)}New wake word</a>`;
   };
   $("#count").textContent = list.length ? `${list.length} wake word${list.length > 1 ? "s" : ""}.` : "Make your first one: it takes a few minutes to set up.";
   $("#filters").onclick = e => { const b = e.target.closest("button[data-f]"); if (b) { f = b.dataset.f; draw(); } };
+  $("#list").onclick = async e => { const b = e.target.closest("button[data-delete]"); if (b && await deleteWakeWord(b.dataset.delete, b.dataset.label)) viewHome(); };
   draw();
 }
 
@@ -371,7 +407,8 @@ async function viewNew() {
     <aside class="narrow"><div class="summary" aria-labelledby="h-sum"><h2 id="h-sum">What you'll get</h2>
       <dl class="kv" id="sum"></dl><p class="hint" style="margin:0" id="sumnote"></p>
       <button type="button" class="primary" id="next">Next: real voices ${icon("arrow", 16, 2.25)}</button>
-      <button type="button" id="skip">Skip, train on synthetic voices only</button></div></aside></div>`;
+      <button type="button" id="skip">Skip, train on synthetic voices only</button>
+      <button type="button" class="danger" id="cancel">Cancel</button></div></aside></div>`;
 
   const drawScen = () => {
     $("#scen").innerHTML = Object.entries(SCENARIOS).map(([k, s]) => `<button type="button" data-sc="${k}" aria-pressed="${sc === k}">
@@ -446,6 +483,10 @@ async function viewNew() {
       if (train) await api(`/api/projects/${enc(p.name)}/train`, { method: "POST", body: {} });
       location.hash = `#/p/${enc(p.name)}/${train ? "train" : "voices"}`;
     } catch (e) { $("#err").textContent = e.message; }
+  };
+  $("#cancel").onclick = async () => {
+    if (($("#phrase").value.trim() || negs.length) && !await ask("Discard this wake word?", "Nothing has been created yet; what you typed here is dropped.", "Discard")) return;
+    location.hash = "#/";
   };
   $("#next").onclick = () => create(false);
   $("#skip").onclick = () => create(true);
@@ -555,8 +596,10 @@ async function voicesTab(p, base, steps) {
     <aside class="narrow"><div class="summary"><h2>So far</h2><dl class="kv" id="sofar"></dl><div id="sofarnote"></div>
       <button type="button" class="primary" id="go">Train ${icon("arrow", 16, 2.25)}</button>
       ${hasVoices ? `<button type="button" id="retrain">Retrain from recordings</button><p class="hint" style="margin:0">Retrain reuses the synthetic voices and only redoes what your recordings change.</p>` : ""}
+      ${unfinished(p) ? `<button type="button" class="danger" id="cancelww">Cancel this wake word</button>` : ""}
       <div class="err" id="err"></div></div></aside></div>`;
   const err = m => $("#err").textContent = m || "";
+  if ($("#cancelww")) $("#cancelww").onclick = () => deleteWakeWord(p.name, p.label, true);
   const tabs = () => $("#tabs").innerHTML = [["rec", "Record here"], ["folders", "Folders"], ["cv", "Common Voice"]].map(([k, l]) =>
     `<button type="button" role="tab" aria-selected="${tab === k}" data-tab="${k}">${l}</button>`).join("");
   $("#tabs").onclick = e => { const b = e.target.closest("[data-tab]"); if (b && !busy) { tab = b.dataset.tab; draw(); } };
@@ -676,7 +719,10 @@ function trainTab(p, base, steps) {
     <div class="cols"><section class="panel wide" aria-labelledby="h-st" style="gap:4px"><h2 id="h-st">Stages</h2><ol class="stages" id="stages"></ol></section>
       <aside class="narrow"><section class="panel" aria-labelledby="h-run"><h2 id="h-run">This project</h2><dl class="kv" id="recipe"></dl></section>
         <details class="adv"><summary>Log</summary><pre class="log" id="log"></pre></details>
-        <p class="hint" style="margin:0">You can close this page: training keeps running, and Wake words shows when it's done.</p></aside></div>`;
+        <p class="hint" style="margin:0">You can close this page: training keeps running, and Wake words shows when it's done.</p>
+        <section class="panel danger-zone" aria-labelledby="h-del"><h2 id="h-del">${unfinished(p) ? "Not finished?" : "Delete"}</h2>
+          <p class="hint" style="margin:0">${unfinished(p) ? "Nothing is trained yet. Cancelling removes the project." : "Removes this wake word, its generated voices and its models."}</p>
+          <button type="button" class="danger" id="delww">${icon("trash", 16)}${unfinished(p) ? "Cancel this wake word" : "Delete this wake word"}</button></section></aside></div>`;
   $("#recipe").innerHTML = `<dt>Models</dt><dd>${[p.microwakeword.enabled && "microWakeWord", p.openwakeword.enabled && "openWakeWord"].filter(Boolean).join(", ")}</dd>
     <dt>Synthetic takes</dt><dd class="mono">${p.samples.positive.toLocaleString()}</dd><dt>Sound-alikes</dt><dd class="mono">${p.samples.negative.toLocaleString()} takes of ${p.negatives.length}</dd>
     <dt>Real recordings</dt><dd>${p.real.positives ? "yes" : "none"}${p.real.negatives ? " · not-the-phrase clips" : ""}</dd>
@@ -699,6 +745,7 @@ function trainTab(p, base, steps) {
   $("#go").onclick = () => act("/train");
   $("#retrain").onclick = () => act("/train", { from: "real" });
   $("#stop").onclick = () => act("/stop");
+  $("#delww").onclick = () => deleteWakeWord(p.name, p.label, unfinished(p));
 
   let wasRunning = p.job.running;
   es = new EventSource(base + "/events");
@@ -710,6 +757,7 @@ function trainTab(p, base, steps) {
     if (d.lines.length) { log.textContent += d.lines.join("\n") + "\n"; log.scrollTop = log.scrollHeight; }
     $("#go").disabled = $("#retrain").disabled = d.job.running;
     $("#stop").disabled = !d.job.running;
+    $("#delww").disabled = d.job.running;
     const pr = d.progress, run = Object.entries(d.stages).find(([, s]) => s?.status === "running");
     let pct = null, label = "";
     if (d.job.running && run) {

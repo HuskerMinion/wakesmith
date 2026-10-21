@@ -311,3 +311,16 @@ def test_recorder_wont_mix_into_a_chosen_folder(proj, tmp_path):
         recordings.add(proj, "pos", _wav(1.0))
     recordings.use(proj, "pos")
     assert recordings.add(proj, "pos", _wav(1.0))["file"] == "take_001.wav"
+
+
+def test_delete_project_keeps_outside_folders(proj, tmp_path):
+    (tmp_path / "mine").mkdir()
+    (tmp_path / "mine" / "a.wav").write_bytes(_wav(1.0))
+    proj.real.positives = str(tmp_path / "mine")
+    proj.save()
+    (proj.dir / "clips").mkdir()
+    (proj.dir / "clips" / "x.wav").write_bytes(b"0" * 1000)
+    assert project.delete(proj) >= 1000
+    assert not proj.dir.exists() and (tmp_path / "mine" / "a.wav").exists()
+    with pytest.raises(ValueError):
+        project.delete(proj)

@@ -259,6 +259,22 @@ def create_app(token: str | None = None) -> FastAPI:
     def get_project(name: str):
         return summary(proj(name))
 
+    @app.get("/api/projects/{name}/size")
+    def project_size(name: str):
+        p = proj(name)
+        rec = {k: len(recordings.listing(p, k)["takes"]) for k in recordings.KINDS}
+        return {"bytes": projects.size_bytes(p), "recorded_takes": rec, "dir": str(p.dir)}
+
+    @app.delete("/api/projects/{name}")
+    def delete_project(name: str):
+        p = proj(name)
+        if jobs.status(p)["running"]:
+            raise HTTPException(409, "a job is running; stop it before deleting the wake word")
+        try:
+            return {"deleted": p.name, "freed_bytes": projects.delete(p)}
+        except ValueError as e:
+            raise HTTPException(400, str(e)) from None
+
     @app.put("/api/projects/{name}")
     async def update_project(name: str, request: Request):
         p = proj(name)

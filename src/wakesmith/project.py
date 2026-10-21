@@ -15,6 +15,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import shutil
 from dataclasses import asdict, dataclass, field, fields, is_dataclass
 from pathlib import Path
 from typing import Any
@@ -155,3 +156,18 @@ def create(phrase: str, name: str | None = None, where: Path | None = None, **kw
         raise FileExistsError(f"{proj.dir} already has a project")
     proj.save()
     return proj
+
+
+def size_bytes(p: Project) -> int:
+    return sum(f.stat().st_size for f in p.dir.rglob("*") if f.is_file() and not f.is_symlink())
+
+
+def delete(p: Project) -> int:
+    """Remove a project's folder (generated clips, features, recorded takes, models) and return the
+    bytes freed. Folders of recordings the project only points to are not touched."""
+    d = p.dir.resolve()
+    if not (d / "project.yaml").is_file() or d == projects_home().resolve() or len(d.parts) < 4:
+        raise ValueError(f"{d} doesn't look like a wakesmith project folder")
+    freed = size_bytes(p)
+    shutil.rmtree(d)
+    return freed

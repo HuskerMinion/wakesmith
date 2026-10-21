@@ -206,6 +206,21 @@ def review(
     )
 
 
+def _ui_token(secrets) -> str:
+    """The LAN access token, kept between restarts so the printed link stays the same
+    (delete the file to get a new one)."""
+    from . import assets
+
+    f = assets.home() / "ui-token"
+    if f.exists() and len(t := f.read_text().strip()) >= 16:
+        return t
+    f.parent.mkdir(parents=True, exist_ok=True)
+    t = secrets.token_urlsafe(16)
+    f.write_text(t + "\n")
+    f.chmod(0o600)
+    return t
+
+
 @app.command()
 def serve(
     host: str = typer.Option("127.0.0.1", help="0.0.0.0 to use it from other devices on your LAN"),
@@ -227,7 +242,7 @@ def serve(
     from .web.server import create_app
 
     local = host in ("127.0.0.1", "localhost", "::1")
-    token = None if local else secrets.token_urlsafe(16)
+    token = None if local else _ui_token(secrets)
     shown = "localhost" if local else host
     tls = {}
     if https:
