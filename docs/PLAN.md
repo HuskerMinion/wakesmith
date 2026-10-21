@@ -140,10 +140,47 @@ wakesmith's gap:
      train, live progress for every stage, export, downloads, in about 8 minutes with no page
      errors. Fixed on the way: training progress (the step lines microWakeWord logs are about
      50 KB apart), one zip per model (both models are named <project>.tflite), favicon 404.
-4. **Release v0.2.**
+4. **Clean-machine install test.**
+   - A fresh Ubuntu 24.04 VM on the dev box (LXD, `lxc launch --vm`), nothing preinstalled: follow the
+     README word for word (`uv tool install` from a built wheel, `wakesmith setup`, `doctor`,
+     `serve`), then a Quick run in the browser from phrase to download, on the CPU (the VM has no
+     GPU; that also covers the CPU-only path).
+   - **Accept when:** the README alone gets a new machine to a downloaded model, and every step
+     that failed or needed a guess is fixed in the code or the README.
+5. **UI redesign** (mockup 2026-10-21: https://claude.ai/artifact/C9hSMZb4Ye2qqHoNciiuJY, five
+   linked screens; react to it before it is built).
+   - **Look:** warm paper ground, ink sidebar, one ember accent (the "smith"); Space Grotesk for
+     headings, Inter for text, JetBrains Mono for numbers; a custom anvil-and-sound mark and a
+     small set of stroke icons (no emoji, no icon font). Blue = caught, orange = false, checked
+     for colour blindness; every state also has an icon and a word.
+   - **Navigation:** a left sidebar (stacks on top on a phone): Wake words, New wake word, Real
+     voices, Training, Compare & cutoff, and below them Hardware and Data & licenses. A new wake
+     word is a 4-step flow: Purpose & phrase, Real voices, Train, Pick & export.
+   - **Wake words (dashboard):** one card per project with status (live / trial / ready / needs
+     work), caught and false numbers at the chosen cutoff, and the next action; filters; recent
+     activity.
+   - **"What is it for?"** first: ESPHome voice satellite (microWakeWord + manifest), Home
+     Assistant (openWakeWord), Echo-style device / other (both, choose the audio front end), Just
+     trying it out (Quick). Sets model type, export and defaults; a side panel says what you'll
+     get and how long it takes on this machine (eta.py).
+   - **Phrase checks** before training: length, real voices available, everyday-word warning;
+     sound-alike chips you can remove or add; advanced settings folded away (sample counts,
+     sound-alike weight, fine-tune phase, data profile).
+   - **Real voices:** record in the browser (prompted takes, near/far/TV on, level meter, auto
+     stop, play/delete, some kept aside as test), import folders, Common Voice (see Later). Warns
+     when every take is one voice.
+   - **Training:** overall and per-stage progress with time left, what changed from the last run,
+     the log folded away; safe to close the page.
+   - **Compare & cutoff:** every run side by side at a chosen cutoff and test sound (quiet room /
+     alarm playing): held-out, far, and each false-trigger set; a hard line shown in its own
+     colour (e.g. 0 of 27 help calls); "listen to what it got wrong"; export writes the cutoff
+     and the front-end tag into the file.
+   - **Accept when:** a new user (not us) gets from phrase to a model on a device from the UI
+     alone, including real takes and a cutoff choice, and the screens work at phone width.
+6. **Release v0.2.**
    - README rewrite with screenshots, licensing page, and the banner.
    - Move the v0.1 recipe docs to a `v0.1` tag and link to it.
-5. **Later (optional):**
+7. **Later (optional):**
    - "Open" data profile.
    - Docker images (NVIDIA, Intel).
    - Non-English voices (de/fr/nl generators exist).
