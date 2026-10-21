@@ -18,7 +18,7 @@ import traceback
 from collections.abc import Callable
 from datetime import datetime
 
-from . import evaluate, export, hardware, mww, oww, synth
+from . import eta, evaluate, export, hardware, mww, oww, synth
 from .project import Project
 from .real import RealData
 
@@ -89,6 +89,7 @@ def run(
                 f.write(traceback.format_exc())
             raise
         p.set_state(**{stage: {"status": "done", "time": time.time() - t0, "info": info or {}}})
+        eta.record(p, stage, time.time() - t0, info)
         say(f"{stage} done in {(time.time() - t0) / 60:.1f} min {info or ''}")
 
 

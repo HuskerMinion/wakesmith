@@ -15,7 +15,7 @@ from pathlib import Path
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Response, StreamingResponse
 
-from .. import assets, evaluate, hardware, jobs, phrases, review
+from .. import assets, eta, evaluate, hardware, jobs, phrases, review
 from .. import project as projects
 from ..pipeline import STAGES
 from ..real import VERDICTS, RealData
@@ -144,6 +144,7 @@ def create_app(token: str | None = None) -> FastAPI:
             "openwakeword": vars(p.openwakeword),
             "data_profile": p.data_profile,
             "stages": {s: st.get(s) for s in STAGES},
+            "estimates": eta.estimates(p),
             "job": jobs.status(p),
             "results": results,
             "exported": sorted(
@@ -252,8 +253,11 @@ def create_app(token: str | None = None) -> FastAPI:
         """Server-sent events: new log lines, progress and job status, once a second."""
         p = proj(name)
         logf = p.path("logs", "train.log")
+        est = {"at": 0.0, "value": {}}
 
         def snapshot(pos: int) -> tuple[int, dict]:
+            if time.time() - est["at"] > 30:  # listing held-out clips isn't free: not every second
+                est["at"], est["value"] = time.time(), eta.estimates(p)
             lines: list[str] = []
             if logf.exists() and logf.stat().st_size > pos:
                 with open(logf, "rb") as f:
@@ -266,6 +270,8 @@ def create_app(token: str | None = None) -> FastAPI:
                 "progress": jobs.progress(p),
                 "job": jobs.status(p),
                 "stages": {s: p.state().get(s) for s in STAGES},
+                "estimates": est["value"],
+                "now": time.time(),
             }
             return pos, data
 

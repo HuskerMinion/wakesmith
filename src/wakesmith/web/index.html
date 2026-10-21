@@ -80,6 +80,7 @@
   .note { font-size: 13px; color: var(--muted); border-left: 3px solid var(--accent); padding: 4px 10px; margin-top: 10px; }
   .err { color: var(--bad); margin-top: 8px; font-size: 14px; }
   .files a { display: block; font-size: 14px; }
+  .eta { margin-top: 6px; font-size: 15px; }
   .files a.btn { display: inline-block; font-size: 15px; border-radius: 8px; padding: 8px 14px; border: 1px solid var(--line);
            background: var(--panel); color: var(--text); text-decoration: none; }
 </style>
@@ -221,6 +222,35 @@ async function viewNew() {
   $("#createonly").onclick = () => create(false);
 }
 
+// ---- time estimates -----------------------------------------------------------------------------
+const dur = s => s < 60 ? "under a minute" : s < 5400 ? `${Math.round(s / 60)} min` : `${Math.floor(s / 3600)} h ${Math.round(s % 3600 / 60)} min`;
+// Remaining seconds for the running stage s (from its own progress once it has some, else the
+// machine's measured rate), then the stages still to come in this run.
+function timeLeft(d, s, pct) {
+  const est = d.estimates || {}, st = d.stages[s] || {};
+  const elapsed = Math.max(0, (d.now || Date.now() / 1000) - (st.started || d.now));
+  const f = pct == null ? 0 : pct / 100;
+  let left = f >= 0.05 ? elapsed * (1 - f) / f : Math.max((est[s] || 0) - elapsed, 0.1 * (est[s] || 0));
+  const args = d.job.args || [], to = args.includes("--to") ? args[args.indexOf("--to") + 1] : "export";
+  const keys = Object.keys(STAGE_NAMES), later = keys.slice(keys.indexOf(s) + 1, keys.indexOf(to) + 1);
+  const rest = later.filter(k => !d.off?.[k]).reduce((a, k) => a + (est[k] || 0), 0);
+  const total = left + rest, end = new Date(Date.now() + total * 1000);
+  return {
+    stage: `about ${dur(left)} left in this step`,
+    overall: `About <b>${dur(total)}</b> to go · done around <b>${end.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}</b>`,
+  };
+}
+
+// Is stage s still to come in the running job? Stages run in order: those after the running one,
+// up to the job's --to stage.
+function pending(d, s) {
+  const keys = Object.keys(STAGE_NAMES), args = d.job.args || [];
+  const to = args.includes("--to") ? args[args.indexOf("--to") + 1] : keys[keys.length - 1];
+  const run = keys.findIndex(k => d.stages[k]?.status === "running");
+  const i = keys.indexOf(s);
+  return run >= 0 && i > run && i <= keys.indexOf(to);
+}
+
 // ---- project ------------------------------------------------------------------------------------
 async function viewProject(name) {
   const v = $("#view"), base = `/api/projects/${encodeURIComponent(name)}`;
@@ -249,10 +279,13 @@ async function viewProject(name) {
       <button id="rbuild">Build review list</button>
       <a id="ropen" href="/p/${encodeURIComponent(name)}/review/" target="_blank">Open review page (${p.review_clips} clips)</a></div></div>`;
 
-  const renderStages = stages => $("#stages").innerHTML = Object.keys(STAGE_NAMES).map(s => {
+  // d: an events snapshot while a job runs. Stages still to come in it show "waiting" and their
+  // estimate, not the result of an earlier run.
+  const renderStages = (stages, d) => $("#stages").innerHTML = Object.keys(STAGE_NAMES).map(s => {
     const st = stages[s] || {}, off = (s.startsWith("mww") && !p.microwakeword.enabled) || (s.startsWith("oww") && !p.openwakeword.enabled);
-    const status = off ? "off" : st.status || "waiting";
-    const t = st.time ? ` · ${st.time < 90 ? Math.round(st.time) + " s" : Math.round(st.time / 60) + " min"}` : "";
+    let status = off ? "off" : st.status || "waiting";
+    let t = st.time ? ` · ${st.time < 90 ? Math.round(st.time) + " s" : Math.round(st.time / 60) + " min"}` : "";
+    if (!off && d?.job.running && pending(d, s)) { status = "waiting"; t = d.estimates?.[s] ? ` · ${d.estimates[s] < 60 ? "<1 min" : "~" + dur(d.estimates[s])}` : ""; }
     return `<div class="stage ${status}" title="${esc(st.error || "")}"><div>${STAGE_NAMES[s]}</div><div class="s">${status}${t}</div></div>`;
   }).join("");
   const renderResults = res => {
@@ -289,8 +322,9 @@ async function viewProject(name) {
   es = new EventSource(base + "/events");
   es.onmessage = async ev => {
     const d = JSON.parse(ev.data), log = $("#log");
+    d.off = Object.fromEntries(Object.keys(STAGE_NAMES).map(k => [k, (k.startsWith("mww") && !p.microwakeword.enabled) || (k.startsWith("oww") && !p.openwakeword.enabled)]));
     if (!log) return;
-    renderStages(d.stages);
+    renderStages(d.stages, d);
     if (d.lines.length) { log.textContent += d.lines.join("\n") + "\n"; log.scrollTop = log.scrollHeight; }
     $("#go").disabled = $("#retrain").disabled = $("#rbuild").disabled = d.job.running;
     $("#stop").disabled = !d.job.running;
@@ -300,11 +334,34 @@ async function viewProject(name) {
       const [s] = run;
       if (s === "generate") {
         const parts = ["positive", "negative"].map(k => pr["generate-" + k]).filter(Boolean);
-        if (parts.length) { pct = 100 * parts.reduce((a, x) => a + x.done / x.total, 0) / parts.length; label = parts.map(x => `${x.split} ${x.done}/${x.total}`).join(" · "); }
+        const fresh = parts.filter(x => x.time >= (d.stages.generate?.started || 0));
+        if (fresh.length) label = fresh.map(x => `${x.split} ${x.done}/${x.total}`).join(" · ");
+        // a part's progress file holds only its current split: count earlier splits as done
+        const order = { positive: ["positive_train", "positive_test"], negative: ["negative_train", "negative_test"] };
+        const sizes = { positive_train: p.samples.positive, positive_test: p.samples.positive_test, negative_train: p.samples.negative, negative_test: p.samples.negative_test };
+        const tot = Object.values(sizes).reduce((a, b) => a + b, 0);
+        let done = 0;
+        let work = tot;
+        for (const [part, splits] of Object.entries(order)) {
+          const x = pr["generate-" + part]; if (!x) continue;
+          if (x.time < (d.stages.generate?.started || 0)) {  // left from an earlier run: no work this time
+            work -= splits.reduce((a, sp) => a + sizes[sp], 0); continue;
+          }
+          const i = splits.indexOf(x.split); splits.slice(0, i).forEach(sp => done += sizes[sp]); done += x.done;
+        }
+        if (work > 0) pct = 100 * done / work;
       } else if (s === "mww-train" && pr["mww-train"]) { pct = 100 * pr["mww-train"].done / pr["mww-train"].total; label = `step ${pr["mww-train"].done} of ${pr["mww-train"].total}`; }
-      else if (s === "oww-train" && pr["oww-train"]) { const o = pr["oww-train"]; pct = 100 * o.done / o.total; label = `phase ${o.phase} of 3, step ${o.done} of ${o.total}`; }
+      else if (s === "oww-train" && pr["oww-train"]) {
+        const o = pr["oww-train"], n = p.openwakeword.steps;
+        pct = 100 * (o.phase === 1 ? o.done : n + (o.phase - 2) * n / 10 + o.done) / (1.2 * n);
+        label = `phase ${o.phase} of 3, step ${o.done} of ${o.total}`;
+      }
       else if (pr.bar && s.endsWith("features")) { pct = pr.bar.percent; label = `${pr.bar.desc} ${pr.bar.done}/${pr.bar.total}`; }
-      $("#prog").innerHTML = `<div class="bar"><div style="width:${pct ?? 3}%"></div></div><div class="hint">${esc(STAGE_NAMES[s])}${label ? ": " + esc(label) : ""}</div>`;
+      const t = timeLeft(d, s, pct);
+      $("#prog").innerHTML = `<div class="bar"><div style="width:${pct ?? 3}%"></div></div>
+        <div class="row" style="justify-content:space-between"><div class="hint">${esc(STAGE_NAMES[s])}${label ? ": " + esc(label) : ""}</div>
+        <div class="hint">${t.stage}</div></div>
+        <div class="eta">${t.overall}</div>`;
     } else if (d.job.running) {
       $("#prog").innerHTML = `<div class="hint" style="margin-top:8px">${esc(d.job.title)} running…</div>`;
     } else $("#prog").innerHTML = "";

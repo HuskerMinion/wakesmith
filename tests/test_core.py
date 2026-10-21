@@ -228,3 +228,17 @@ def test_training_progress_between_step_lines(proj):
     pr = jobs.progress(proj)
     assert pr["mww-train"]["done"] == 500 + 139
     assert pr["oww-train"] == {"phase": 2, "done": 300, "total": 1000}
+
+
+def test_eta_learns_this_machines_rate(proj, monkeypatch, tmp_path):
+    from wakesmith import eta
+
+    monkeypatch.setattr(eta, "_path", lambda: tmp_path / "timings.json")
+    proj.microwakeword.steps = 1000
+    assert eta.estimates(proj)["mww-train"] == 1000 * eta.DEFAULT_SECONDS_PER_UNIT["mww-train"]
+    eta.record(proj, "mww-train", 100.0, {})  # 0.1 s/step measured
+    assert eta.estimates(proj)["mww-train"] == 100.0
+    eta.record(proj, "mww-train", 300.0, {})  # running average of the rates
+    assert eta.estimates(proj)["mww-train"] == 200.0
+    eta.record(proj, "generate", 5.0, {"skipped": "all clips present"})  # skipped: no rate
+    assert "generate" not in (tmp_path / "timings.json").read_text()
