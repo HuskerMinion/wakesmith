@@ -3,6 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="icon" href="data:,">
 <title>wakesmith</title>
 <style>
   :root {
@@ -79,6 +80,8 @@
   .note { font-size: 13px; color: var(--muted); border-left: 3px solid var(--accent); padding: 4px 10px; margin-top: 10px; }
   .err { color: var(--bad); margin-top: 8px; font-size: 14px; }
   .files a { display: block; font-size: 14px; }
+  .files a.btn { display: inline-block; font-size: 15px; border-radius: 8px; padding: 8px 14px; border: 1px solid var(--line);
+           background: var(--panel); color: var(--text); text-decoration: none; }
 </style>
 </head>
 <body>
@@ -261,7 +264,11 @@ async function viewProject(name) {
          <td>${row.caught}/${r.positives} (${Math.round(100 * row.caught / Math.max(1, r.positives))}%)</td><td>${row.false}/${r.negatives}</td></tr>`).join("")}</table></div>`;
     }).join("") || `<span class="hint">No results yet: they appear after the "Held-out test" stage (needs your recordings with a HELDOUT.txt).</span>`;
   };
-  const renderFiles = files => $("#files").innerHTML = files.length ? `<div class="hint" style="margin-top:10px">Exported:</div>` +
+  const kinds = files => [["microwakeword", "microWakeWord (ESPHome)"], ["openwakeword", "openWakeWord"]]
+    .filter(([k]) => files.some(f => f.startsWith(k + "/")));
+  const renderFiles = files => $("#files").innerHTML = files.length ? `<div class="row" style="margin-top:10px">` +
+    kinds(files).map(([k, label]) => `<a class="btn" href="${base}/zip/${k}" download>⬇ ${label} (.zip)</a>`).join("") +
+    `</div><div class="hint" style="margin-top:10px">Single files:</div>` +
     files.map(f => `<a href="${base}/files/${f.split("/").map(encodeURIComponent).join("/")}" download>${esc(f)}</a>`).join("") : "";
   renderStages(p.stages); renderResults(p.results); renderFiles(p.exported);
   $("#results").onclick = e => {
@@ -296,7 +303,7 @@ async function viewProject(name) {
         if (parts.length) { pct = 100 * parts.reduce((a, x) => a + x.done / x.total, 0) / parts.length; label = parts.map(x => `${x.split} ${x.done}/${x.total}`).join(" · "); }
       } else if (s === "mww-train" && pr["mww-train"]) { pct = 100 * pr["mww-train"].done / pr["mww-train"].total; label = `step ${pr["mww-train"].done} of ${pr["mww-train"].total}`; }
       else if (s === "oww-train" && pr["oww-train"]) { const o = pr["oww-train"]; pct = 100 * o.done / o.total; label = `phase ${o.phase} of 3, step ${o.done} of ${o.total}`; }
-      else if (pr.bar) { pct = pr.bar.percent; label = `${pr.bar.desc} ${pr.bar.done}/${pr.bar.total}`; }
+      else if (pr.bar && s.endsWith("features")) { pct = pr.bar.percent; label = `${pr.bar.desc} ${pr.bar.done}/${pr.bar.total}`; }
       $("#prog").innerHTML = `<div class="bar"><div style="width:${pct ?? 3}%"></div></div><div class="hint">${esc(STAGE_NAMES[s])}${label ? ": " + esc(label) : ""}</div>`;
     } else if (d.job.running) {
       $("#prog").innerHTML = `<div class="hint" style="margin-top:8px">${esc(d.job.title)} running…</div>`;

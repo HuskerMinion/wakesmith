@@ -213,3 +213,18 @@ def test_disk_warning(monkeypatch):
     assert "10 GB free" in hardware.disk_warning("/")
     monkeypatch.setattr(hardware.shutil, "disk_usage", lambda p: usage(0, 0, 100 * 2**30))
     assert hardware.disk_warning("/") == ""
+
+
+def test_training_progress_between_step_lines(proj):
+    from wakesmith import jobs
+
+    logs = proj.path("logs")
+    logs.mkdir(parents=True)
+    batch = "Validation Batch #{}: Accuracy = 0.9; Loss = 0.1; Mini-Batch #{}\r"
+    (logs / "mww-train.log").write_text(
+        "INFO:absl:Step #500: rate 0.001\n" + "".join(batch.format(2, i) for i in range(1, 140))
+    )
+    (logs / "oww-progress.json").write_text('{"phase": 2, "done": 300, "total": 1000}')
+    pr = jobs.progress(proj)
+    assert pr["mww-train"]["done"] == 500 + 139
+    assert pr["oww-train"] == {"phase": 2, "done": 300, "total": 1000}

@@ -134,6 +134,11 @@ wakesmith's gap:
 3. **Web UI + job runner.**
    - **Accept when:** a fresh phrase goes from phrase entry to downloaded model in the browser,
      with progress, on this machine.
+   - **Status (2026-10-20): passed.** Driven in headless Chromium, twice, with fresh phrases
+     ("hey cobalt", "okay lantern"), Quick preset: phrase, Hear it, sound-alikes, create and
+     train, live progress for every stage, export, downloads, in about 8 minutes with no page
+     errors. Fixed on the way: training progress (the step lines microWakeWord logs are about
+     50 KB apart), one zip per model (both models are named <project>.tflite), favicon 404.
 4. **Release v0.2.**
    - README rewrite with screenshots, licensing page, and the banner.
    - Move the v0.1 recipe docs to a `v0.1` tag and link to it.

@@ -47,6 +47,7 @@ MODEL_ARGS = [
     "--stride",
     "3",
 ]
+EVAL_INTERVAL = 500  # training steps between validations (and "Step #" log lines)
 # The frontend's float output is uint16 * 0.0390625 exactly; storing uint16 halves the disk use and
 # the trainer rescales uint16 sets itself (as for upstream's negative sets).
 _FEATURE_SCALE = 0.0390625
@@ -230,7 +231,7 @@ def write_config(p: Project) -> Path:
         "time_mask_count": [0],
         "freq_mask_max_size": [0],
         "freq_mask_count": [0],
-        "eval_step_interval": 500,
+        "eval_step_interval": EVAL_INTERVAL,
         "clip_duration_ms": 1500,
         "target_minimization": 0.9,
         "minimization_metric": None,

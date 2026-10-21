@@ -318,7 +318,10 @@ def train(p: Project, log=print) -> Path:
             return loss
 
         every = max(1, steps // 20)
+        prog_file = p.path("logs", "oww-progress.json")
         for s in range(steps):
+            if s % 100 == 0:
+                prog_file.write_text(json.dumps({"phase": phase, "done": s, "total": steps}))
             x, y = batches()
             lam = np.float32(np.random.beta(alpha, alpha))
             perm = np.random.permutation(len(x))

@@ -311,6 +311,31 @@ def create_app(token: str | None = None) -> FastAPI:
             raise HTTPException(404, "no such file")
         return FileResponse(f, filename=f.name)
 
+    @app.get("/api/projects/{name}/zip/{kind}")
+    def download_zip(name: str, kind: str):
+        """One model's export folder (plus the license note) as <project>-<kind>.zip: both models
+        are named <project>.tflite, so single downloads of the two collide in the browser."""
+        import io
+        import zipfile
+
+        p = proj(name)
+        d = p.path("export", kind)
+        if kind not in ("microwakeword", "openwakeword") or not d.is_dir():
+            raise HTTPException(404, "nothing exported for that model")
+        buf = io.BytesIO()
+        with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as z:
+            for f in sorted(d.iterdir()):
+                z.write(f, f.name)
+            note = p.path("export", "LICENSE-NOTE.txt")
+            if note.exists():
+                z.write(note, note.name)
+        zname = f"{p.name}-{kind}.zip"
+        return Response(
+            buf.getvalue(),
+            media_type="application/zip",
+            headers={"Content-Disposition": f'attachment; filename="{zname}"'},
+        )
+
     # -- review page API (used by /p/{name}/review/) ------------------------------------------
     @app.post("/api/projects/{name}/review/build")
     async def review_build(name: str, request: Request):

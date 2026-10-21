@@ -15,6 +15,7 @@ import sys
 import time
 from pathlib import Path
 
+from . import mww
 from . import project as projects
 from .project import Project
 
@@ -93,15 +94,18 @@ def progress(p: Project) -> dict:
                 pass
     mlog = p.path("logs", "mww-train.log")
     if mlog.exists():
-        steps = re.findall(r"Step #(\d+):", _tail(mlog, 20000))
-        if steps:
-            out["mww-train"] = {"done": int(steps[-1]), "total": p.microwakeword.steps}
-    tlog = p.path("logs", "train.log")
-    if tlog.exists():
-        m = re.findall(r"oww phase (\d) step (\d+)/(\d+)", _tail(tlog, 4000))
+        # microWakeWord prints "Validation Batch #k ... Mini-Batch #m" (\r-terminated) every step
+        m = re.findall(r"Validation Batch #(\d+):[^\r\n]*Mini-Batch #(\d+)", _tail(mlog, 4000))
         if m:
-            ph, s, t = m[-1]
-            out["oww-train"] = {"phase": int(ph), "done": int(s), "total": int(t)}
+            k, mini = m[-1]
+            done = (int(k) - 1) * mww.EVAL_INTERVAL + int(mini)
+            out["mww-train"] = {"done": done, "total": p.microwakeword.steps}
+    olog = p.path("logs", "oww-progress.json")
+    if olog.exists():
+        try:
+            out["oww-train"] = json.loads(olog.read_text())
+        except json.JSONDecodeError:
+            pass
     jlog = p.path("logs", "job.log")
     if jlog.exists():
         bars = _TQDM.findall(_tail(jlog, 4000))

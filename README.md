@@ -82,8 +82,8 @@ from recordings*. Held-out clips are never moved, so scores stay comparable betw
 ## Results from one household
 
 The same 163 held-out real clips (94 times someone said "Hey Alfred", 69 real false triggers of
-an earlier model, recorded on two days that were never trained on), scored the way the devices run
-the models:
+an earlier model, recorded on two days that were never trained on), scored the way ESPHome runs
+the models (TFLite Micro's audio frontend):
 
 | microWakeWord | False triggers (of 69) | Caught (of 94) |
 |---|---|---|
@@ -101,6 +101,13 @@ The earlier openWakeWord model had been trained on audio at a different scale th
 runtime feeds it (±1.0 floats instead of 16-bit sample values), so on a real runtime it lost about
 half its recall at strict thresholds. wakesmith extracts features exactly as the runtime does.
 
+**Other microWakeWord engines can disagree.** The same household's devices run
+[zserge/microwakeword](https://github.com/zserge/microwakeword), a pure-Go engine whose audio
+frontend approximates TFLite Micro's. There the earlier v0.1 model is better: 86 caught at 4 false
+triggers, against wakesmith's 74. `wakesmith test --frontend zserge` scores on that frontend, and
+exported models record the frontend they were trained on in their metadata
+(`mww_feature_frontend`), so such engines can pick the matching one.
+
 One home, one phrase, a small test set: read these as a direction, not a benchmark.
 
 ## Hardware
@@ -108,7 +115,7 @@ One home, one phrase, a small test set: read these as a direction, not a benchma
 `wakesmith setup` looks at your PCI devices before installing anything, picks the matching PyTorch
 build, then checks the GPU really works and falls back to CPU if not. `wakesmith doctor` shows
 what it found and the settings that follow: TTS batch size from GPU memory, one generation process
-per GPU, and worker counts from free RAM.
+per GPU, and worker counts from free RAM. `--cpu` on `doctor`, `train` and `serve` ignores the GPU.
 
 | | Synthetic speech | Training | Status |
 |---|---|---|---|
