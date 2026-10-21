@@ -7,6 +7,9 @@ import shutil
 from dataclasses import asdict, dataclass, field
 
 LOW_DISK_GB = 40  # a full run (clips, augmented features, models) needs about this much
+LOW_RAM_GB = (
+    14  # microWakeWord training holds its negative sets in memory: killed on a 10 GB VM, fine on 16
+)
 
 
 def forced_cpu() -> bool:
@@ -105,6 +108,15 @@ def _openvino_gpu() -> bool:
 
 def disk_free_gb(path: str) -> float:
     return round(shutil.disk_usage(path).free / 2**30, 1)
+
+
+def ram_warning(hw: Hardware) -> str:
+    if not hw.ram_gb or hw.ram_gb >= LOW_RAM_GB:
+        return ""
+    return (
+        f"only {hw.ram_gb:.0f} GB RAM; microWakeWord training needs about 16 GB "
+        "(train openWakeWord only, or add memory)"
+    )
 
 
 def disk_warning(path: str) -> str:

@@ -126,8 +126,8 @@ per GPU, and worker counts from free RAM. `--cpu` on `doctor`, `train` and `serv
 
 Both trainers run on the CPU: microWakeWord needs TensorFlow 2.18+, which has no Intel GPU
 support, and the openWakeWord head is small. Disk: about 43 GB for the shared training data
-(unpacked) plus about 23 GB per project, mostly microWakeWord features. RAM: tested on a 29 GB
-machine; worker counts follow free RAM, so close other big programs (e.g. a local LLM) during
+(unpacked) plus about 23 GB per project, mostly microWakeWord features. RAM: 16 GB or more for microWakeWord (its
+training holds the negative sets in memory; a 10 GB machine runs out), tested on 16 and 29 GB; worker counts follow free RAM, so close other big programs (e.g. a local LLM) during
 training. More cores make feature building and training faster.
 
 **Intel GPU note:** a crashed GPU job can leave the `xe` driver stuck, after which anything that

@@ -85,6 +85,7 @@ def create_app(token: str | None = None) -> FastAPI:
                 "workers": h.workers(),
                 "disk_free_gb": hardware.disk_free_gb(str(assets.home().parent)),
                 "disk_warning": hardware.disk_warning(str(assets.home().parent)),
+                "ram_warning": hardware.ram_warning(h),
             }
             state["hw_time"] = time.time()
         return state["hw"]

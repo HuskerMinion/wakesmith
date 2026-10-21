@@ -261,3 +261,10 @@ def test_stage_cut_off_by_a_dead_job_shows_failed(proj):
     st = jobs.stages(proj, ["generate", "mww-train", "test"])
     assert st["generate"]["status"] == "done" and st["test"] is None
     assert st["mww-train"]["status"] == "failed" and "memory" in st["mww-train"]["error"]
+
+
+def test_ram_warning_below_16_gb():
+    from wakesmith import hardware
+
+    assert "16 GB" in hardware.ram_warning(hardware.Hardware("cpu", [], 6, 9.6, 9.0))
+    assert hardware.ram_warning(hardware.Hardware("cpu", [], 6, 15.6, 14.8)) == ""

@@ -114,7 +114,7 @@ async function hardware() {
     const gpus = h.gpus.length ? `${h.gpus.length}× ${h.gpus[0].name.replace(/\(R\)/g, "")} (${h.accel})` : "CPU only";
     if (h.problem) { $("#hw").textContent = "⚠ " + h.problem; return; }
     $("#hw").textContent = `${gpus} · ${h.cpus} cores · ${Math.round(h.ram_free_gb)}/${Math.round(h.ram_gb)} GB RAM free · ${Math.round(h.disk_free_gb)} GB disk`
-      + (h.disk_warning ? ` · ⚠ ${h.disk_warning}` : "");
+      + (h.disk_warning ? ` · ⚠ ${h.disk_warning}` : "") + (h.ram_warning ? ` · ⚠ ${h.ram_warning}` : "");
   } catch { $("#hw").textContent = ""; }
 }
 

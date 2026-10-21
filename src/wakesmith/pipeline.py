@@ -69,6 +69,8 @@ def run(
     stages = STAGES[STAGES.index(first) : STAGES.index(last) + 1]
     if low := hardware.disk_warning(str(p.dir)):
         say(f"warning: {low}")
+    if p.microwakeword.enabled and (low := hardware.ram_warning(hw)):
+        say(f"warning: {low}")
     say(
         f"hardware: {hw.accel}, {len(hw.gpus)} GPU(s), {hw.cpus} CPUs, "
         f"{hw.ram_free_gb:.0f}/{hw.ram_gb:.0f} GB RAM free; stages: {', '.join(stages)}"

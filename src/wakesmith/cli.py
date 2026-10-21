@@ -44,6 +44,8 @@ def doctor(cpu: bool = typer.Option(False, "--cpu", help=CPU_HELP)) -> None:
     )
     if low := hardware.disk_warning(str(assets.home().parent)):
         typer.echo(f"warning: {low}")
+    if low := hardware.ram_warning(hw):
+        typer.echo(f"warning: {low}")
     typer.echo(f"data in {assets.home()}:")
     for a in assets.ASSETS.values():
         mark = "ok " if a.present() else "-- "
