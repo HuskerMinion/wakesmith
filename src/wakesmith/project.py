@@ -42,6 +42,9 @@ class Real:
     negatives: str = ""  # folder of not-the-phrase recordings, ideally real false triggers
     copies: int = 10  # copies of each real positive in training (each augmented differently)
     negative_copies: int = 5
+    # microWakeWord: 0 mixes real positives into the synthetic set; > 0 trains them as their own
+    # set sampled at this weight (synthetic positives: 2.0), so a few dozen takes aren't drowned.
+    sampling_weight: float = 0.0
     ignore_tail_s: float = 0.3  # ignore a device chime at the end of positive clips
 
 

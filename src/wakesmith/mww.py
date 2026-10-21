@@ -67,7 +67,9 @@ def feature_jobs(p: Project) -> list[tuple[str, str, list[str], int, int]]:
     """(set, split, files, repeat, slide_frames) for every feature set."""
     real = RealData(p)
     pos_train = _originals(p.path("clips", "positive_train"))
-    pos_train += sorted(str(x) for x in p.path("real", "train").glob("*.wav")) * p.real.copies
+    real_pos = sorted(str(x) for x in p.path("real", "train").glob("*.wav")) * p.real.copies
+    if not p.real.sampling_weight:
+        pos_train += real_pos
     pos_test = _originals(p.path("clips", "positive_test"))
     adv_train = _originals(p.path("clips", "negative_train"))
     adv_test = _originals(p.path("clips", "negative_test"))
@@ -82,6 +84,8 @@ def feature_jobs(p: Project) -> list[tuple[str, str, list[str], int, int]]:
         ("adversarial", "validation", adv_test[:ha], 1, 10),
         ("adversarial", "testing", adv_test[ha:], 1, 1),
     ]
+    if p.real.sampling_weight and real_pos:
+        jobs.append(("real_positive", "training", real_pos, 1, 10))
     if "neg" in real.sources:
         items, _ = real.training_items("not_wake")
         neg = [str(real.file(s, f)) for s, f in items]
@@ -194,6 +198,17 @@ def write_config(p: Project) -> Path:
             "type": "mmap",
         },
     ]
+    if p.real.sampling_weight and p.path("mww", "features", "real_positive").exists():
+        feats.append(
+            {
+                "features_dir": "features/real_positive",
+                "sampling_weight": p.real.sampling_weight,
+                "penalty_weight": 1.0,
+                "truth": True,
+                "truncation_strategy": "truncate_start",
+                "type": "mmap",
+            }
+        )
     if p.path("mww", "features", "real_negative").exists():
         # A real false trigger costs more than a synthetic one.
         feats.append(

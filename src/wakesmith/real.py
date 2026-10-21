@@ -185,8 +185,20 @@ def trim_to_phrase(
     search = e[: len(e) - tail] if tail and len(a) > 2.5 * SR else e  # short clips: no chime
     if not len(search):
         return None
-    on = search > max(search.max() * 0.12, np.median(search) * 3)
-    end, i = None, len(on) - 1
+    end = _last_burst(search > max(search.max() * 0.12, np.median(search) * 3))
+    if (
+        end is None
+    ):  # a clip that's nearly all speech: its median is speech, so floor on the quietest 10%
+        end = _last_burst(search > max(search.max() * 0.12, np.percentile(search, 10) * 3))
+    if end is None:
+        return None
+    stop = min(len(a), int((end / 100 + tail_pad_s) * SR))
+    return a[max(0, stop - int(keep_s * SR)) : stop]
+
+
+def _last_burst(on: np.ndarray) -> int | None:
+    """End frame of the last run of `on` frames lasting >= 150 ms, allowing gaps < 150 ms."""
+    i = len(on) - 1
     while i >= 0:
         if on[i]:
             j, gap = i, 0
@@ -194,15 +206,11 @@ def trim_to_phrase(
                 j -= 1
                 gap = 0 if on[j] else gap + 1
             if i - j >= 15:
-                end = i
-                break
+                return i
             i = j
         else:
             i -= 1
-    if end is None:
-        return None
-    stop = min(len(a), int((end / 100 + tail_pad_s) * SR))
-    return a[max(0, stop - int(keep_s * SR)) : stop]
+    return None
 
 
 def windows(a: np.ndarray, win_s: float = 2.0, hop_s: float = 0.5) -> list[np.ndarray]:
