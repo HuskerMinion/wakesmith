@@ -592,6 +592,8 @@ async function recordTake({ onLevel, maxS = 8, fixedS = 0, signal }) {
   } finally { stream.getTracks().forEach(t => t.stop()); ctx.close(); URL.revokeObjectURL(url); }
 }
 
+const lastSpeaker = { get() { try { return localStorage.getItem("ws-speaker") || ""; } catch { return ""; } },
+  set(v) { try { localStorage.setItem("ws-speaker", v); } catch {} } };
 async function voicesTab(p, base, steps) {
   const v = $("#view"), hasVoices = p.stages.generate?.status === "done";
   let tab = "rec", rec = null, levels = Array(32).fill(0), busy = false;
@@ -616,7 +618,9 @@ async function voicesTab(p, base, steps) {
     $("#sofar").innerHTML = `<dt>Takes recorded here</dt><dd class="mono">${pos.length}</dd><dt>for training</dt><dd class="mono">${pos.length - held}</dd>
       <dt>kept aside to test</dt><dd class="mono">${held}</dd><dt>Room sound clips</dt><dd class="mono">${neg.length}</dd>
       <dt>Phrase folder</dt><dd style="word-break:break-all">${rec.pos.active ? "recorded here" : esc(rec.pos.setting || "none")}</dd>`;
-    $("#sofarnote").innerHTML = pos.length >= 8 && pos.length < 40 ? `<div class="callout warn">${icon("bang", 18, 2)}<span>If these are all one voice, ask someone else to record five or so too: the test is far more trustworthy with a second voice.</span></div>`
+    const voices = new Set(pos.map(t => (t.speaker || "").trim().toLowerCase()).filter(Boolean));
+    $("#sofar").innerHTML += `<dt>Speakers named</dt><dd class="mono">${voices.size || "none"}</dd>`;
+    $("#sofarnote").innerHTML = pos.length >= 8 && voices.size <= 1 ? `<div class="callout warn">${icon("bang", 18, 2)}<span>${voices.size ? "All takes are one voice" : "If these are all one voice"}: ask someone else to record five or so too. The test is far more trustworthy with a second voice.</span></div>`
       : pos.length && !held ? `<div class="callout warn">${icon("bang", 18, 2)}<span>No take is kept aside yet, so there is no honest test. Mark a few as "test".</span></div>` : "";
   };
 
@@ -636,7 +640,9 @@ async function voicesTab(p, base, steps) {
           <div class="kicker" style="color:var(--warn);font-weight:600;letter-spacing:.04em;text-transform:uppercase;margin:0">Take ${n}${n % 4 === 0 ? " · kept aside to test" : ""}</div>
           <div style="font:600 24px/1.25 var(--head)">Say "${esc(p.phrase)}" ${esc(prompt)}.</div>
           <div class="meter" id="meter" role="img" aria-label="Microphone level">${levels.map(() => "<span></span>").join("")}</div>
-          <div class="hint" id="rechint">Press the microphone, then say it once. It stops by itself when you finish.</div></div></section>
+          <div class="hint" id="rechint">Press the microphone, then say it once. It stops by itself when you finish.</div>
+          <label class="f" for="spk" style="max-width:320px">Who's speaking? <span class="hint">optional; helps check you have more than one voice</span>
+            <input type="text" id="spk" value="${esc(lastSpeaker.get())}" placeholder="e.g. Sam" autocomplete="off"></label></div></section>
       <section class="panel" aria-labelledby="h-takes"><div class="row" style="justify-content:space-between"><h2 id="h-takes">Your takes</h2>
         <button type="button" id="room" ${blocked ? "disabled" : ""}>${icon("mic", 16)}Record 10 s of room sound</button></div>
         <ul class="takes" id="takes"></ul></section>`;
@@ -645,6 +651,7 @@ async function voicesTab(p, base, steps) {
     const rows = [...rec.pos.takes.map(t => ({ ...t, kind: "pos" })), ...rec.neg.takes.map(t => ({ ...t, kind: "neg" }))].reverse();
     $("#takes").innerHTML = rows.map(t => `<li><button type="button" class="round" data-play="${t.kind}/${t.file}" aria-label="Play ${t.file}">${icon("play", 14)}</button>
       <span class="mono" style="min-width:84px">${t.file.replace(".wav", "").replace("take_", t.kind === "neg" ? "room " : "take ")}</span>
+      ${t.kind === "pos" ? `<button type="button" class="tag" data-spk="${t.file}" data-cur="${esc(t.speaker || "")}" title="who is speaking: click to change">${esc(t.speaker || "who?")}</button>` : ""}
       <span style="flex:1 1 160px">${esc(t.condition || (t.kind === "neg" ? "room sound" : ""))}</span>
       ${t.kind === "pos" ? `<button type="button" class="tag ${t.held ? "test" : ""}" data-held="${t.file}" aria-pressed="${t.held}" title="kept aside to test, or used for training">${t.held ? "test" : "train"}</button>` : `<span class="tag">not the phrase</span>`}
       <span class="mono hint">${t.seconds.toFixed(1)} s</span>
@@ -657,7 +664,9 @@ async function voicesTab(p, base, steps) {
     [...m.children].forEach((s, i) => { const h = levels[i]; s.style.height = `${4 + h * 36}px`; s.style.background = h > 0.85 ? "var(--orange)" : h > 0.05 ? "var(--gold)" : "#34405a"; });
   };
   const upload = async (kind, audio, condition, heldout) => {
-    const r = await fetch(`${base}/recordings/${kind}?condition=${enc(condition)}&heldout=${heldout}`, { method: "POST", body: wav16(audio) });
+    const who = kind === "pos" ? ($("#spk")?.value.trim() || "") : "";
+    if (who) lastSpeaker.set(who);
+    const r = await fetch(`${base}/recordings/${kind}?condition=${enc(condition)}&heldout=${heldout}&speaker=${enc(who)}`, { method: "POST", body: wav16(audio) });
     if (!r.ok) { let m = r.statusText; try { m = (await r.json()).detail || m; } catch {} throw new Error(m); }
   };
   const take = async (kind) => {
@@ -692,10 +701,11 @@ async function voicesTab(p, base, steps) {
     if ($("#room")) $("#room").onclick = () => take("neg");
     if ($("#usehere")) $("#usehere").onclick = async () => { try { await api(`${base}/recordings/pos/use`, { method: "POST" }); await load(); draw(); } catch (e) { err(e.message); } };
     if ($("#takes")) $("#takes").onclick = async e => {
-      const pl = e.target.closest("[data-play]"), dl = e.target.closest("[data-del]"), hd = e.target.closest("[data-held]");
+      const pl = e.target.closest("[data-play]"), dl = e.target.closest("[data-del]"), hd = e.target.closest("[data-held]"), sp = e.target.closest("[data-spk]");
       try {
         if (pl) new Audio(`${base}/recordings/${pl.dataset.play}`).play();
         if (dl && confirm(`Delete ${dl.dataset.del.split("/")[1]}?`)) { await api(`${base}/recordings/${dl.dataset.del}`, { method: "DELETE" }); await load(); draw(); }
+        if (sp) { const v = prompt(`Who is speaking in ${sp.dataset.spk}?`, sp.dataset.cur); if (v !== null) { await api(`${base}/recordings/pos/${sp.dataset.spk}/speaker`, { method: "POST", body: { speaker: v } }); await load(); draw(); } }
         if (hd) { await api(`${base}/recordings/pos/${hd.dataset.held}/heldout`, { method: "POST", body: { held: hd.getAttribute("aria-pressed") !== "true" } }); await load(); draw(); }
       } catch (x) { err(x.message); }
     };

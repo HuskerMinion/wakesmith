@@ -295,12 +295,17 @@ def create_app(token: str | None = None) -> FastAPI:
 
     @app.post("/api/projects/{name}/recordings/{kind}")
     async def rec_add(
-        name: str, kind: str, request: Request, condition: str = "", heldout: bool = False
+        name: str,
+        kind: str,
+        request: Request,
+        condition: str = "",
+        heldout: bool = False,
+        speaker: str = "",
     ):
         p = proj(name)
         _idle(p)
         try:
-            return recordings.add(p, kind, await request.body(), condition, heldout)
+            return recordings.add(p, kind, await request.body(), condition, heldout, speaker)
         except PermissionError as e:
             raise HTTPException(409, str(e)) from None
         except (ValueError, RuntimeError) as e:  # soundfile raises RuntimeError on non-WAV bytes
@@ -332,6 +337,16 @@ def create_app(token: str | None = None) -> FastAPI:
         except (ValueError, FileNotFoundError):
             raise HTTPException(404, "no such take") from None
         return {"deleted": file}
+
+    @app.post("/api/projects/{name}/recordings/{kind}/{file}/speaker")
+    async def rec_speaker(name: str, kind: str, file: str, request: Request):
+        p = proj(name)
+        _idle(p)
+        try:
+            recordings.set_speaker(p, kind, file, str((await request.json()).get("speaker", "")))
+        except (ValueError, FileNotFoundError):
+            raise HTTPException(404, "no such take") from None
+        return {"file": file}
 
     @app.post("/api/projects/{name}/recordings/{kind}/{file}/heldout")
     async def rec_heldout(name: str, kind: str, file: str, request: Request):

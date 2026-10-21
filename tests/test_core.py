@@ -324,3 +324,20 @@ def test_delete_project_keeps_outside_folders(proj, tmp_path):
     assert not proj.dir.exists() and (tmp_path / "mine" / "a.wav").exists()
     with pytest.raises(ValueError):
         project.delete(proj)
+
+
+def test_recorded_takes_keep_speaker_and_extra_columns(proj):
+    from wakesmith import recordings
+
+    recordings.add(proj, "pos", _wav(1.0), "close", speaker="voiceA")
+    d = recordings.folder(proj, "pos")
+    (d / "labels.csv").write_text(
+        (d / "labels.csv").read_text().replace("recorded\n", "recorded,note\n", 1)
+    )
+    recordings.set_speaker(proj, "pos", "take_001.wav", "voiceB")
+    recordings.add(proj, "pos", _wav(1.0), "far", speaker="voiceA")
+    rows = {r["file"]: r for r in recordings.listing(proj, "pos")["takes"]}
+    assert (
+        rows["take_001.wav"]["speaker"] == "voiceB" and rows["take_002.wav"]["speaker"] == "voiceA"
+    )
+    assert "note" in (d / "labels.csv").read_text().splitlines()[0]

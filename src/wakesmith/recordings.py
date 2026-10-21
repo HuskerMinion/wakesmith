@@ -22,7 +22,7 @@ from .project import Project
 
 SR = 16000
 KINDS = ("pos", "neg")
-FIELDS = ["file", "condition", "recorded"]
+FIELDS = ["file", "speaker", "condition", "recorded"]
 MIN_S, MAX_S = 0.3, 30.0
 _NAME = re.compile(r"^take_\d{3,}\.wav$")
 
@@ -73,7 +73,10 @@ def _held(d: Path) -> set[str]:
 
 def _write(d: Path, rows: list[dict], held: set[str]) -> None:
     with open(d / "labels.csv", "w", newline="") as fh:
-        w = csv.DictWriter(fh, fieldnames=FIELDS, extrasaction="ignore")
+        extra = [
+            k for r in rows for k in r if k not in FIELDS
+        ]  # columns someone added by hand stay
+        w = csv.DictWriter(fh, fieldnames=FIELDS + list(dict.fromkeys(extra)), restval="")
         w.writeheader()
         w.writerows(rows)
     names = {r["file"] for r in rows}
@@ -101,7 +104,9 @@ def listing(p: Project, kind: str) -> dict:
     }
 
 
-def add(p: Project, kind: str, wav: bytes, condition: str = "", heldout: bool = False) -> dict:
+def add(
+    p: Project, kind: str, wav: bytes, condition: str = "", heldout: bool = False, speaker: str = ""
+) -> dict:
     """Store one take (16 kHz mono WAV bytes) and switch the project to this folder if it has none."""
     a, sr = sf.read(io.BytesIO(wav), dtype="int16", always_2d=True)
     if sr != SR:
@@ -124,6 +129,7 @@ def add(p: Project, kind: str, wav: bytes, condition: str = "", heldout: bool = 
     rows.append(
         {
             "file": name,
+            "speaker": speaker.strip()[:40],
             "condition": condition.strip()[:80],
             "recorded": time.strftime("%Y-%m-%d %H:%M"),
         }
@@ -153,6 +159,13 @@ def delete(p: Project, kind: str, name: str) -> None:
     d = folder(p, kind)
     path(p, kind, name).unlink()
     _write(d, [r for r in _rows(d) if r["file"] != name], _held(d) - {name})
+
+
+def set_speaker(p: Project, kind: str, name: str, speaker: str) -> None:
+    d = folder(p, kind)
+    path(p, kind, name)
+    rows = [{**r, "speaker": speaker.strip()[:40]} if r["file"] == name else r for r in _rows(d)]
+    _write(d, rows, _held(d))
 
 
 def set_heldout(p: Project, kind: str, name: str, held: bool) -> None:
