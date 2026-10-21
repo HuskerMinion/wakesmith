@@ -22,6 +22,7 @@ What makes it different:
 
 ```bash
 sudo apt install espeak-ng git          # Debian/Ubuntu; espeak-ng phonemizes the TTS text
+curl -LsSf https://astral.sh/uv/install.sh | sh   # uv, if you don't have it; then open a new shell
 uv tool install git+https://github.com/HuskerMinion/wakesmith
 wakesmith setup                         # right PyTorch for your GPU; downloads ~24 GB of data
 wakesmith serve                         # then open http://localhost:8765/
