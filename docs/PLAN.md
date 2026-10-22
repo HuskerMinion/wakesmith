@@ -205,6 +205,16 @@ wakesmith's gap:
 7. **Later (optional):**
    - "Open" data profile.
    - Docker images (NVIDIA, Intel).
+   - **Native Windows (no WSL2)**, for testers who can't or won't use WSL2; not for speed. First find
+     why microWakeWord training ran ~3x slower under WSL2 on an i9-13900K (40 min) than on a Ryzen 5 7600X
+     (13 min) (2026-10-21). WSL2's CPU overhead is normally a few percent, so suspect TensorFlow
+     using all 32 threads across P and E cores (try fewer threads, P cores only) and project files
+     on the Windows drive (/mnt/c, slow 9P) instead of WSL's own disk. A native port needs: spawn
+     instead of fork for the TTS/feature worker pools (mww.py, oww.py), RAM and GPU detection
+     without /proc and /sys (hardware.py, setup_env.py), job start/stop without process sessions
+     and killpg (jobs.py), and a check that TensorFlow CPU, microWakeWord and its audio front end
+     install on Windows. PyTorch CUDA works natively there. About a day of work plus testing on a
+     real Windows PC.
    - Non-English voices (de/fr/nl generators exist).
    - Recording clips straight from the browser.
    - **LICENSE-NOTE.txt per model:** list the actual sources that model was trained on (voices, noise,
