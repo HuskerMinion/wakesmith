@@ -159,7 +159,7 @@ wakesmith's gap:
      The README's GitHub install waits for the push.
 5. **UI redesign** (mockup 2026-10-21: https://claude.ai/artifact/C9hSMZb4Ye2qqHoNciiuJY, five
    linked screens; react to it before it is built).
-   - **Look:** the user's branding kit (Wakesmith_Branding_Kit.zip,
+   - **Look:** the user's branding kit (Wakesmith_Branding_Kit.zip:
      the glowing W app mark and banners): dark "neon forge" theme, Deep Space #0f141e ground,
      Neon Cyan #4ad5ff accents, Forge Orange #ff7b00 for the primary action (dark text on it for
      contrast), Waveform Gold #ffcc00 for audio levels; Montserrat headings, Inter text, a mono
@@ -205,20 +205,18 @@ wakesmith's gap:
 7. **Later (optional):**
    - "Open" data profile.
    - Docker images (NVIDIA, Intel).
-   - **Native Windows (no WSL2)**, for testers who can't or won't use WSL2; not for speed. First find
-     why microWakeWord training ran ~3x slower under WSL2 on an i9-13900K (40 min) than on a Ryzen 5 7600X
-     (13 min) (2026-10-21). WSL2's CPU overhead is normally a few percent, so suspect TensorFlow
-     using all 32 threads across P and E cores (try fewer threads, P cores only) and project files
-     on the Windows drive (/mnt/c, slow 9P) instead of WSL's own disk. A native port needs: spawn
+   - **Native Windows (no WSL2)**, for testers who can't or won't use WSL2; not for speed. WSL2 speed
+     is settled (2026-10-22): training on an i9-13900K under WSL2 went from 40 to 23 min (a Ryzen 5
+     7600X on Linux: 13-20) with a current BIOS, 48 GB for WSL2 and 8 TensorFlow threads (51.8 s per
+     1000 steps at 8, 57.2 at all 32); WSL's own disk ran 2.7 GB/s. A native port needs: spawn
      instead of fork for the TTS/feature worker pools (mww.py, oww.py), RAM and GPU detection
      without /proc and /sys (hardware.py, setup_env.py), job start/stop without process sessions
      and killpg (jobs.py), and a check that TensorFlow CPU, microWakeWord and its audio front end
      install on Windows. PyTorch CUDA works natively there. About a day of work plus testing on a
-     real Windows PC. Also suspect the E cores: one training run keeps only ~2 threads busy (below),
-     so if Windows schedules it on the i9's efficiency cores, a run is slow however many cores exist.
+     real Windows PC.
    - **Remote workers (several PCs, one job each).** Splitting ONE training run across PCs doesn't
      help: microWakeWord's ~26k-parameter model trains in 20-40k short sequential steps, and a run
-     keeps only ~2 of a 12-thread box's threads busy (r7t, 2026-10-22: 209% CPU, 78% idle). Per-step gradient
+     keeps only ~2 of a Ryzen 5 7600X's 12 threads busy (r7t, 2026-10-22: 209% CPU, 78% idle). Per-step gradient
      sync over the LAN would only add latency. What helps is running separate jobs side by side
      (rounds usually train 2+ models: hh4 + r7, a2 + a3). Design: wakesmith on another PC (WSL2) runs
      a small worker; the main UI sends it a job (project.yaml + real-data folders + clips, or just the
@@ -228,9 +226,8 @@ wakesmith's gap:
      TLS as the UI, a job queue that places jobs by free RAM (a run holds ~17 GB RSS, mostly the
      features), progress/log streaming, and a cancel. Memory, not CPU or GPU VRAM, sets the
      jobs per PC: two of the user's Windows PCs have 64 GB each; WSL2 gets half by default, so
-     .wslconfig `[wsl2] memory=48GB` (set by the user 2026-10-22; nproc shows 32) allows two jobs
-     each. Check the E-core question first, or each WSL2 job runs ~3x slower. About 1-2
-     days of work.
+     .wslconfig `[wsl2] memory=48GB` allows two jobs each (one training run peaked at 16 GB used
+     under WSL2). About 1-2 days of work.
    - Non-English voices (de/fr/nl generators exist).
    - Recording clips straight from the browser.
    - **LICENSE-NOTE.txt per model:** list the actual sources that model was trained on (voices, noise,
