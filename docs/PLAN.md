@@ -214,7 +214,23 @@ wakesmith's gap:
      without /proc and /sys (hardware.py, setup_env.py), job start/stop without process sessions
      and killpg (jobs.py), and a check that TensorFlow CPU, microWakeWord and its audio front end
      install on Windows. PyTorch CUDA works natively there. About a day of work plus testing on a
-     real Windows PC.
+     real Windows PC. Also suspect the E cores: one training run keeps only ~2 threads busy (below),
+     so if Windows schedules it on the i9's efficiency cores, a run is slow however many cores exist.
+   - **Remote workers (several PCs, one job each).** Splitting ONE training run across PCs doesn't
+     help: microWakeWord's ~26k-parameter model trains in 20-40k short sequential steps, and a run
+     keeps only ~2 of a 12-thread box's threads busy (r7t, 2026-10-22: 209% CPU, 78% idle). Per-step gradient
+     sync over the LAN would only add latency. What helps is running separate jobs side by side
+     (rounds usually train 2+ models: hh4 + r7, a2 + a3). Design: wakesmith on another PC (WSL2) runs
+     a small worker; the main UI sends it a job (project.yaml + real-data folders + clips, or just the
+     project if it already has the clips); the worker rebuilds features itself (1-2 min; cheaper than
+     copying ~19 GB of mmap features), trains, and returns the export + run record, so the run shows
+     in the UI and on the Compare page as if local. Needs: a worker endpoint with the same token and
+     TLS as the UI, a job queue that places jobs by free RAM (a run holds ~17 GB RSS, mostly the
+     features), progress/log streaming, and a cancel. Memory, not CPU or GPU VRAM, sets the
+     jobs per PC: two of the user's Windows PCs have 64 GB each; WSL2 gets half by default, so
+     .wslconfig `[wsl2] memory=48GB` (set by the user 2026-10-22; nproc shows 32) allows two jobs
+     each. Check the E-core question first, or each WSL2 job runs ~3x slower. About 1-2
+     days of work.
    - Non-English voices (de/fr/nl generators exist).
    - Recording clips straight from the browser.
    - **LICENSE-NOTE.txt per model:** list the actual sources that model was trained on (voices, noise,
