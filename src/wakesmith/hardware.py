@@ -142,6 +142,12 @@ def detect_safe(timeout: float = 30.0) -> tuple[Hardware, str]:
 
     if forced_cpu():
         return detect(gpu=False), ""
+    import importlib.util
+
+    if (
+        importlib.util.find_spec("torch") is None
+    ):  # e.g. after `uv tool install --force`: a fresh env
+        return detect(gpu=False), "torch is not installed: run `wakesmith setup`"
     code = (
         "import json; from dataclasses import asdict; from wakesmith import hardware; "
         "print(json.dumps(asdict(hardware.detect())))"

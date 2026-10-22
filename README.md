@@ -38,6 +38,9 @@ wakesmith setup                         # right PyTorch for your GPU; downloads 
 wakesmith serve                         # then open http://localhost:8765/
 ```
 
+To update, run the same `uv tool install` with `--force`, then `wakesmith setup` again: the reinstall
+starts a fresh environment without PyTorch, and setup puts the right build back (the data stays).
+
 To use it from another computer or a phone on your LAN, run `wakesmith serve --host 0.0.0.0` and
 open the link it prints (it carries an access token, which stays the same between restarts).
 Recording in the browser needs the microphone, which browsers only allow on localhost or HTTPS: add
