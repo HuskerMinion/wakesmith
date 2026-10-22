@@ -76,12 +76,25 @@ def complete(p: Project) -> bool:
     )
 
 
+def _free_gpu() -> None:
+    """Hand cached GPU memory back to the driver once the speech models are gone."""
+    import gc
+
+    import torch
+
+    gc.collect()
+    for backend in (torch.cuda, getattr(torch, "xpu", None)):
+        if backend is not None and backend.is_available():
+            backend.empty_cache()
+
+
 def run(p: Project, devices: list[str], batch_size: int, log=print) -> dict:
     """Generate every part, one process per device when there are several."""
     if len(devices) < 2:
         stats = {}
         for part in SPLITS:
             stats[part] = run_part(p, part, devices[0], batch_size)
+        _free_gpu()  # in-process: torch's cache would hold the card (12 GB of 16) through training
         return stats
     procs = {}
     for part, dev in zip(SPLITS, devices):

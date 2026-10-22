@@ -38,6 +38,9 @@ class Hardware:
 
     # -- derived settings --------------------------------------------------------------------
     def tts_batch(self) -> int:
+        """WAKESMITH_TTS_BATCH=<n> overrides: smaller batches draw less GPU power (a PC that resets under load)."""
+        if os.environ.get("WAKESMITH_TTS_BATCH", "").isdigit():
+            return max(1, int(os.environ["WAKESMITH_TTS_BATCH"]))
         if not self.gpus:
             return 16
         mem = min(g.memory_gb for g in self.gpus)

@@ -208,8 +208,33 @@ def write_wav(path, audio: np.ndarray) -> None:
         w.writeframes(pcm.tobytes())
 
 
+def _clip_ok(path: Path) -> bool:
+    try:
+        with wave.open(str(path), "rb") as w:
+            return w.getnframes() > 0 and path.stat().st_size >= 44 + w.getnframes() * 2
+    except (wave.Error, EOFError, OSError):
+        return False
+
+
 def count_clips(out_dir: Path) -> int:
-    return len(list(out_dir.glob("clip_[0-9][0-9][0-9][0-9][0-9][0-9].wav")))
+    """Clips written so far: the unbroken run from clip_000000. A PC that resets mid-batch can leave a cut-off
+    or zero-filled clip; it and every clip after it are deleted, so generation redoes them."""
+    for part in out_dir.glob("clip_*.wav.part"):
+        part.unlink()
+    clips = sorted(out_dir.glob("clip_[0-9][0-9][0-9][0-9][0-9][0-9].wav"))
+    good = next(
+        (i for i, c in enumerate(clips) if c.name != f"clip_{i:06d}.wav" or not _clip_ok(c)),
+        len(clips),
+    )
+    if good < len(clips):
+        logger.warning(
+            "%s: %s is cut off or out of order; generating again from it",
+            out_dir.name,
+            clips[good].name,
+        )
+        for c in clips[good:]:
+            c.unlink()
+    return good
 
 
 def generate(
@@ -251,7 +276,11 @@ def generate(
         for c in clips:
             if idx >= n:
                 break
-            write_wav(out_dir / f"clip_{idx:06d}.wav", c)
+            tmp = (
+                out_dir / f"clip_{idx:06d}.wav.part"
+            )  # renamed once whole: no half clip under the real name
+            write_wav(tmp, c)
+            tmp.replace(out_dir / f"clip_{idx:06d}.wav")
             idx += 1
 
     while idx < n:

@@ -481,3 +481,14 @@ def test_tensorflow_kept_off_the_gpu_after_generation(monkeypatch):
     monkeypatch.setenv("WAKESMITH_TF_GPU", "0")
     pipeline._tf_off_gpu()
     assert os.environ["CUDA_VISIBLE_DEVICES"] == "0"
+
+
+def test_count_clips_drops_a_cut_off_clip_and_what_follows(tmp_path):
+    from wakesmith.tts.generate import count_clips, write_wav
+
+    for i in range(5):
+        write_wav(tmp_path / f"clip_{i:06d}.wav", np.zeros(1600, np.float32))
+    (tmp_path / "clip_000002.wav").write_bytes(b"\0" * 3244)  # zero-filled by a reset
+    (tmp_path / "clip_000005.wav.part").write_bytes(b"x")
+    assert count_clips(tmp_path) == 2
+    assert sorted(p.name for p in tmp_path.iterdir()) == ["clip_000000.wav", "clip_000001.wav"]

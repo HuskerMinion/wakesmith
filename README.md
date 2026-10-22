@@ -188,14 +188,22 @@ one generation process per GPU, and worker counts from free RAM. `--cpu` on `doc
 | AMD (ROCm) | GPU, **experimental**: supported Radeon cards on Linux | CPU | built, **not tested yet: reports welcome** |
 | CPU only | ~3-30 clips/s | CPU | tested: Ubuntu 24.04, 6 cores, 16 GB |
 
-A full-size (Standard) ESPHome model took about 52 minutes on the RTX 5060 Ti machine: 11 minutes of
-synthetic speech on the GPU, 40 minutes of microWakeWord training on the CPU.
+A full-size (Standard) ESPHome model took about 35 minutes on the RTX 5060 Ti machine: 11 minutes of
+synthetic speech on the GPU, 23 minutes of microWakeWord training on the CPU. It was 40 minutes of
+training before three changes, not timed one by one: 48 GB for WSL2 instead of 31, a current BIOS,
+and 8 TensorFlow threads instead of all 32.
 
 Both trainers run on the CPU: microWakeWord needs TensorFlow 2.18+, which has no Intel GPU support
 and predates NVIDIA's RTX 50 series, and the openWakeWord head is small. wakesmith keeps TensorFlow
-off the GPU after the speech step (`WAKESMITH_TF_GPU=0` lets it try). More cores make feature building and training faster. Close
+off the GPU after the speech step (`WAKESMITH_TF_GPU=0` lets it try). More cores make feature building faster; training is mostly
+one busy thread, so wakesmith gives TensorFlow at most 8 (`WAKESMITH_TF_THREADS` changes it). Close
 other big programs (a local LLM, say) while training: worker counts follow free RAM, and below
 about 16 GB microWakeWord's training runs out of memory (doctor and the page warn).
+If the PC resets or the GPU driver crashes during the speech step, `WAKESMITH_TTS_BATCH=32` (or lower)
+makes smaller batches that draw less GPU power. On a 13th/14th-gen Intel Core i7/i9, update the BIOS
+first: older microcode can hard-reset these CPUs under load (one did, until its 2023 BIOS was updated).
+Under WSL2, give the Linux VM at least 32 GB in `%UserProfile%\.wslconfig` (`[wsl2]` then `memory=48GB`):
+training holds ~17 GB and reads ~20 GB of features, which run best from memory.
 
 **Intel GPU note:** a crashed GPU job can leave the `xe` driver stuck, after which anything that
 opens the GPU hangs until a reboot. wakesmith guards against the crash we found (an invalid index in

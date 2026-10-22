@@ -288,10 +288,16 @@ def train(p: Project, log_file: Path, resume: bool = False) -> Path:
         "best_weights",
         *MODEL_ARGS,
     ]
+    # Training is mostly one busy thread; past 8, TensorFlow's extra threads only contend (i9-13900K, 32 threads:
+    # 51.8 s per 1000 steps at 8, 57.2 at all; Ryzen 7600X, 12: the same at 8 and all). WAKESMITH_TF_THREADS overrides.
+    threads = os.environ.get("WAKESMITH_TF_THREADS") or str(min(8, os.cpu_count() or 1))
     env = {
         **os.environ,
         "CUDA_VISIBLE_DEVICES": os.environ.get("WAKESMITH_TF_GPU", "-1"),
         "TF_CPP_MIN_LOG_LEVEL": "2",
+        "TF_NUM_INTRAOP_THREADS": threads,
+        "TF_NUM_INTEROP_THREADS": "2",
+        "OMP_NUM_THREADS": threads,
     }
     with open(log_file, "a") as log:
         rc = subprocess.run(
