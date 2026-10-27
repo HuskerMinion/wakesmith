@@ -59,11 +59,10 @@ def unconstrained_rational_quadratic_spline(
     min_bin_height=DEFAULT_MIN_BIN_HEIGHT,
     min_derivative=DEFAULT_MIN_DERIVATIVE,
 ):
+    # wakesmith: no boolean-mask indexing (inputs[mask], outputs[mask] = ...). On Intel XPU those index kernels
+    # tripped device-side "index out of bounds" asserts that abort the process. The spline is computed for every
+    # element (inputs clamped into the interval) and torch.where keeps it only inside; same values as upstream.
     inside_interval_mask = (inputs >= -tail_bound) & (inputs <= tail_bound)
-    outside_interval_mask = ~inside_interval_mask
-
-    outputs = torch.zeros_like(inputs)
-    logabsdet = torch.zeros_like(inputs)
 
     if tails == "linear":
         unnormalized_derivatives = F.pad(unnormalized_derivatives, pad=(1, 1))
@@ -71,20 +70,14 @@ def unconstrained_rational_quadratic_spline(
         unnormalized_derivatives[..., 0] = constant
         # unnormalized_derivatives[..., -1] = constant
         unnormalized_derivatives[..., unnormalized_derivatives.size(-1) - 1] = constant
-
-        outputs[outside_interval_mask] = inputs[outside_interval_mask]
-        logabsdet[outside_interval_mask] = 0
     else:
         raise RuntimeError("{} tails are not implemented.".format(tails))
 
-    (
-        outputs[inside_interval_mask],
-        logabsdet[inside_interval_mask],
-    ) = rational_quadratic_spline(
-        inputs=inputs[inside_interval_mask],
-        unnormalized_widths=unnormalized_widths[inside_interval_mask, :],
-        unnormalized_heights=unnormalized_heights[inside_interval_mask, :],
-        unnormalized_derivatives=unnormalized_derivatives[inside_interval_mask, :],
+    spline_out, spline_logabsdet = rational_quadratic_spline(
+        inputs=torch.nan_to_num(inputs).clamp(-tail_bound, tail_bound),
+        unnormalized_widths=unnormalized_widths,
+        unnormalized_heights=unnormalized_heights,
+        unnormalized_derivatives=unnormalized_derivatives,
         inverse=inverse,
         left=-tail_bound,
         right=tail_bound,
@@ -94,7 +87,9 @@ def unconstrained_rational_quadratic_spline(
         min_bin_height=min_bin_height,
         min_derivative=min_derivative,
     )
-
+    # outside (and NaN, which upstream counts as outside): the input passes through with logabsdet 0
+    outputs = torch.where(inside_interval_mask, spline_out, inputs)
+    logabsdet = torch.where(inside_interval_mask, spline_logabsdet, torch.zeros_like(inputs))
     return outputs, logabsdet
 
 

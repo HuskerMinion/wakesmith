@@ -1,0 +1,35 @@
+# Tests and lint on every push and pull request, on the CPU (GitHub's runners have no GPU; the GPU
+# paths are checked on real hardware before each release).
+name: tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          python-version: "3.12"
+      - name: System tools
+        run: sudo apt-get update && sudo apt-get install -y espeak-ng
+      - name: wakesmith, PyTorch (CPU) and microWakeWord
+        run: |
+          uv venv
+          uv pip install -e ".[dev]"
+          uv pip install torch torchaudio --index-url https://download.pytorch.org/whl/cpu  # what `wakesmith setup` installs on a CPU
+          uv run --no-sync python -c "from wakesmith import setup_env; setup_env.install_microwakeword()"
+      - name: Lint
+        run: |
+          uv run --no-sync ruff check src tests
+          uv run --no-sync ruff format --check src tests
+      - name: Tests
+        run: uv run --no-sync pytest -q

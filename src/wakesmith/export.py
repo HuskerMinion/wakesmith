@@ -6,8 +6,10 @@ import json
 import shutil
 from pathlib import Path
 
-from . import mww
+from . import ensemble, models, mww
 from .project import Project
+
+WEBSITE = "https://github.com/HuskerMinion/wakesmith"
 
 # TFLite metadata entry naming the feature frontend the model was trained on, for runtimes that
 # offer more than one (zserge/microwakeword-based devices). It lives in the model file because
@@ -24,17 +26,36 @@ micro_wake_word:
 """
 
 
-def export(p: Project) -> list[Path]:
+# microWakeWord's usual arena size for one model of this architecture; not measured per model.
+TENSOR_ARENA = ensemble.ARENA_PER_MODEL
+
+
+def use_combined(p: Project, combined: bool | None = None) -> dict | None:
+    """The combined model's info when the microWakeWord export is to be the combined model (ensemble.py):
+    combined True asks for it (an error when there is none), False for the kept candidate, None
+    follows the project's microwakeword.combine setting when a combined model exists."""
+    info = ensemble.info(p)
+    if combined and not info:
+        raise ValueError(f"{p.name} has no combined model: run `wakesmith combine {p.name}` first")
+    if combined is None:
+        combined = p.microwakeword.combine
+    return info if combined else None
+
+
+def export(p: Project, combined: bool | None = None) -> list[Path]:
+    """combined: export the combined model instead of the kept candidate (see use_combined)."""
     files: list[Path] = []
-    if p.microwakeword.enabled and mww.model_path(p).exists():
+    both = use_combined(p, combined) if p.microwakeword.enabled else None
+    src = ensemble.model_path(p) if both else mww.model_path(p)
+    if p.microwakeword.enabled and src.exists():
         d = p.path("export", "microwakeword")
         d.mkdir(parents=True, exist_ok=True)
-        tag_frontend(mww.model_path(p), d / f"{p.name}.tflite", "tflm")
+        tag_frontend(src, d / f"{p.name}.tflite", "tflm")
         manifest = {
             "type": "micro",
             "wake_word": p.display,
             "author": "wakesmith",
-            "website": "https://github.com/HuskerMinion/wakesmith",
+            "website": WEBSITE,
             "model": f"{p.name}.tflite",
             "trained_languages": ["en"],
             "version": 2,
@@ -42,8 +63,8 @@ def export(p: Project) -> list[Path]:
                 "probability_cutoff": p.microwakeword.cutoff,
                 "feature_step_size": 10,
                 "sliding_window_size": 5,
-                # microWakeWord's usual arena size for this architecture; not measured per model.
-                "tensor_arena_size": 30000,
+                # a combined model holds every candidate's state: the sum of theirs
+                "tensor_arena_size": both["tensor_arena_size"] if both else TENSOR_ARENA,
                 "minimum_esphome_version": "2024.7.0",
             },
         }
@@ -66,6 +87,7 @@ def export(p: Project) -> list[Path]:
     if files:
         p.path("export", "LICENSE-NOTE.txt").write_text(license_note(p))
         files.append(p.path("export", "LICENSE-NOTE.txt"))
+        models.record_export(p, combined=both)
     return files
 
 

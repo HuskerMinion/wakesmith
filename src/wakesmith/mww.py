@@ -2,8 +2,9 @@
 
 Features are microWakeWord's 40-bin, 10 ms spectrograms of augmented clips, built on every CPU
 core and stored as RaggedMmap shards (<project>/mww/features/<set>/<split>/shardNN_mmap). Training
-runs microWakeWord's own trainer on the upstream notebook's mixednet; the deliverable is its
-streaming int8 model (tflite_stream_state_internal_quant).
+runs the upstream notebook's mixednet in wakesmith's PyTorch port of microWakeWord's trainer (mww_torch:
+on a GPU, else the CPU); microWakeWord itself exports the deliverable, its streaming int8 model
+(tflite_stream_state_internal_quant).
 """
 
 from __future__ import annotations
@@ -20,7 +21,7 @@ import numpy as np
 import soundfile as sf
 import yaml
 
-from . import assets
+from . import assets, conversational
 from .project import Project
 from .real import RealData
 
@@ -86,7 +87,19 @@ def feature_jobs(p: Project) -> list[tuple[str, str, list[str], int, int]]:
     ]
     if p.real.sampling_weight and real_pos:
         jobs.append(("real_positive", "training", real_pos, 1, 10))
-    if "neg" in real.sources:
+    if p.microwakeword.partial_weight:
+        # cut-off phrases and sound-alikes ("hey" of "hey jarvis", "okay" of "okay nabu"), each clip
+        # cut short in _shard: the model learns to wait for the whole phrase
+        rng = random.Random(2)
+        synth = _originals(p.path("clips", "positive_train"))
+        cut = rng.sample(synth, k=min(10000, len(synth)))
+        cut += rng.sample(adv_train, k=min(5000, len(adv_train)))
+        jobs.append(("partial", "training", cut, 1, 10))
+    if p.conversational.clips > 0 and (conv := conversational.clips(p)):
+        # everyday sentences (experimental), each cut at a pause in _shard so the words near the
+        # phrase land in the model's window
+        jobs.append(("conversational", "training", conv, 1, 10))
+    if real.of_kind("not_wake"):
         items, _ = real.training_items("not_wake")
         neg = [str(real.file(s, f)) for s, f in items]
         if neg:
@@ -97,7 +110,26 @@ def feature_jobs(p: Project) -> list[tuple[str, str, list[str], int, int]]:
 _AUG = None
 
 
-def _init_worker(noise_dir: str, rir_dir: str) -> None:
+def impulse_paths(p: Project, rir_dir: str) -> list[str]:
+    """Room impulse responses for the augmentation: the MIT set, plus with microwakeword.house_rirs the
+    house's claps (sessions.house_rirs), repeated so they are picked about as often as the MIT set
+    (the augmentation picks a file at random from the list)."""
+    out = [rir_dir]
+    if p.microwakeword.house_rirs:
+        from . import sessions
+
+        house = [str(f) for f in sessions.house_rirs()]
+        if house:
+            mit = sum(
+                f.lower().endswith((".wav", ".flac"))
+                for _, _, files in os.walk(rir_dir, followlinks=True)
+                for f in files
+            )
+            out += house * max(1, mit // len(house))
+    return out
+
+
+def _init_worker(noise_dir: str, rir_paths: list[str]) -> None:
     global _AUG
     import warnings
 
@@ -120,13 +152,46 @@ def _init_worker(noise_dir: str, rir_dir: str) -> None:
             "Gain": 1.0,
             "RIR": 0.5,
         },
-        impulse_paths=[rir_dir],
+        impulse_paths=list(rir_paths),
         background_paths=[noise_dir],
         background_min_snr_db=-5,
         background_max_snr_db=10,
         min_jitter_s=0.195,
         max_jitter_s=0.205,
     )
+
+
+PARTIAL_KEEP = (0.25, 0.6)  # share of the speech a cut-off clip keeps
+
+
+def cut_short(a: np.ndarray, rng: np.random.Generator | None = None) -> np.ndarray:
+    """The clip cut off part-way through its speech (a random 25-60% of it kept), as when a phrase is
+    started but not finished, or a recording or a wake fragment stops early."""
+    rng = rng or np.random.default_rng()
+    loud = np.flatnonzero(np.abs(a) > 0.05 * max(float(np.abs(a).max()), 1e-6))
+    if len(loud) < 2:
+        return a
+    start, end = int(loud[0]), int(loud[-1])
+    return a[: start + int((end - start) * rng.uniform(*PARTIAL_KEEP))]
+
+
+def end_at_pause(a: np.ndarray, rng: np.random.Generator | None = None) -> np.ndarray:
+    """The clip up to a random quiet 20 ms frame after its first half second of speech, or whole. Training
+    keeps the end of each clip, so a long sentence would otherwise only ever show its last words; cutting
+    at a pause (mostly between words) shows the others without cutting a word in half."""
+    rng = rng or np.random.default_rng()
+    frame = 320
+    n = len(a) // frame
+    if n < 2:
+        return a
+    rms = np.sqrt((a[: n * frame].reshape(n, frame) ** 2).mean(axis=1))
+    loud = np.flatnonzero(rms > 0.1 * max(float(rms.max()), 1e-6))
+    if len(loud) < 2:
+        return a
+    first, last = int(loud[0]), int(loud[-1])
+    pauses = [i for i in range(first + 25, last) if rms[i] <= 0.1 * rms.max()]
+    i = int(rng.integers(0, len(pauses) + 1))
+    return a if i == len(pauses) else a[: (pauses[i] + 1) * frame]
 
 
 def _shard(args) -> int:
@@ -140,7 +205,12 @@ def _shard(args) -> int:
                 audio, sr = sf.read(f, dtype="float32", always_2d=True)
                 if sr != 16000:
                     raise ValueError(f"{f}: {sr} Hz (want 16 kHz)")
-                spec = generate_features_for_clip(_AUG.augment_clip(audio[:, 0]), 10)
+                a = audio[:, 0]
+                if _set == "partial":
+                    a = cut_short(a)
+                elif _set == "conversational":
+                    a = end_at_pause(a)
+                spec = generate_features_for_clip(_AUG.augment_clip(a), 10)
                 spec = np.round(spec / _FEATURE_SCALE).astype(np.uint16)
                 if slide == 1:
                     yield spec
@@ -159,7 +229,9 @@ def build_features(p: Project, workers: int, log=print) -> None:
     out_root = p.path("mww", "features")
     shutil.rmtree(out_root, ignore_errors=True)
     noise = str(assets.fetch(assets.ASSETS["musan-noise"]))
-    rirs = str(assets.fetch(assets.ASSETS["mit-rirs"]))
+    rirs = impulse_paths(p, str(assets.fetch(assets.ASSETS["mit-rirs"])))
+    if len(rirs) > 1:
+        log(f"mww features: room echoes from the MIT set and {len(set(rirs[1:]))} house claps")
     tasks = []
     for set_name, split, files, repeat, slide in feature_jobs(p):
         files = list(files)
@@ -205,6 +277,28 @@ def write_config(p: Project) -> Path:
                 "sampling_weight": p.real.sampling_weight,
                 "penalty_weight": 1.0,
                 "truth": True,
+                "truncation_strategy": "truncate_start",
+                "type": "mmap",
+            }
+        )
+    if p.microwakeword.partial_weight and p.path("mww", "features", "partial").exists():
+        feats.append(
+            {
+                "features_dir": "features/partial",
+                "sampling_weight": p.microwakeword.partial_weight,
+                "penalty_weight": 1.0,
+                "truth": False,
+                "truncation_strategy": "truncate_start",
+                "type": "mmap",
+            }
+        )
+    if p.conversational.clips > 0 and p.path("mww", "features", "conversational").exists():
+        feats.append(
+            {
+                "features_dir": "features/conversational",
+                "sampling_weight": p.conversational.weight,
+                "penalty_weight": 1.0,
+                "truth": False,
                 "truncation_strategy": "truncate_start",
                 "type": "mmap",
             }
@@ -258,22 +352,39 @@ def write_config(p: Project) -> Path:
     return path
 
 
-def train(p: Project, log_file: Path, resume: bool = False) -> Path:
-    """Run microWakeWord's trainer (CPU). A finished earlier run is moved aside unless resume."""
+def train_device(gpus: list) -> str:
+    """Where training runs: the first GPU with room for the validation sets (~5 GB), else the CPU."""
+    big = [g for g in gpus if g.memory_gb >= 6]
+    return big[0].device if big else "cpu"
+
+
+def more_open_files() -> None:
+    """Every batch worker, and microWakeWord's export step, maps every feature shard (several files each): a
+    project with many real recordings passed Ubuntu/WSL's default soft limit of 1024 open files. Raise it toward
+    the hard limit (child processes inherit it)."""
+    import resource
+
+    soft, hard = resource.getrlimit(resource.RLIMIT_NOFILE)
+    want = 65536 if hard == resource.RLIM_INFINITY else min(65536, hard)
+    if soft < want:
+        resource.setrlimit(resource.RLIMIT_NOFILE, (want, hard))
+
+
+def train(
+    p: Project, log_file: Path, resume: bool = False, device: str = "cpu", seed: int | None = None
+) -> Path:
+    """Train, then export through microWakeWord. A finished earlier run is moved aside unless resume.
+
+    The trainer is wakesmith's PyTorch port (mww_torch) on `device`, a GPU or the CPU; it always starts
+    over (a run takes minutes). WAKESMITH_MWW_TRAINER=tf runs microWakeWord's own trainer (CPU, ~3-6x
+    slower), which can resume from its checkpoint."""
+    more_open_files()
     cfg = write_config(p)
     run_dir = p.path("mww", "trained")
     if run_dir.exists() and not resume:
         shutil.rmtree(p.path("mww", "trained.previous"), ignore_errors=True)
         run_dir.rename(p.path("mww", "trained.previous"))
-    cmd = [
-        sys.executable,
-        "-m",
-        "microwakeword.model_train_eval",
-        f"--training_config={cfg.name}",
-        "--train",
-        "1",
-        "--restore_checkpoint",
-        "1",
+    test = [
         "--test_tf_nonstreaming",
         "0",
         "--test_tflite_nonstreaming",
@@ -288,15 +399,79 @@ def train(p: Project, log_file: Path, resume: bool = False) -> Path:
         "best_weights",
         *MODEL_ARGS,
     ]
+    tf_trainer = os.environ.get("WAKESMITH_MWW_TRAINER") == "tf"
+    cpus = os.cpu_count() or 1
+    # TensorFlow's trainer is mostly one busy thread; past 8, its extra threads only contend (i9-13900K:
+    # 51.8 s per 1000 steps at 8 threads, 57.2 at all 32). WAKESMITH_TF_THREADS overrides.
+    threads = os.environ.get("WAKESMITH_TF_THREADS") or str(min(8, cpus))
     env = {
         **os.environ,
         "CUDA_VISIBLE_DEVICES": os.environ.get("WAKESMITH_TF_GPU", "-1"),
         "TF_CPP_MIN_LOG_LEVEL": "2",
+        "TF_NUM_INTRAOP_THREADS": threads,
+        "TF_NUM_INTEROP_THREADS": "2",
+        "OMP_NUM_THREADS": threads,
     }
+    export = [
+        sys.executable,
+        "-m",
+        "microwakeword.model_train_eval",
+        f"--training_config={cfg.name}",
+    ]
+    if tf_trainer:
+        runs = [
+            (
+                [
+                    sys.executable,
+                    "-m",
+                    "wakesmith.mww_runner",
+                    f"--training_config={cfg.name}",
+                    "--train",
+                    "1",
+                    "--restore_checkpoint",
+                    "1",
+                    *test,
+                ],
+                env,
+            )
+        ]
+    else:
+        # batch workers build batches while the model trains: on a GPU they are the CPU's only job
+        workers = max(1, min(6, cpus - 2)) if device != "cpu" else max(1, min(4, cpus // 3))
+        torch_env = {**env, "OMP_NUM_THREADS": str(max(1, min(8, cpus - workers)))}
+        cuda = os.environ.get(
+            "WAKESMITH_CUDA_DEVICES", "all"
+        )  # what the pipeline hid from TensorFlow
+        if cuda == "all":
+            torch_env.pop("CUDA_VISIBLE_DEVICES")
+        else:
+            torch_env["CUDA_VISIBLE_DEVICES"] = cuda
+        trainer = [
+            sys.executable,
+            "-m",
+            "wakesmith.mww_torch",
+            "--device",
+            device,
+            "--workers",
+            str(workers),
+        ]
+        if device == "cpu":
+            trainer += ["--threads", torch_env["OMP_NUM_THREADS"]]
+        if seed is not None:
+            trainer += ["--seed", str(seed)]
+        runs = [(trainer, torch_env), ([*export, "--train", "0", *test], env)]
     with open(log_file, "a") as log:
-        rc = subprocess.run(
-            cmd, cwd=p.path("mww"), stdout=log, stderr=subprocess.STDOUT, env=env, check=False
-        ).returncode
+        for cmd, cmd_env in runs:
+            rc = subprocess.run(
+                cmd,
+                cwd=p.path("mww"),
+                stdout=log,
+                stderr=subprocess.STDOUT,
+                env=cmd_env,
+                check=False,
+            ).returncode
+            if rc != 0:
+                break
     if rc != 0 or not model_path(p).exists():
         raise RuntimeError(f"microWakeWord training failed (exit {rc}): see {log_file}")
     return model_path(p)

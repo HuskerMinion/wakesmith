@@ -44,7 +44,8 @@ def active(p: Project, kind: str) -> bool:
 
 
 def use(p: Project, kind: str) -> None:
-    """Train on the recordings made here (replaces a folder chosen before)."""
+    """Make the recordings folder the project's chosen folder (replacing one chosen before). The page no
+    longer offers this: takes recorded here are used next to any folder anyway."""
     d = folder(p, kind)
     d.mkdir(parents=True, exist_ok=True)
     if kind == "pos":
@@ -72,18 +73,22 @@ def _held(d: Path) -> set[str]:
 
 
 def _write(d: Path, rows: list[dict], held: set[str]) -> None:
-    with open(d / "labels.csv", "w", newline="") as fh:
+    # each file is written new and moved over the old one, never edited in place: a version made by
+    # versions.create may share the old file through a hard link, and must not change it
+    with open(d / "labels.csv.tmp", "w", newline="") as fh:
         extra = [
             k for r in rows for k in r if k not in FIELDS
         ]  # columns someone added by hand stay
         w = csv.DictWriter(fh, fieldnames=FIELDS + list(dict.fromkeys(extra)), restval="")
         w.writeheader()
         w.writerows(rows)
+    (d / "labels.csv.tmp").replace(d / "labels.csv")
     names = {r["file"] for r in rows}
-    (d / "HELDOUT.txt").write_text(
+    (d / "HELDOUT.txt.tmp").write_text(
         "# kept aside for testing, never trained on (wakesmith recorder)\n"
         + "".join(f"{n}\n" for n in sorted(held & names))
     )
+    (d / "HELDOUT.txt.tmp").replace(d / "HELDOUT.txt")
 
 
 def listing(p: Project, kind: str) -> dict:
@@ -105,9 +110,18 @@ def listing(p: Project, kind: str) -> dict:
 
 
 def add(
-    p: Project, kind: str, wav: bytes, condition: str = "", heldout: bool = False, speaker: str = ""
+    p: Project,
+    kind: str,
+    wav: bytes,
+    condition: str = "",
+    heldout: bool = False,
+    speaker: str = "",
+    keep_unused: bool = False,
 ) -> dict:
-    """Store one take (16 kHz mono WAV bytes) and switch the project to this folder if it has none."""
+    """Store one take (16 kHz mono WAV bytes). Takes recorded here are always trained on and tested
+    with, next to any folder the project was given (real.py adds them as their own source), so recording
+    only ever adds. A project with no folder yet gets this one as its folder. keep_unused is accepted for
+    older callers and changes nothing."""
     a, sr = sf.read(io.BytesIO(wav), dtype="int16", always_2d=True)
     if sr != SR:
         raise ValueError(f"takes must be {SR} Hz, got {sr}")
@@ -116,16 +130,17 @@ def add(
         raise ValueError(f"a take must be {MIN_S}-{MAX_S:.0f} s long, got {len(a) / SR:.1f} s")
     if not np.abs(a).max():
         raise ValueError("the take is silent: check the microphone")
-    if _setting(p, kind) and not active(p, kind):
-        raise PermissionError(
-            f"this project trains on {_setting(p, kind)}; switch it to the recordings made here first"
-        )
     d = folder(p, kind)
     d.mkdir(parents=True, exist_ok=True)
     rows, held = _rows(d), _held(d)
     n = max([int(r["file"][5:-4]) for r in rows if _NAME.match(r["file"])] + [0]) + 1
+    while (
+        d / f"take_{n:03d}.wav"
+    ).exists():  # a file without a row: never write into it (it may be
+        n += 1  # hard-linked from another version)
     name = f"take_{n:03d}.wav"
-    sf.write(d / name, a, SR, subtype="PCM_16")
+    sf.write(d / f"{name}.tmp", a, SR, subtype="PCM_16", format="WAV")
+    (d / f"{name}.tmp").replace(d / name)
     rows.append(
         {
             "file": name,
@@ -139,7 +154,7 @@ def add(
     _write(d, rows, held)
     if not _setting(p, kind):
         use(p, kind)
-    return {"file": name, "held": heldout, "seconds": round(len(a) / SR, 2)}
+    return {"file": name, "held": heldout, "seconds": round(len(a) / SR, 2), "unused": False}
 
 
 def _check(name: str) -> str:

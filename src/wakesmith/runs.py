@@ -14,6 +14,7 @@ import shutil
 import time
 from pathlib import Path
 
+from .models import KINDS
 from .project import Project
 
 _ID = re.compile(r"^\d{8}-\d{6}$")
@@ -77,21 +78,20 @@ def path(p: Project, rid: str) -> Path:
 
 
 def listing(p: Project) -> list[dict]:
+    from . import evaluate
+
     out = []
     for d in sorted(_dir(p).glob("*/run.json"), reverse=True) if _dir(p).exists() else []:
         run = json.loads(d.read_text())
         res = {}
-        for kind in ("mww", "oww", "mww-cv", "oww-cv"):
+        for kind in ("mww", "oww", "mww-cv", "oww-cv", "mww-combined", "mww-combined-cv"):
             f = d.parent / "results" / f"{kind}.json"
             if f.exists():
-                r = json.loads(f.read_text())
-                res[kind] = {
-                    "table": r["table"],
-                    "positives": r["positives"],
-                    "negatives": r["negatives"],
-                }
+                res[kind] = evaluate.brief(json.loads(f.read_text()))
         run["results"] = res
-        run["exported"] = sorted(x.name for x in (d.parent / "export").iterdir() if x.is_dir())
+        run["exported"] = sorted(
+            x.name for x in (d.parent / "export").iterdir() if x.is_dir() and x.name in KINDS
+        )
         out.append(run)
     return out
 

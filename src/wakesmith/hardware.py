@@ -17,6 +17,21 @@ def forced_cpu() -> bool:
     return os.environ.get("WAKESMITH_CPU", "") not in ("", "0")
 
 
+def tensorflow_on_cpu():
+    """TensorFlow for in-process work (openWakeWord), kept off every GPU unless WAKESMITH_TF_GPU is set.
+
+    Hiding cards with CUDA_VISIBLE_DEVICES stops working once PyTorch has started the CUDA driver in this
+    process (speech generation does): TensorFlow then saw an RTX 5060 Ti and failed to compile for it."""
+    import tensorflow as tf
+
+    if not os.environ.get("WAKESMITH_TF_GPU"):
+        try:
+            tf.config.set_visible_devices([], "GPU")
+        except RuntimeError:  # devices already initialized in this process: leave them
+            pass
+    return tf
+
+
 @dataclass
 class Gpu:
     device: str  # torch device string, e.g. "xpu:0"
@@ -38,10 +53,24 @@ class Hardware:
 
     # -- derived settings --------------------------------------------------------------------
     def tts_batch(self) -> int:
+        """WAKESMITH_TTS_BATCH=<n> overrides: smaller batches draw less GPU power (a PC that resets under load)."""
+        if os.environ.get("WAKESMITH_TTS_BATCH", "").isdigit():
+            return max(1, int(os.environ["WAKESMITH_TTS_BATCH"]))
         if not self.gpus:
             return 16
+        # Batch 50 held 12.4 of 16 GB on an RTX 5060 Ti; at 100 it ran out, and under WSL2 the driver spills to
+        # system memory instead of failing, until Windows resets the "hung" GPU (TDR) and can freeze.
         mem = min(g.memory_gb for g in self.gpus)
-        return 100 if mem >= 14 else 64 if mem >= 7 else 32
+        batch = (
+            100 if mem >= 24 else 50 if mem >= 14 else 32 if mem >= 10 else 20 if mem >= 7 else 12
+        )
+        # 100 is also the ceiling on 32 GB cards: batch 200 of a long phrase at the slowest speed reserved 30.5 GB
+        # on an Arc Pro B70 (100: 13.3 GB), and an Intel GPU that runs out spills into system RAM until the
+        # kernel's OOM killer steps in. This is only the starting size: tts.generate's memory guard measures
+        # each batch and shrinks later ones to fit the card. Intel XPU once needed a lower cap because cut-off clips came from a broken
+        # compute runtime (26.05: wrong torch.nonzero/unique, see xpu_selftest); on 26.35, batch 100-400 cut no
+        # more clips than the CPU does.
+        return batch
 
     def tts_devices(self) -> list[str]:
         """One generation process per GPU, limited by free RAM (~4 GB per process)."""
@@ -128,6 +157,67 @@ def disk_warning(path: str) -> str:
     return f"only {free:.0f} GB free on the data disk; a full run needs about {LOW_DISK_GB} GB"
 
 
+_XPU_SELFTEST = """
+import json, torch
+torch.manual_seed(0)
+out = []
+for i in range(torch.xpu.device_count()):
+    dev = f"xpu:{i}"
+    m = torch.rand(3, 5000) < 0.5
+    m[1, 100:300] = True  # a run of True: the broken runtimes drop entries from runs
+    x = torch.randint(0, 100, (1200,))
+    # results are only read back; using bad indices on the GPU would fault it
+    nz = torch.equal(torch.nonzero(m.to(dev)).cpu(), torch.nonzero(m))
+    got = [t.cpu() for t in torch.unique(x.to(dev), return_inverse=True, return_counts=True)]
+    want = torch.unique(x, return_inverse=True, return_counts=True)
+    un = all(g.shape == w.shape and torch.equal(g, w) for g, w in zip(got, want))
+    out.append({"device": dev, "driver": torch.xpu.get_device_properties(i).driver_version, "ok": nz and un})
+print(json.dumps(out))
+"""
+
+
+def xpu_selftest_message(results: list[dict]) -> str:
+    bad = [r for r in results if not r["ok"]]
+    if not bad:
+        return ""
+    devices = ", ".join(r["device"] for r in bad)
+    return (
+        f"the Intel GPU runtime (driver {bad[0]['driver']}) computes wrong results on {devices} "
+        "(torch.nonzero/unique, boolean-mask indexing): GPU speech generation and training can crash, "
+        "hang the GPU or make bad clips. Update Intel's compute runtime to 26.35 or newer with its IGC "
+        "(https://github.com/intel/compute-runtime/releases), or run with --cpu"
+    )
+
+
+def xpu_selftest(timeout: float = 120.0) -> str:
+    """Check, in a child process, that the Intel GPU runtime gets torch.nonzero and unique right.
+
+    Intel's compute runtime 26.05 runs PyTorch's xpu kernels for these wrong on Battlemage (and Lunar
+    Lake, by public reports): runs of adjacent True values lose entries, so boolean-mask indexing,
+    masked_select, isin and unique are wrong too, and their bad indices fault the GPU. 26.35 is right.
+    Returns a warning, or "" when the runtime is fine or there's no Intel GPU."""
+    import json
+    import subprocess
+    import sys
+
+    proc = subprocess.Popen(
+        [sys.executable, "-c", _XPU_SELFTEST],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.DEVNULL,
+        text=True,
+    )
+    try:
+        out, _ = proc.communicate(timeout=timeout)
+        if proc.returncode != 0:
+            raise ValueError(f"exit {proc.returncode}")
+        return xpu_selftest_message(json.loads(out.strip().splitlines()[-1]))
+    except subprocess.TimeoutExpired:
+        proc.kill()
+        return "the Intel GPU self-test did not finish (the GPU driver is not responding)"
+    except (ValueError, IndexError) as e:
+        return f"the Intel GPU self-test failed to run: {e}"
+
+
 def detect_safe(timeout: float = 30.0) -> tuple[Hardware, str]:
     """detect() in a child process, so a hung GPU driver can't hang the caller.
 
@@ -139,6 +229,12 @@ def detect_safe(timeout: float = 30.0) -> tuple[Hardware, str]:
 
     if forced_cpu():
         return detect(gpu=False), ""
+    import importlib.util
+
+    if (
+        importlib.util.find_spec("torch") is None
+    ):  # e.g. after `uv tool install --force`: a fresh env
+        return detect(gpu=False), "torch is not installed: run `wakesmith setup`"
     code = (
         "import json; from dataclasses import asdict; from wakesmith import hardware; "
         "print(json.dumps(asdict(hardware.detect())))"

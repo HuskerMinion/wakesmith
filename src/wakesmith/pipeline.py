@@ -2,10 +2,14 @@
 
 generate      synthetic clips of the phrase and its sound-alikes (GPU when available)
 real          prepare real recordings (held-out split, review corrections, trimming)
+commonvoice   real volunteer voices from Common Voice (only when enabled)
+conversational  everyday sentences from an AI assistant, spoken as not-the-phrase clips (experimental;
+              only when conversational.clips > 0)
 mww-features  microWakeWord features (all CPU cores)
-mww-train     microWakeWord training (CPU)
-oww-features  openWakeWord features (all CPU cores)
-oww-train     openWakeWord DNN head (CPU) and .tflite export
+mww-train     microWakeWord training (GPU if found); with candidates > 1, the best of N on held-out
+              recordings (candidates.py)
+oww-features  openWakeWord features (all CPU cores; the embedding model on the GPU if found)
+oww-train     openWakeWord DNN head (GPU if found) and .tflite export
 test          score held-out real recordings with every trained model
 export        device-ready files in <project>/export
 """
@@ -19,7 +23,22 @@ import traceback
 from collections.abc import Callable
 from datetime import datetime
 
-from . import commonvoice, eta, evaluate, export, hardware, mww, oww, runs, synth
+from . import (
+    candidates,
+    commonvoice,
+    conversational,
+    ensemble,
+    eta,
+    evaluate,
+    export,
+    hardware,
+    models,
+    mww,
+    oww,
+    runs,
+    synth,
+    verdict,
+)
 from .project import Project
 from .real import RealData
 
@@ -27,6 +46,7 @@ STAGES = [
     "generate",
     "real",
     "commonvoice",
+    "conversational",
     "mww-features",
     "mww-train",
     "oww-features",
@@ -43,7 +63,39 @@ def enabled(p: Project, stage: str) -> bool:
         return p.openwakeword.enabled
     if stage == "commonvoice":
         return p.commonvoice.enabled
+    if stage == "conversational":
+        return p.conversational.clips > 0
     return True
+
+
+# What each stage reads that an earlier stage made. Archiving (archive.py) removes some of that and marks
+# the maker "archived"; such makers rerun first whenever a stage that reads their output runs.
+NEEDS = {
+    "commonvoice": ("real",),  # it adds takes to real/train
+    "mww-features": ("generate", "real", "commonvoice"),
+    "mww-train": ("mww-features", "real"),  # best of N picks on real_neg/test
+    "oww-features": ("generate", "real", "commonvoice"),
+    "oww-train": ("oww-features",),
+    "test": ("real", "commonvoice"),
+}
+
+
+def rebuild_first(p: Project, stages: list[str]) -> list[str]:
+    """Archived stages outside `stages` whose output these stages read (directly, or through
+    another archived stage), in pipeline order."""
+    st = p.state()
+
+    def archived(s: str) -> bool:
+        return (st.get(s) or {}).get("status") == "archived" and enabled(p, s)
+
+    want: set[str] = set()
+    todo = [s for s in stages if enabled(p, s)]
+    while todo:
+        for n in NEEDS.get(todo.pop(), ()):
+            if n not in want and n not in stages and archived(n):
+                want.add(n)
+                todo.append(n)
+    return [s for s in STAGES if s in want]
 
 
 def run(
@@ -61,16 +113,23 @@ def run(
             f.write(line + "\n")
         (log or print)(line)
 
-    # Only speech generation uses the GPU: other stages must not open the driver at all.
-    if "generate" in STAGES[STAGES.index(first) : STAGES.index(last) + 1]:
+    stages = STAGES[STAGES.index(first) : STAGES.index(last) + 1]
+    if extra := rebuild_first(p, stages):
+        say(f"rebuilding what archiving removed first: {', '.join(extra)}")
+        stages = [s for s in STAGES if s in stages or s in extra]
+    # Speech generation, both models' training and openWakeWord features use the GPU: other stages must
+    # not open the driver at all.
+    gpu_stages = {"generate", "mww-train", "oww-features", "oww-train"}
+    if p.conversational.clips > 0:
+        gpu_stages.add("conversational")
+    if gpu_stages & set(stages):
         hw, problem = hardware.detect_safe()
         if problem:
-            say(f"warning: {problem}; generating on the CPU")
+            say(f"warning: {problem}; using the CPU")
     else:
         hw = hardware.detect(gpu=False)
     for key, val in p.hardware.items():  # project overrides
         setattr(hw, key, val)
-    stages = STAGES[STAGES.index(first) : STAGES.index(last) + 1]
     if low := hardware.disk_warning(str(p.dir)):
         say(f"warning: {low}")
     if p.microwakeword.enabled and (low := hardware.ram_warning(hw)):
@@ -82,7 +141,7 @@ def run(
     for stage in stages:
         if not enabled(p, stage):
             continue
-        p.set_state(**{stage: {"status": "running", "started": time.time()}})
+        p.set_state(**{stage: {"status": "running", "started": time.time(), "pid": os.getpid()}})
         say(f"=== {stage}")
         t0 = time.time()
         try:
@@ -98,19 +157,22 @@ def run(
         eta.record(p, stage, time.time() - t0, info)
         say(f"{stage} done in {(time.time() - t0) / 60:.1f} min {info or ''}")
     if "export" in stages and (rid := runs.snapshot(p)):
+        models.attach_run(p, rid)
         say(f"run kept as {rid} (compare it with earlier runs on the Compare page)")
 
 
 def _tf_off_gpu() -> None:
-    """Training runs on the CPU (the tested path; the trainers' own processes already hide the
-    GPU). Hide it from this process too: TensorFlow, loaded here for the features, otherwise takes
-    a CUDA card's whole memory and keeps it while doing nothing on it (RTX 5060 Ti under WSL2:
-    15.8 of 16 GB held at 1% load). WAKESMITH_TF_GPU=<devices> (e.g. 0) lets TensorFlow use them."""
+    """Hide CUDA cards from TensorFlow in this process: loaded here for the features, it otherwise takes a
+    card's whole memory and keeps it while doing nothing on it (RTX 5060 Ti under WSL2: 15.8 of 16 GB held
+    at 1% load). WAKESMITH_TF_GPU=<devices> (e.g. 0) lets TensorFlow use them. The original setting is kept
+    in WAKESMITH_CUDA_DEVICES ("all": none was set) for mww.train's PyTorch trainer."""
+    os.environ.setdefault("WAKESMITH_CUDA_DEVICES", os.environ.get("CUDA_VISIBLE_DEVICES", "all"))
     os.environ["CUDA_VISIBLE_DEVICES"] = os.environ.get("WAKESMITH_TF_GPU", "-1")
 
 
 def _run_stage(p: Project, stage: str, hw: hardware.Hardware, say) -> dict | None:
-    if stage != "generate":  # only speech generation uses the GPU
+    # TensorFlow stays off the GPU (mww-train hands it back to PyTorch); speech generation keeps it
+    if stage not in ("generate", "conversational"):
         _tf_off_gpu()
     if stage == "generate":
         if synth.complete(p):
@@ -121,17 +183,30 @@ def _run_stage(p: Project, stage: str, hw: hardware.Hardware, say) -> dict | Non
         return real.prepare() if real else {"skipped": "no real recordings"}
     if stage == "commonvoice":
         return commonvoice.prepare(p, log=say)
+    if stage == "conversational":
+        info = conversational.run(p, hw.tts_devices()[0], hw.tts_batch(), log=say)
+        synth._free_gpu()
+        return info
     if stage == "mww-features":
         mww.build_features(p, hw.workers(), log=say)
         return None
     if stage == "mww-train":
-        mww.train(p, p.path("logs", "mww-train.log"))
-        return None
+        info = candidates.train(
+            p, p.path("logs", "mww-train.log"), device=mww.train_device(hw.gpus), log=say
+        )
+        if p.microwakeword.combine and info:
+            try:
+                ensemble.combine(p, log=say)
+                info["combined"] = ensemble.note(ensemble.info(p) or {"candidates": []})
+            except (RuntimeError, ValueError) as e:
+                # the kept candidate is a whole model on its own: carry on with it
+                say(f"warning: {e}; `wakesmith combine {p.name}` tries again")
+                info["combined"] = f"failed: {e}"
+        return info
     if stage == "oww-features":
-        oww.build_features(p, hw.workers(), log=say)
-        return None
+        return oww.build_features(p, hw.workers(), log=say, device=oww.feature_device(hw.gpus))
     if stage == "oww-train":
-        oww.train(p, log=say)
+        oww.train(p, log=say, device=oww.train_device(hw.gpus))
         return None
     if stage == "test":
         cv_test = p.path("commonvoice", "test")
@@ -141,13 +216,22 @@ def _run_stage(p: Project, stage: str, hw: hardware.Hardware, say) -> dict | Non
         out = {}
         for kind, on in (("mww", p.microwakeword.enabled), ("oww", p.openwakeword.enabled)):
             if on and RealData(p):
-                r = evaluate.score(p, kind)
+                r = evaluate.score(p, kind, report_half=True)
                 say(evaluate.format_table(r))
                 out[kind] = r["table"]
             if on and has_cv:
-                r = evaluate.score(p, kind, positives=cv_test, tag="cv")
+                r = evaluate.score(p, kind, positives=cv_test, tag="cv", report_half=True)
                 say("Common Voice speakers (never trained on): " + evaluate.format_table(r))
                 out[f"{kind}-cv"] = r["table"]
+        out.update(evaluate.score_combined(p, log=say))
+        for kind in ("mww", "oww"):  # side by side with the version on the devices, in one sentence
+            if kind in out:
+                try:
+                    v = verdict.compare(p, kind, log=say)
+                    if v and v.get("sentence"):
+                        say(v["sentence"])
+                except Exception as e:  # noqa: BLE001 - a verdict is a convenience; the test itself stands
+                    say(f"verdict ({kind}) skipped: {e}")
         return {"results": "results/*.json"} if out else None
     if stage == "export":
         return {"files": [str(f) for f in export.export(p)]}

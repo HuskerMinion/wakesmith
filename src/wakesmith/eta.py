@@ -17,11 +17,12 @@ DEFAULT_SECONDS_PER_UNIT = {
     "generate": 0.0072,
     "real": 0.01,
     "mww-features": 0.0009,
-    "mww-train": 0.042,
+    "mww-train": 0.01,  # PyTorch port: ~0.007 on a GPU, ~0.02 on 12 CPU threads
     "oww-features": 0.024,
     "oww-train": 0.01,
     "test": 0.03,
     "commonvoice": 5.0,
+    "conversational": 0.1,  # a few seconds of speech per clip, plus the assistant writing it
     "export": 1.0,
 }
 
@@ -40,10 +41,17 @@ def _load() -> dict:
 def units(p: Project, stage: str) -> float:
     s = p.samples
     clips = s.positive + s.negative + s.positive_test + s.negative_test
-    if stage in ("generate", "mww-features", "oww-features"):
+    conv = max(0, p.conversational.clips)
+    if stage == "conversational":
+        return conv
+    if stage == "generate":
         return clips
+    if stage in ("mww-features", "oww-features"):
+        return clips + conv
     if stage == "mww-train":
-        return p.microwakeword.steps + p.microwakeword.finetune_steps
+        return (p.microwakeword.steps + p.microwakeword.finetune_steps) * max(
+            1, p.microwakeword.candidates
+        )
     if stage == "oww-train":
         return p.openwakeword.steps * 1.2  # phases 2 and 3 add a tenth each
     if stage in ("real", "test"):

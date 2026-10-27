@@ -1,6 +1,6 @@
-"""Find labelling mistakes: list the real recordings a trained model disagrees with.
+"""Find labeling mistakes: list the real recordings a trained model disagrees with.
 
-Every labelled recording (full original clip, train and held-out) is scored the way a device would
+Every labeled recording (full original clip, train and held-out) is scored the way a device would
 hear it. A clip is listed when the score disagrees with its label at `threshold`: a positive below
 it, or a negative at or above it. The review page plays these and records verdicts in
 review/decisions.json, which the next `real` stage applies (held-out clips are never moved).
@@ -13,7 +13,7 @@ from pathlib import Path
 
 from . import evaluate, mww, oww
 from .project import Project
-from .real import RealData
+from .real import KIND, RealData
 
 
 def build(p: Project, kind: str = "mww", threshold: float | None = None, progress=None) -> dict:
@@ -31,7 +31,7 @@ def build(p: Project, kind: str = "mww", threshold: float | None = None, progres
     clips = []
     for i, (src, f) in enumerate(todo):
         _, held, rows = listings[src]
-        label = "wake" if src == "pos" else "not_wake"
+        label = KIND[src]
         score = peak(real.file(src, f))
         if progress:
             progress(i + 1, len(todo))

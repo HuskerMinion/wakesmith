@@ -22,13 +22,14 @@
     --cyan: #4ad5ff; --orange: #ff7b00; --gold: #ffcc00; --on-accent: #0f141e;
     --ok-bg: #123528; --ok: #5fe0a0; --info-bg: #10304a; --info: #7fdfff; --warn-bg: #3a2410; --warn: #ffb066;
     --pick-bg: #2a2414;
-    --bar-caught: #1c95c4; --bar-false: #d96500;  /* chart shades, checked for colour blindness on --panel */
+    --bar-caught: #1c95c4; --bar-false: #d96500;  /* chart shades, checked for color blindness on --panel */
     --head: Montserrat, "Segoe UI", system-ui, sans-serif;
     --body: Inter, "Segoe UI", system-ui, -apple-system, sans-serif;
     --mono: "JetBrains Mono", "Cascadia Mono", Consolas, ui-monospace, monospace;
     color-scheme: dark;
   }
   * { box-sizing: border-box; }
+  [hidden] { display: none !important; }  /* .panel's display: flex would otherwise show hidden panels */
   body { margin: 0; background: var(--bg); color: var(--text); font: 15px/1.5 var(--body); }
   a { color: var(--cyan); } a:hover { color: #8be4ff; }
   .app { min-height: 100vh; display: flex; flex-wrap: wrap; }
@@ -63,6 +64,7 @@
   .head { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: flex-end; gap: 16px; }
   .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 22px; display: flex; flex-direction: column; gap: 14px; }
   .panel.dark { background: var(--raised); border-color: var(--raised); }
+  .panel[hidden] { display: none; }  /* display: flex above would otherwise show hidden panels */
   .cols { display: flex; flex-wrap: wrap; gap: 22px; align-items: flex-start; }
   .cols > .wide { flex: 999 1 520px; min-width: 0; display: flex; flex-direction: column; gap: 22px; }
   .cols > .narrow { flex: 1 1 300px; min-width: 0; display: flex; flex-direction: column; gap: 16px; }
@@ -72,7 +74,7 @@
 
   /* controls */
   label.f { display: flex; flex-direction: column; gap: 6px; font-size: 14px; font-weight: 600; }
-  input[type=text], input[type=search], select { font: 400 15px var(--body); color: var(--text); background: var(--inset);
+  input[type=text], input[type=search], input[type=password], input[type=number], select { font: 400 15px var(--body); color: var(--text); background: var(--inset);
          border: 1px solid var(--field); border-radius: 10px; min-height: 46px; padding: 0 12px; width: 100%; }
   input:focus-visible, select:focus-visible, button:focus-visible, a:focus-visible, summary:focus-visible { outline: 2px solid var(--cyan); outline-offset: 2px; }
   .row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
@@ -87,7 +89,7 @@
   button:disabled { opacity: .45; cursor: default; }
   button svg, .btn svg { flex: none; }
 
-  /* badges and notes: always an icon or word with the colour */
+  /* badges and notes: always an icon or word with the color */
   .badge { display: inline-flex; align-items: center; gap: 5px; white-space: nowrap; padding: 4px 10px; border-radius: 999px; font-size: 13px; font-weight: 600; }
   .badge.ok { background: var(--ok-bg); color: var(--ok); } .badge.info { background: var(--info-bg); color: var(--info); }
   .badge.warn { background: var(--warn-bg); color: var(--warn); } .badge.idle { background: var(--raised); color: var(--soft); }
@@ -111,6 +113,54 @@
   .newcard { min-height: 240px; border: 2px dashed #34486b; border-radius: 14px; display: flex; flex-direction: column; align-items: center;
              justify-content: center; gap: 10px; color: var(--muted); text-decoration: none; font-weight: 500; }
   .newcard:hover { border-color: var(--orange); color: var(--text); }
+  /* wake words table: one row per word, its versions folded underneath */
+  .sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+  .runstrip { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 20px; padding: 10px 16px; border-radius: 12px; background: var(--info-bg); }
+  .runstrip .lead { display: inline-flex; align-items: center; gap: 8px; font-weight: 600; color: var(--info); }
+  .runstrip .q { margin-left: auto; }
+  .tools { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 14px; }
+  .tools .find { margin-left: auto; width: min(240px, 100%); }
+  .wwbox { overflow-x: auto; border: 1px solid var(--line); border-radius: 14px; background: var(--panel); }
+  .wwt { min-width: 980px; }
+  .wwr { display: grid; grid-template-columns: minmax(240px, 2.2fr) 150px minmax(140px, 1.2fr) 120px 120px 80px 48px; align-items: center; column-gap: 16px; padding: 10px 16px; border-bottom: 1px solid var(--line2); }
+  .wwr.hdr { color: var(--muted); font-size: 12px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; padding: 12px 16px; border-bottom-color: var(--line); }
+  .wwr.word { min-height: 52px; } .wwr.word:hover { background: #1f2c41; }
+  .wwr.ver { background: #172133; font-size: 13.5px; padding-top: 7px; padding-bottom: 7px; } .wwr.ver:hover { background: #1b273c; }
+  .wwr .name { display: flex; align-items: center; gap: 10px; min-width: 0; }
+  .wwr .name a { color: var(--text); text-decoration: none; } .wwr .name a:hover { text-decoration: underline; }
+  .wwr.word .name a { font-family: var(--head); font-weight: 600; font-size: 16px; }
+  .wwr.ver .name { padding-left: 42px; }
+  .wwr .note { color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .wwr .num { font-family: var(--mono); } .wwr .num small { font-family: var(--body); color: var(--muted); font-size: 12px; }
+  .wwr .cut { color: var(--muted); }
+  details.learns > summary { cursor: pointer; list-style: none; display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 12px; }
+  details.learns > summary::-webkit-details-marker { display: none; } details.learns > summary::before { content: "▸"; color: var(--muted); } details.learns[open] > summary::before { content: "▾"; }
+  details.learns > div { display: flex; flex-direction: column; gap: 10px; margin-top: 12px; }
+  .lsrc { display: flex; flex-direction: column; gap: 6px; } .lgroup { padding: 8px 12px; border-radius: 10px; background: var(--inset); }
+  .lgroup .takes { margin-top: 8px; }
+  .nextrow { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 16px; padding: 6px 16px 10px 58px; border-bottom: 1px solid var(--line2); color: var(--info); font-size: 13.5px; }
+  .nextrow .btn, .nextrow button { min-height: 36px; padding: 0 14px; font-size: 13.5px; }
+  .fold { width: 32px; height: 32px; min-height: 32px; padding: 0; display: inline-flex; align-items: center; justify-content: center; border: 0; border-radius: 8px; background: transparent; color: var(--soft); flex: 0 0 auto; }
+  .fold svg { transition: transform .15s; } .fold[aria-expanded="true"] svg { transform: rotate(90deg); }
+  .fold:disabled { visibility: hidden; }
+  details.menu { position: relative; } details.menu > summary { list-style: none; width: 38px; height: 38px; display: inline-flex; align-items: center; justify-content: center; border-radius: 10px; cursor: pointer; color: var(--soft); }
+  details.menu > summary::-webkit-details-marker { display: none; } details.menu > summary:hover { background: var(--raised); }
+  details.menu > div { position: absolute; right: 0; top: 42px; z-index: 5; min-width: 200px; padding: 6px; border-radius: 12px; background: var(--raised); border: 1px solid var(--field); box-shadow: 0 8px 24px #0008; display: flex; flex-direction: column; }
+  details.menu > div a, details.menu > div button { display: flex; align-items: center; gap: 8px; min-height: 40px; padding: 0 12px; border-radius: 8px; background: transparent; border: 0; color: var(--text); text-decoration: none; font: inherit; text-align: left; }
+  details.menu > div a:hover, details.menu > div button:hover { background: var(--panel); }
+  details.menu > div .danger { color: var(--warn); }
+  @media (max-width: 760px) {
+    .wwbox { border: 0; background: transparent; overflow: visible; } .wwt { min-width: 0; }
+    .wwr.hdr { display: none; }
+    .wwr { grid-template-columns: 1fr auto; row-gap: 4px; background: var(--panel); }
+    .wwr .c-live, .wwr .c-caught, .wwr .c-false, .wwr .c-last { grid-column: 1 / -1; font-size: 13px; }
+    .wwr .c-live:empty, .wwr .c-last { display: none; }
+    .wwr .c-caught::before { content: "Caught "; color: var(--muted); font-family: var(--body); }
+    .wwr .c-false::before { content: "False "; color: var(--muted); font-family: var(--body); }
+    .wwr .c-act { grid-row: 1; grid-column: 2; } .wwr .c-status { grid-column: 1 / -1; }
+    .wwr.ver .name { padding-left: 12px; }
+    .tools .find { margin-left: 0; width: 100%; }
+  }
 
   /* new wake word */
   .steps { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 8px; }
@@ -118,6 +168,8 @@
               border: 1px solid var(--line); font-size: 14px; color: var(--muted); }
   .steps li span { display: inline-flex; width: 24px; height: 24px; border-radius: 50%; background: var(--inset); align-items: center;
                    justify-content: center; font-size: 12px; color: var(--text); }
+  .steps li a { display: flex; align-items: center; gap: 8px; color: inherit; text-decoration: none; min-height: 30px; }
+  .steps li a:hover { text-decoration: underline; }
   .steps li.on { background: var(--raised); border-color: var(--raised); color: #fff; font-weight: 600; }
   .steps li.on span { background: var(--orange); color: var(--on-accent); }
   .steps li.done span { background: var(--ok-bg); color: var(--ok); }
@@ -187,6 +239,14 @@
 
   /* results */
   .tablebox { overflow-x: auto; }
+  ul.jobq { list-style: none; margin: 0; padding: 0; }
+  ul.jobq li { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; padding: 8px 0; border-top: 1px solid var(--line2); font-size: 14px; }
+  ul.jobq .acts { margin-left: auto; display: flex; gap: 2px; }
+  .toasts { position: fixed; right: 18px; bottom: 18px; z-index: 20; display: flex; flex-direction: column; gap: 10px; width: min(440px, calc(100vw - 36px)); }
+  .toast { background: var(--raised); border: 1px solid var(--line); border-left: 4px solid var(--ok); border-radius: 12px; padding: 10px 6px 10px 14px;
+           display: flex; gap: 10px; align-items: flex-start; font-size: 14px; box-shadow: 0 8px 28px rgba(0,0,0,.45); }
+  .toast.failed { border-left-color: var(--warn); } .toast.stopped { border-left-color: var(--muted); }
+  .toast a { color: #fff; }
   table { border-collapse: collapse; width: 100%; font-variant-numeric: tabular-nums; font-size: 14px; }
   th { text-align: left; color: var(--muted); font-size: 12px; font-weight: 600; padding: 8px 10px; }
   td { padding: 10px; border-top: 1px solid var(--line2); }
@@ -213,7 +273,16 @@
   details.qa { border-top: 1px solid var(--line2); }
   details.qa summary { min-height: 48px; display: flex; align-items: center; cursor: pointer; font-weight: 600; }
   details.qa p { margin: 0 0 14px; font-size: 14px; color: var(--soft); line-height: 1.6; }
+  /* AI assistant answers */
+  .aians { white-space: pre-wrap; background: var(--inset); border-radius: 10px; padding: 14px 16px; font-size: 14px; line-height: 1.6; color: var(--soft); }
+  .aians b { color: var(--text); }
   .vendor { padding: 3px 12px; border-radius: 999px; border: 1px solid; font-weight: 600; font-size: 13px; }
+  /* record a room */
+  fieldset.rchk { border: 0; padding: 0; margin: 0; display: flex; flex-wrap: wrap; gap: 4px 18px; }
+  fieldset.rchk legend { font-size: 14px; font-weight: 600; padding: 0 0 6px; }
+  fieldset.rchk label { display: flex; gap: 10px; align-items: center; min-height: 44px; cursor: pointer; }
+  fieldset.rchk input { width: 20px; height: 20px; accent-color: var(--orange); }
+  .rscript ol { margin: 0; padding-left: 22px; display: flex; flex-direction: column; gap: 6px; font-size: 16px; }
 </style>
 </head>
 <body>
@@ -225,20 +294,22 @@
   </nav>
   <main id="view"></main>
 </div>
+<div class="toasts" id="toasts" aria-live="polite"></div>
 <dialog class="ask" id="ask" aria-labelledby="ask-t"><h2 id="ask-t"></h2><p id="ask-b"></p>
   <div class="row"><button type="button" id="ask-no">Keep it</button><button type="button" class="bad" id="ask-yes"></button></div></dialog>
 <script>
 const $ = (s, el = document) => el.querySelector(s);
 const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 const enc = encodeURIComponent;
-const STAGE_NAMES = {"generate":"Synthetic speech","real":"Your recordings","commonvoice":"Common Voice","mww-features":"microWakeWord features",
-  "mww-train":"microWakeWord training","oww-features":"openWakeWord features","oww-train":"openWakeWord training","test":"Held-out test","export":"Export"};
+const STAGE_NAMES = {"generate":"Synthetic speech","real":"Your recordings","commonvoice":"Common Voice","conversational":"Everyday sentences","mww-features":"microWakeWord features",
+  "mww-train":"microWakeWord training","oww-features":"openWakeWord features","oww-train":"openWakeWord training","test":"Test","export":"Export"};
 const STAGE_HELP = {"generate":"Thousands of synthetic speakers saying the phrase and its sound-alikes.",
-  "real":"Your recordings: training takes trimmed, held-out takes set aside.",
+  "real":"Your recordings: training takes trimmed, test takes set aside.",
   "commonvoice":"Real volunteer voices: the phrase cut out of Common Voice takes, split by speaker.",
+  "conversational":"The AI assistant writes everyday sentences with words of the phrase; synthetic voices say them as not-the-phrase clips.",
   "mww-features":"Room echo and noise mixed in; audio turned into what the model hears.",
   "mww-train":"Learning from the synthetic and real takes.", "oww-features":"Audio turned into openWakeWord's embeddings.",
-  "oww-train":"Training the openWakeWord head.", "test":"Scoring your held-out recordings.", "export":"Writing the model files."};
+  "oww-train":"Training the openWakeWord head.", "test":"Scoring your test recordings.", "export":"Writing the model files."};
 // stroke icons (24-unit grid), drawn in currentColor
 const I = {
   grid: '<rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/>',
@@ -256,10 +327,18 @@ const I = {
   esp: '<circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="3"/><path d="M12 2v2M12 20v2"/>',
   home: '<path d="M3 11l9-7 9 7"/><path d="M5 10v10h14V10"/><path d="M10 20v-5h4v5"/>',
   screen: '<rect x="3" y="5" width="18" height="12" rx="2"/><path d="M8 21h8M12 17v4"/>',
-  bolt: '<path d="M13 3L5 14h6l-1 7 8-11h-6z"/>', trash: '<path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/>', refresh: '<path d="M20 12a8 8 0 1 1-2.3-5.7M20 4v5h-5"/>',
+  bolt: '<path d="M13 3L5 14h6l-1 7 8-11h-6z"/>', up: '<path d="M12 19V5M6 11l6-6 6 6"/>', dn: '<path d="M12 5v14M6 13l6 6 6-6"/>',
+  chev: '<path d="M9 6l6 6-6 6"/>', more: '<circle cx="5" cy="12" r="1.3"/><circle cx="12" cy="12" r="1.3"/><circle cx="19" cy="12" r="1.3"/>',
+  bell: '<path d="M6 16v-5a6 6 0 0 1 12 0v5l2 2H4z"/><path d="M10 21h4"/>', trash: '<path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/>', refresh: '<path d="M20 12a8 8 0 1 1-2.3-5.7M20 4v5h-5"/>',
 };
 const icon = (n, size = 20, w = 1.75) => `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="${w}" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${I[n]}</svg>`;
-let es = null, HW = null;
+let es = null, HW = null, AI = null;
+// The optional AI assistant's settings (assistant.py); AI.enabled decides whether its buttons show.
+async function aiLoad() { try { AI = await api("/api/assistant"); } catch { AI = { enabled: false }; } return AI; }
+// A model's answer as HTML: escaped, with the bits of Markdown models like to use (bold, code, headings).
+const mdLite = s => esc(s).replace(/\*\*(.+?)\*\*/g, "<b>$1</b>").replace(/`([^`\n]+)`/g, '<code class="mono">$1</code>').replace(/^#{1,4} +(.+)$/gm, "<b>$1</b>");
+const aiAnswer = (r, extra) => `<div class="aians" aria-live="polite">${mdLite(r.answer)}</div>
+  <p class="hint" style="margin:0">From ${esc(r.model || "your model")}. It can be wrong: check it against the numbers and the log.</p>${extra || ""}`;
 
 async function api(path, opts = {}) {
   const r = await fetch(path, {headers: {"Content-Type": "application/json"}, ...opts,
@@ -294,10 +373,8 @@ const unfinished = p => !p.job?.running && !Object.values(p.stages || {}).some(s
 // ---- shell: sidebar and machine box ----------------------------------------------------------------
 function nav(here, project) {
   const a = (href, ic, label) => `<a href="${href}"${href === here ? ' aria-current="page"' : ""}>${icon(ic)}${esc(label)}</a>`;
-  const pg = project ? `<div class="navgroup"><div class="navlabel" title="${esc(project.label)}">${esc(project.label)}</div>
-      ${a(`#/p/${enc(project.name)}/voices`, "mic", "Real voices")}${a(`#/p/${enc(project.name)}/train`, "pulse", "Training")}
-      ${a(`#/p/${enc(project.name)}/results`, "bars", "Compare & cutoff")}</div>` : "";
-  $("#nav").innerHTML = `<div class="navgroup">${a("#/", "grid", "Wake words")}${a("#/new", "plus", "New wake word")}</div>${pg}
+  const pg = "";  // a wake word's pages are on its step bar (Real voices, Train, Results)
+  $("#nav").innerHTML = `<div class="navgroup">${a("#/", "grid", "Wake words")}${a("#/new", "plus", "New wake word")}${a("#/room", "home", "Record a room")}</div>${pg}
     <div class="navgroup">${a("#/help", "help", "Help")}${a("#/hardware", "chip", "Hardware")}${a("#/data", "doc", "Data & licenses")}</div>`;
 }
 
@@ -313,6 +390,7 @@ async function hardware() {
 
 function route() {
   if (es) { es.close(); es = null; }
+  onJobs = null; watchJobs();
   const h = location.hash.slice(1) || "/";
   window.scrollTo(0, 0);
   const m = h.match(/^\/p\/([^/]+)(?:\/(voices|train|results))?$/);
@@ -320,49 +398,241 @@ function route() {
   if (h === "/help") return viewHelp();
   if (h === "/hardware") return viewHardware();
   if (h === "/data") return viewData();
+  if (h === "/room") return viewRoom();
+  const room = h.match(/^\/room\/([^/]+)$/);
+  if (room) return viewSession(decodeURIComponent(room[1]));
   if (m) return viewProject(decodeURIComponent(m[1]), m[2] || "train");
   return viewHome();
 }
 window.addEventListener("hashchange", route);
 
+// ---- job queue and finished-job notices --------------------------------------------------------------
+// Runs wait in a machine-wide queue and start one after another (the server and each finished job start
+// the next one). Every page checks now and then; a run that ended since the last look shows as a notice.
+let JOBS = null, onJobs = null;  // latest /api/queue; the open page's redraw for it
+const RESULT = { ok: ["ok", "check", "Finished"], failed: ["warn", "bang", "Failed"], stopped: ["idle", "x", "Stopped"] };
+const when = t => new Date(t * 1000).toLocaleString([], { weekday: "short", hour: "2-digit", minute: "2-digit" });
+function jobTitle(t) {
+  const m = /^train (\S+) -> (\S+)$/.exec(t || ""), st = s => STAGE_NAMES[s] || s;
+  if (!m) return t ? t[0].toUpperCase() + t.slice(1) : "Job";
+  if (m[2] === "export") return m[1] === "generate" ? "Training" : m[1] === "real" ? "Retrain from recordings" : `Training from ${st(m[1])}`;
+  return `Training: ${st(m[1])} to ${st(m[2])}`;
+}
+const runningElsewhere = name => (JOBS?.running || []).find(r => r.project !== name);
+function notice(e) {
+  const [cls, ic, word] = RESULT[e.result] || RESULT.failed, t = document.createElement("div");
+  t.className = `toast ${esc(e.result)}`;
+  t.innerHTML = `<span class="badge ${cls}">${icon(ic, 14, 2.5)}${word}</span><div style="flex:1;min-width:0"><b><a href="#/p/${enc(e.project)}/train">${esc(e.label)}</a></b> · ${esc(jobTitle(e.title))}
+    <div class="hint">${when(e.finished)}${e.error ? " · " + esc(e.error) : ""}</div></div><button type="button" class="round flat" aria-label="Dismiss" title="Dismiss">${icon("x", 16)}</button>`;
+  t.querySelector("button").onclick = () => t.remove();
+  $("#toasts").append(t);
+  if ("Notification" in window && Notification.permission === "granted" && document.hidden)
+    new Notification(`${e.label}: ${word.toLowerCase()}`, { body: jobTitle(e.title) + (e.error ? `: ${e.error}` : ""), icon: "/static/favicon.png", tag: `wakesmith-${e.finished}` });
+}
+async function watchJobs() {
+  try { JOBS = await api("/api/queue"); } catch { return; }
+  const h = JOBS.history, last = h.length ? h[h.length - 1].finished : JOBS.now, seen = localStorage.getItem("wakesmith-seen-job");
+  if (seen !== null) h.filter(e => e.finished > +seen).slice(-3).forEach(notice);  // first visit: no old news
+  localStorage.setItem("wakesmith-seen-job", String(Math.max(last, +seen || 0)));
+  onJobs?.(JOBS);
+}
+setInterval(watchJobs, 10000);
+document.addEventListener("visibilitychange", () => { if (!document.hidden) watchJobs(); });
+// The queue panel: what runs now, what waits (reorder, remove), and the last runs that ended.
+function drawQueue(el, J, always) {
+  if (!el || !J) return;
+  const { running, queue: q, history: h } = J, open = el.querySelector("details")?.open;
+  el.hidden = !always && !running.length && !q.length && !h.length;
+  const perm = "Notification" in window && Notification.permission === "default"
+    ? `<button type="button" data-notify>${icon("bell", 16)}Tell me when runs finish</button>` : "";
+  const li = (badge, e, extra, acts = "") => `<li>${badge}<b>${esc(e.label)}</b><span class="hint">${esc(jobTitle(e.title))} · ${extra}</span>${acts}</li>`;
+  const rows = running.map(r => li(`<span class="badge info">${icon("spin", 14, 2.5)}Running</span>`, r, `since ${when(r.started)}`))
+    .concat(q.map((x, i) => li(`<span class="badge idle mono">${i + 1}</span>`, x, `queued ${when(x.queued_at)}`,
+      `<span class="acts"><button type="button" class="round flat" data-move="${esc(x.id)}" data-to="${i - 1}" aria-label="Move up" title="Move up" ${i ? "" : "disabled"}>${icon("up", 16)}</button>
+       <button type="button" class="round flat" data-move="${esc(x.id)}" data-to="${i + 1}" aria-label="Move down" title="Move down" ${i < q.length - 1 ? "" : "disabled"}>${icon("dn", 16)}</button>
+       <button type="button" class="round flat" data-remove="${esc(x.id)}" aria-label="Remove from the queue" title="Remove from the queue">${icon("trash", 16)}</button></span>`)));
+  const done = h.slice().reverse().map(e => { const [cls, ic, word] = RESULT[e.result] || RESULT.failed;
+    return li(`<span class="badge ${cls}">${icon(ic, 14, 2.5)}${word}</span>`, e, `${when(e.finished)}${e.error ? " · " + esc(e.error) : ""}`); });
+  el.innerHTML = `<div class="row" style="justify-content:space-between"><h2 id="h-q">Queue</h2>${perm}</div>
+    <p class="hint" style="margin:0">Runs start one after another, in this order, also while this page is closed. When one ends or is stopped, the next starts.</p>
+    ${rows.length ? `<ul class="jobq">${rows.join("")}</ul>` : `<p class="hint" style="margin:0">Nothing running or waiting.</p>`}
+    ${done.length ? `<details${open ? " open" : ""}><summary class="hint">Finished recently (${done.length})</summary><ul class="jobq">${done.join("")}</ul></details>` : ""}`;
+  el.onclick = async e => {
+    const b = e.target.closest("button");
+    if (!b) return;
+    try {
+      if (b.dataset.notify !== undefined) { await Notification.requestPermission(); drawQueue(el, JOBS, always); return; }
+      if (b.dataset.remove) await api(`/api/queue/${enc(b.dataset.remove)}`, { method: "DELETE" });
+      else if (b.dataset.move) await api(`/api/queue/${enc(b.dataset.move)}/move`, { method: "POST", body: { to: +b.dataset.to } });
+    } catch (x) { alert(x.message); }
+    watchJobs();
+  };
+}
+
 // ---- wake words (dashboard) -------------------------------------------------------------------------
-const MODEL_NAMES = { mww: "microWakeWord", oww: "openWakeWord", "mww-cv": "microWakeWord · Common Voice speakers", "oww-cv": "openWakeWord · Common Voice speakers" };
+const SET_NAMES = { pos: "Your recordings: the phrase", neg: "Your recordings: not the phrase", dpos: "Device clips: the phrase", dneg: "Device clips: not the phrase", rpos: "Takes recorded here: the phrase", rneg: "Recorded here: not the phrase", cv: "Common Voice speakers", other: "Other clips" };
+const MODEL_NAMES = { mww: "microWakeWord", oww: "openWakeWord", "mww-cv": "microWakeWord · Common Voice speakers", "oww-cv": "openWakeWord · Common Voice speakers",
+  "mww-combined": "microWakeWord · combined", "mww-combined-cv": "microWakeWord · combined · Common Voice speakers" };
+const RESULT_KINDS = ["mww", "mww-combined", "mww-cv", "mww-combined-cv", "oww", "oww-cv"];
 function cardState(p) {
   if (p.job.running) return { key: "run", badge: `<span class="badge info">${icon("spin", 14, 2.5)}Training</span>` };
   if (p.failed.length) return { key: "work", badge: `<span class="badge warn">${icon("bang", 14, 2.5)}Stopped</span>` };
-  if (p.done.includes("export")) return { key: "ready", badge: `<span class="badge ok">${icon("check", 14, 2.5)}Ready</span>` };
-  return { key: "work", badge: `<span class="badge idle">${icon("clock", 14, 2.25)}Not trained</span>` };
+  if (Object.keys(p.live || {}).length) return { key: "live", badge: `<span class="badge ok">${icon("check", 14, 2.5)}Live</span>` };
+  if (p.done.includes("export") || Object.keys(p.brief || {}).length) return { key: "ready", badge: `<span class="badge idle">Ready</span>` };
+  if (p.done.some(s => s.endsWith("-train"))) return { key: "ready", badge: `<span class="badge idle" title="Trained; not tested or exported in wakesmith yet">Trained</span>` };
+  return { key: "none", badge: `<span class="badge idle">${icon("clock", 14, 2.25)}Not trained</span>` };
+}
+const day = t => t ? new Date(t * 1000).toLocaleDateString([], { month: "short", day: "numeric" }) : "—";
+const store = { get(k, d) { try { return JSON.parse(localStorage.getItem(k)) ?? d; } catch { return d; } }, set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch { /* private mode */ } } };
+// Every project of one phrase is a version of one wake word; the word's row shows the version on the
+// devices (else the newest), its versions fold out underneath.
+function wakeWords(list) {
+  const fam = new Map();
+  for (const p of list) (fam.get(p.family) || fam.set(p.family, []).get(p.family)).push(p);
+  return [...fam.values()].map(vs => {
+    vs.sort((a, b) => b.version - a.version || b.created - a.created);
+    const live = vs.filter(p => Object.keys(p.live || {}).length), cur = live[0] || vs[0];
+    const running = vs.filter(p => p.job.running);
+    return { family: cur.family, label: cur.label, vs, cur, live: live.length > 0, running,
+      check: vs.reduce((n, p) => n + (p.to_check || 0), 0), last: Math.max(0, ...vs.map(p => p.last || 0)) };
+  }).sort((a, b) => b.live - a.live || a.label.localeCompare(b.label));
+}
+function briefOf(p) { const k = ["mww", "oww"].find(k => p.models[k] && p.brief[k]); return k ? p.brief[k] : null; }
+// First run: no wake words yet. Say what wakesmith does, what's missing, and offer a quick first try.
+async function firstRun(v) {
+  let dl = null; try { dl = await api("/api/assets/download"); } catch {}
+  const missing = dl && dl.missing.length;
+  v.innerHTML = `<div><h1>Welcome to wakesmith</h1><p class="sub">Train your own wake word for ESPHome / Home Assistant voice devices (microWakeWord) and openWakeWord, from synthetic voices plus real ones, here on this computer.</p></div>
+    ${missing ? `<div class="callout warn">${icon("bang", 18, 2)}<span><b>First, the training data:</b> ${dl.missing.length} item${dl.missing.length > 1 ? "s" : ""} (${dl.missing_gb} GB) aren't downloaded yet. <a href="#/data">Download them on Data &amp; licenses</a>; it runs in the background.</span></div>` : ""}
+    <section class="panel" aria-labelledby="h-fr"><h2 id="h-fr">How it goes</h2><ol class="gs">
+      <li><span>1</span><b>Name the phrase</b>Two to four syllables, like “hey jarvis”. Synthetic voices say it thousands of ways.</li>
+      <li><span>2</span><b>Add real voices</b>Record a few takes in the browser, near and far. Optional, and the biggest gain.</li>
+      <li><span>3</span><b>Train and pick a cutoff</b>About 8 minutes for a quick test with a GPU. Results say how often it catches the phrase and how often it fires by mistake.</li>
+      <li><span>4</span><b>Put it on your device, keep improving</b>Clips your devices save make the next version better.</li></ol></section>
+    <div class="row" style="gap:12px">
+      <button type="button" class="primary" id="tryit" ${missing ? "disabled" : ""}>${icon("bolt", 18, 2)}Try a quick test with “hey jarvis”</button>
+      <a class="btn" href="#/new">${icon("plus", 18, 2.25)}Make your own wake word</a><span class="hint" id="frmsg">${missing ? "after the data is downloaded" : ""}</span></div>
+    <p class="hint" style="margin:0">New here? <a href="#/help">Help</a> explains every step and the words used.</p>`;
+  $("#tryit").onclick = async () => {
+    $("#tryit").disabled = true; $("#frmsg").textContent = "setting it up…";
+    try {
+      const p = await api("/api/projects", { method: "POST", body: { phrase: "hey jarvis", preset: "quick", microwakeword: { enabled: true }, openwakeword: { enabled: true } } });
+      await api(`/api/projects/${enc(p.name)}/train`, { method: "POST", body: { queue: true } });
+      location.hash = `#/p/${enc(p.name)}/train`;
+    } catch (e) { $("#frmsg").textContent = e.message; $("#tryit").disabled = false; }
+  };
 }
 async function viewHome() {
   nav("#/");
   const v = $("#view");
   v.innerHTML = `<div class="head"><div><h1>Your wake words</h1><p class="sub" id="count"></p></div>
     <a class="btn primary" href="#/new">${icon("plus", 18, 2.25)}New wake word</a></div>
-    <div class="filters" role="group" aria-label="Show" id="filters"></div><div class="grid" id="list"></div>`;
-  const list = await api("/api/projects");
-  let f = "all";
-  const draw = () => {
-    const groups = [["all", "All"], ["run", "Training"], ["ready", "Ready"], ["work", "Needs work"]];
-    $("#filters").innerHTML = groups.map(([k, l]) => `<button type="button" data-f="${k}" aria-pressed="${f === k}">${l}
-      <span class="mono" style="opacity:.75;font-size:13px">${k === "all" ? list.length : list.filter(p => cardState(p).key === k).length}</span></button>`).join("");
-    $("#list").innerHTML = list.filter(p => f === "all" || cardState(p).key === f).map(p => {
-      const s = cardState(p), kinds = ["mww", "oww"].filter(k => p.models[k]);
-      const b = kinds.map(k => p.brief[k]).find(Boolean), bk = kinds.find(k => p.brief[k]);
-      const stats = b ? `<div class="stats"><div class="stat"><div class="k">Caught</div><div class="v">${b.caught}/${b.positives}</div><div class="hint">held-out @ ${b.cutoff.toFixed(2)}</div></div>
-          <div class="stat"><div class="k">False triggers</div><div class="v">${b.false}/${b.negatives}</div><div class="hint">${MODEL_NAMES[bk]}</div></div></div>`
-        : `<p class="hint" style="margin:0">${p.job.running ? "Results appear when the held-out test has run." : "No held-out results yet: add real recordings under Real voices to get them."}</p>`;
-      const where = `#/p/${enc(p.name)}`;
-      return `<article class="card"><div class="row" style="justify-content:space-between;align-items:flex-start">
-          <div><h2>${esc(p.label)}</h2><div class="hint">${kinds.map(k => MODEL_NAMES[k]).join(" · ") || "no model selected"}</div></div>${s.badge}</div>
-        ${stats}<div class="acts"><a class="btn" style="background:var(--raised);border-color:var(--raised)" href="${where}/train">Open</a>
-        <a class="btn" href="${where}/results">Results</a>
-        <button type="button" class="round flat" style="margin-left:auto" data-delete="${esc(p.name)}" data-label="${esc(p.label)}" aria-label="Delete ${esc(p.label)}" title="Delete" ${p.job.running ? "disabled" : ""}>${icon("trash", 18)}</button></div></article>`;
-    }).join("") + `<a class="newcard" href="#/new">${icon("plus", 36)}New wake word</a>`;
+    <div id="strip"></div>
+    <section class="panel" aria-labelledby="h-q" id="queue" hidden></section>
+    <div class="tools"><div class="filters" role="group" aria-label="Show" id="filters"></div>
+      <label class="check" style="display:inline-flex;gap:8px;align-items:center;min-height:44px"><input type="checkbox" id="arch" style="width:18px;height:18px;accent-color:var(--cyan)"><span id="archl">Show archived versions</span></label>
+      <label class="find"><span class="sr">Find a wake word</span><input type="search" id="find" placeholder="Find a wake word" autocomplete="off"></label></div>
+    <div class="wwbox"><div class="wwt" id="list" role="table" aria-label="Wake words"></div></div>
+    <p class="hint" style="margin:0">Caught and false triggers are test results of the version on your devices (else the newest), at its cutoff. Each version's own numbers are on its row.</p>`;
+  let list = await api("/api/projects");
+  if (!list.length) return firstRun(v);
+  let f = store.get("ws-filter", "all"), showArch = store.get("ws-arch", false), q = "";
+  const open = new Set(store.get("ws-open", []));
+  $("#arch").checked = showArch;
+  const status = w => w.running.length ? `<span class="badge info">${icon("spin", 14, 2.5)}Training</span>`
+    : w.live ? `<span class="badge ok">${icon("check", 14, 2.5)}Live</span>` : cardState(w.cur).badge;
+  const nums = (b, why = "—") => b ? [`<span class="num">${b.caught}/${b.positives} <small>@ ${b.cutoff.toFixed(2)}</small></span>`, b.negatives ? `<span class="num">${b.false}/${b.negatives}</span>` : `<span class="hint" title="no not-the-phrase recordings to test on">—</span>`] : [why, why];
+  const liveTxt = p => Object.values(p.live || {}).join(" · ");
+  // The one thing to do next for a wake word, if any (in this order).
+  const nextStep = w => {
+    if (w.running.length) return null;
+    const newest = w.vs[0], live = w.vs.find(p => Object.keys(p.live || {}).length), top = Math.max(...w.vs.map(p => p.version));
+    const v = Object.values(newest.verdict || {})[0], trained = newest.done.some(s => s.endsWith("-train"));
+    const check = w.vs.find(p => p.to_check), from = live || newest;
+    if (live && newest !== live && v?.better) return { text: `v${newest.version} beats what's on your devices.`, act: `<a class="btn" href="#/p/${enc(newest.name)}/results">See results</a>` };
+    if (live && newest !== live && trained && !Object.keys(newest.brief || {}).length) return { text: `v${newest.version} is trained but not tested yet.`, act: `<button type="button" data-testv="${esc(newest.name)}">Test and compare</button>` };
+    if (check) return { text: `${check.to_check} device clip${check.to_check > 1 ? "s" : ""} need a person to listen (about ${Math.max(1, Math.round(check.to_check * 5 / 60))} min with Quick check).`, act: `<a class="btn" href="#/p/${enc(check.name)}/voices" data-checkclips>Check them</a>` };
+    if (from.new_since >= 30) return { text: `${from.new_since} new device clips since v${from.version} was made.`, act: `<button type="button" data-newver="${esc(from.name)}" data-top="${top}">Make v${top + 1}</button>` };
+    return null;
   };
-  $("#count").textContent = list.length ? `${list.length} wake word${list.length > 1 ? "s" : ""}.` : "Make your first one: it takes a few minutes to set up.";
-  $("#filters").onclick = e => { const b = e.target.closest("button[data-f]"); if (b) { f = b.dataset.f; draw(); } };
-  $("#list").onclick = async e => { const b = e.target.closest("button[data-delete]"); if (b && await deleteWakeWord(b.dataset.delete, b.dataset.label)) viewHome(); };
+  const menu = (p, word) => {
+    const where = `#/p/${enc(p.name)}`, lbl = word ? p.label : p.title;
+    return `<details class="menu"><summary aria-label="More for ${esc(lbl)}" title="More">${icon("more", 20, 2)}</summary><div>
+      <a href="${where}/train">Open</a><a href="${where}/results">Results</a><a href="${where}/voices">Real voices</a>
+      ${word ? `<button type="button" data-newver="${esc(p.name)}">New version from v${p.version}</button>` : ""}
+      ${word ? `<button type="button" data-rename="${esc(p.name)}" data-cur="${esc(p.label)}">Rename wake word</button>`
+        : `<button type="button" data-note="${esc(p.name)}" data-cur="${esc(p.note || "")}">Edit note</button>`}
+      ${word ? "" : `<button type="button" class="danger" data-delete="${esc(p.name)}" data-label="${esc(p.title)}" ${p.job.running ? "disabled" : ""}>${icon("trash", 16)}Delete this version</button>`}</div></details>`;
+  };
+  const draw = () => {
+    const words = wakeWords(list);
+    const keep = w => f === "all" || (f === "run" && w.running.length) || (f === "look" && (w.check || w.vs.some(p => p.failed.length)));
+    const counts = { all: words.length, run: words.filter(w => w.running.length).length, look: words.filter(w => w.check || w.vs.some(p => p.failed.length)).length };
+    $("#filters").innerHTML = [["all", "All"], ["run", "Training"], ["look", "Needs a look"]].map(([k, l]) =>
+      `<button type="button" data-f="${k}" aria-pressed="${f === k}">${l} <span class="mono" style="opacity:.75;font-size:13px">${counts[k]}</span></button>`).join("");
+    const nArch = list.filter(p => p.archived).length;
+    $("#archl").textContent = `Show archived versions (${nArch})`;
+    $("#count").textContent = words.length ? `${words.length} wake word${words.length > 1 ? "s" : ""} · ${list.length} version${list.length > 1 ? "s" : ""}` : "Make your first one: it takes a few minutes to set up.";
+    const shown = words.filter(keep).filter(w => !q || w.label.toLowerCase().includes(q) || w.vs.some(p => (p.note || "").toLowerCase().includes(q)));
+    const head = `<div class="wwr hdr" role="row"><span role="columnheader">Wake word</span><span role="columnheader">Status</span><span role="columnheader">On your devices</span>
+      <span role="columnheader">Caught</span><span role="columnheader">False triggers</span><span role="columnheader">Last run</span><span role="columnheader"><span class="sr">Actions</span></span></div>`;
+    $("#list").innerHTML = head + (shown.length ? shown.map(w => {
+      const isOpen = open.has(w.family), vs = w.vs.filter(p => showArch || !p.archived || w.cur === p);
+      const [c, fa] = nums(briefOf(w.cur), `<span class="hint" title="This version has no test in wakesmith yet: run Test on its Training page">not tested</span>`);
+      const engines = [...new Set(w.vs.flatMap(p => ["mww", "oww"].filter(k => p.models[k]).map(k => MODEL_NAMES[k])))].join(" + ");
+      const check = w.check ? ` <a class="tag" href="#/p/${enc(w.vs.find(p => p.to_check).name)}/voices" data-checkclips>${w.check} clip${w.check > 1 ? "s" : ""} to check</a>` : "";
+      const row = `<div class="wwr word" role="row"><div class="name" role="cell">
+          <button type="button" class="fold" data-fold="${esc(w.family)}" aria-expanded="${isOpen}" aria-label="${isOpen ? "Hide" : "Show"} versions of ${esc(w.label)}">${icon("chev", 16, 2.25)}</button>
+          <div style="min-width:0"><a href="#/p/${enc(w.cur.name)}/train">${esc(w.label)}</a><div class="hint">${esc(engines || "no model")} · ${w.vs.length} version${w.vs.length > 1 ? "s" : ""}</div></div></div>
+        <div class="c-status row" role="cell" style="gap:6px">${status(w)}${check}</div>
+        <div class="c-live num" role="cell" style="font-size:13px;color:var(--soft)">${w.live ? `v${w.cur.version} · ${esc(liveTxt(w.cur))}` : ""}</div>
+        <div class="c-caught" role="cell">${c}</div><div class="c-false" role="cell">${fa}</div>
+        <div class="c-last" role="cell">${w.running.length ? "now" : day(w.last)}</div><div class="c-act" role="cell">${menu(w.cur, true)}</div></div>`;
+      const ns = nextStep(w), nsRow = ns ? `<div class="nextrow" role="row"><span role="cell">${icon("chev", 14, 2.5)} ${ns.text}</span><span role="cell">${ns.act}</span></div>` : "";
+      const vers = isOpen ? vs.map(p => { const [vc, vf] = nums(briefOf(p));
+        return `<div class="wwr ver" role="row"><div class="name" role="cell"><a class="num" href="#/p/${enc(p.name)}/train" title="folder: ${esc(p.name)}">v${p.version}</a><span class="note">${esc(p.note || "")}</span></div>
+          <div class="c-status row" role="cell" style="gap:6px">${cardState(p).badge}${p.archived ? `<span class="tag" title="Its training features were removed to save disk space; Train rebuilds them first">Archived</span>` : ""}</div>
+          <div class="c-live num" role="cell" style="font-size:12.5px;color:var(--muted)">${esc(liveTxt(p))}</div>
+          <div class="c-caught" role="cell">${vc}</div><div class="c-false" role="cell">${vf}</div>
+          <div class="c-last" role="cell" style="color:var(--muted)">${p.job.running ? "now" : day(p.last)}</div><div class="c-act" role="cell">${menu(p, false)}</div></div>`; }).join("") : "";
+      return row + nsRow + vers;
+    }).join("") : `<p class="hint" style="padding:24px 16px;margin:0">No wake words match. Clear the search or pick All.</p>`);
+  };
+  const strip = J => {
+    const el = $("#strip"); if (!el || !J) return;
+    const r = J.running || [], w = J.queue || [];
+    el.innerHTML = r.length || w.length ? `<section class="runstrip" aria-label="Running now"><span class="lead">${icon("spin", 16, 2.5)}${r.length} running${w.length ? ` · ${w.length} waiting` : ""}</span>
+      ${r.map(x => `<span><a href="#/p/${enc(x.project)}/train">${esc(x.label)}</a> <span class="hint">since ${when(x.started)}</span></span>`).join("")}
+      <button type="button" class="q flat" id="showq" aria-expanded="${!$("#queue").hidden}">Queue</button></section>` : "";
+    if ($("#showq")) $("#showq").onclick = () => { const qe = $("#queue"); qe.hidden = !qe.hidden; if (!qe.hidden) drawQueue(qe, JOBS, true); strip(JOBS); };
+  };
+  $("#filters").onclick = e => { const b = e.target.closest("button[data-f]"); if (b) { f = b.dataset.f; store.set("ws-filter", f); draw(); } };
+  $("#arch").onchange = () => { showArch = $("#arch").checked; store.set("ws-arch", showArch); draw(); };
+  $("#find").oninput = () => { q = $("#find").value.trim().toLowerCase(); draw(); };
+  $("#list").onclick = async e => {
+    if (e.target.closest("[data-checkclips]")) voicesOpen = "dev";
+    const b = e.target.closest("button"); if (!b) return;
+    if (b.dataset.fold) { open.has(b.dataset.fold) ? open.delete(b.dataset.fold) : open.add(b.dataset.fold); store.set("ws-open", [...open]); draw(); return; }
+    if (b.dataset.testv) { try { await api(`/api/projects/${enc(b.dataset.testv)}/train`, { method: "POST", body: { from: "test", to: "test", queue: true } }); watchJobs(); } catch (x) { alert(x.message); } return; }
+    if (b.dataset.newver) {
+      let pv; try { pv = await api(`/api/projects/${enc(b.dataset.newver)}/new-version`); } catch (x) { alert(x.message); return; }
+      const body = `v${pv.version} starts from ${pv.from}: the same recipe and recordings, its ${pv.device_clips} device clips plus any new ones from ${pv.source ? "the sync folder" : "nowhere (no sync folder set)"}. Clips where Whisper heard none of the phrase's words are labeled “not the phrase”${pv.to_check ? `; the ${pv.to_check} that need a person to listen wait for you and are left out` : ""}. The newest day of clips is kept aside for the test. Training reuses the synthetic voices (about 20-40 minutes with a GPU), then it's compared with what's on your devices. Nothing changes on your devices.`;
+      if (!await ask(`Make v${pv.version}?`, body, `Make v${pv.version} and train it`)) return;
+      try { await api(`/api/projects/${enc(b.dataset.newver)}/new-version`, { method: "POST", body: {} }); list = await api("/api/projects"); draw(); watchJobs(); } catch (x) { alert(x.message); }
+      return;
+    }
+    const put = async body => { try { await api(`/api/projects/${enc(b.dataset.rename || b.dataset.note)}`, { method: "PUT", body }); list = await api("/api/projects"); draw(); } catch (x) { alert(x.message); } };
+    if (b.dataset.rename) { const n = prompt("Name of this wake word (every version takes it):", b.dataset.cur); if (n && n.trim()) put({ label: n.trim() }); }
+    else if (b.dataset.note !== undefined) { const n = prompt("What this version tried (a short note):", b.dataset.cur); if (n !== null) put({ note: n.trim() }); }
+    else if (b.dataset.delete && await deleteWakeWord(b.dataset.delete, b.dataset.label)) viewHome();
+  };
   draw();
+  const busy = l => l.filter(p => p.job.running).map(p => p.name).sort().join();
+  onJobs = async J => {  // a run started or ended: the rows' status changes too
+    strip(J); if (!$("#queue").hidden) drawQueue($("#queue"), J, true);
+    if (J.running.map(r => r.project).sort().join() !== busy(list)) { list = await api("/api/projects"); if ($("#list")) draw(); }
+  };
+  if (JOBS) onJobs(JOBS);
 }
 
 // ---- new wake word ------------------------------------------------------------------------------
@@ -376,7 +646,7 @@ const SCENARIOS = {
   quick: { icon: "bolt", title: "Just trying it out", desc: "A small model in minutes, to hear how the phrase works.",
            mww: true, oww: true, quick: true, model: "both, small", export: ".tflite files" },
 };
-const TIME = { quick: "about 8 min with a GPU, about 20 min on 6 CPU cores", standard: "about an hour with a GPU (measured on first run)" };
+const TIME = { quick: "about 8 min with a GPU, about 20 min on 6 CPU cores", standard: "about 15-30 min with a GPU, much longer on the CPU (measured on first run)" };
 const syllables = t => t.toLowerCase().split(/[^a-z']+/).filter(Boolean)
   .reduce((n, w) => n + Math.max(1, (w.replace(/e\b/, "").match(/[aeiouy]+/g) || []).length), 0);
 
@@ -385,7 +655,7 @@ async function viewNew() {
   const v = $("#view");
   let sc = "esp", negs = [];
   v.innerHTML = `<ol class="steps" aria-label="Steps"><li class="on"><span>1</span>Purpose &amp; phrase</li><li><span>2</span>Real voices</li>
-      <li><span>3</span>Train</li><li><span>4</span>Pick &amp; export</li></ol>
+      <li><span>3</span>Train</li><li><span>4</span>Results &amp; export</li></ol>
     <div class="cols"><div class="wide">
       <section aria-labelledby="h-p" style="display:flex;flex-direction:column;gap:14px">
         <div><h1 id="h-p">What is it for?</h1><p class="sub">This sets the model type, the export and sensible defaults. You can change them under Advanced.</p></div>
@@ -408,6 +678,8 @@ async function viewNew() {
         <div><div class="hint" style="margin-bottom:6px;font-weight:600;color:var(--text)">Models</div><div class="radio">
           <label><input type="checkbox" id="mww"><span><b>microWakeWord</b><span class="hint">ESPHome, Voice PE</span></span></label>
           <label><input type="checkbox" id="oww"><span><b>openWakeWord</b><span class="hint">Wyoming add-on</span></span></label></div></div>
+        <label class="check" style="display:flex;gap:10px;align-items:flex-start"><input type="checkbox" id="comb" style="width:20px;height:20px;accent-color:var(--orange)">
+          <span>Combine the candidates into one model (fewer false triggers; 3x size)<span class="hint" style="display:block">Standard size only: it trains three microWakeWord candidates. Both are tested, so you can compare before you export.</span></span></label>
         <label class="f" for="fe">microWakeWord audio front end <select id="fe"><option value="tflm">TFLite Micro (ESPHome)</option>
           <option value="zserge">zserge (some custom devices)</option></select><span class="hint">Match what your device runs; the export is tagged with it.</span></label>
       </div></details>
@@ -486,10 +758,10 @@ async function viewNew() {
     if (!phrase) { $("#err").textContent = "Type the wake phrase first."; $("#phrase").focus(); return; }
     if (!$("#mww").checked && !$("#oww").checked) { $("#err").textContent = "Pick at least one model under Advanced."; return; }
     const body = { phrase, negatives: negs, preset: document.querySelector("input[name=preset]:checked").value,
-      microwakeword: { enabled: $("#mww").checked, frontend: $("#fe").value }, openwakeword: { enabled: $("#oww").checked } };
+      microwakeword: { enabled: $("#mww").checked, frontend: $("#fe").value, combine: $("#comb").checked }, openwakeword: { enabled: $("#oww").checked } };
     try {
       const p = await api("/api/projects", { method: "POST", body });
-      if (train) await api(`/api/projects/${enc(p.name)}/train`, { method: "POST", body: {} });
+      if (train) await api(`/api/projects/${enc(p.name)}/train`, { method: "POST", body: { queue: true } });  // waits if another run is going
       location.hash = `#/p/${enc(p.name)}/${train ? "train" : "voices"}`;
     } catch (e) { $("#err").textContent = e.message; }
   };
@@ -533,9 +805,10 @@ async function viewProject(name, tab) {
   let p;
   try { p = await api(base); } catch (e) { nav(""); v.innerHTML = `<p class="err">${esc(e.message)}</p>`; return; }
   nav(`#/p/${enc(name)}/${tab}`, p);
-  const steps = (on) => `<ol class="steps" aria-label="Steps"><li class="done"><span>${icon("check", 13, 3)}</span>Purpose &amp; phrase</li>
-    ${[["voices", 2, "Real voices"], ["train", 3, "Train"], ["results", 4, "Pick & export"]].map(([k, n, l]) =>
-      `<li class="${k === on ? "on" : ""}"><span>${n}</span>${l}</li>`).join("")}</ol>`;
+  // the wake word's pages: the step bar is how you move between them (no second menu)
+  const steps = (on) => `<nav aria-label="${esc(p.label)}"><ol class="steps"><li class="done"><span>${icon("check", 13, 3)}</span>Purpose &amp; phrase</li>
+    ${[["voices", 2, "Real voices"], ["train", 3, "Train"], ["results", 4, "Results & export"]].map(([k, n, l]) =>
+      `<li class="${k === on ? "on" : ""}"><a href="#/p/${enc(name)}/${k}"${k === on ? ' aria-current="page"' : ""}><span>${n}</span>${l}</a></li>`).join("")}</ol></nav>`;
   if (tab === "voices") return voicesTab(p, base, steps);
   if (tab === "results") return resultsTab(p, base, steps);
   return trainTab(p, base, steps);
@@ -603,11 +876,46 @@ async function recordTake({ onLevel, maxS = 8, fixedS = 0, signal }) {
 
 const lastSpeaker = { get() { try { return localStorage.getItem("ws-speaker") || ""; } catch { return ""; } },
   set(v) { try { localStorage.setItem("ws-speaker", v); } catch {} } };
+let voicesOpen = null;  // a tab to open on Real voices (the cards' "clips to check" tag)
+// "What it learns from": every source of real clips by group (train / kept aside), plus the synthetic
+// voices and sound-alikes, with each group's clips to play. Loaded when opened.
+function learnsPanel(p, base) {
+  const el = $("#learns"), body = $("#learnsbody");
+  const groupName = id => { const [src, sub] = id.split("/"); return (sub ? sub.replace(/_/g, " ") : SET_NAMES[src]) || id; };
+  let audio = null;
+  const show = async () => {
+    let d; try { d = await api(base + "/learns"); } catch (e) { body.innerHTML = `<p class="err">${esc(e.message)}</p>`; return; }
+    const side = kind => d.sources.filter(x => x.kind === kind).map(x => `<div class="lsrc"><div class="hint">${x.src.startsWith("d") ? "Device clips you labeled" : x.src.startsWith("r") ? "Takes recorded here" : "Folder"} <code class="mono">${esc(x.folder)}</code>${x.error ? ` · <span class="err">${esc(x.error)}</span>` : ""}</div>
+        ${x.groups.map(g => `<div class="lgroup"><div class="row" style="justify-content:space-between;gap:8px"><span><b>${esc(groupName(g.id))}</b>${g.notes.length ? ` <span class="hint">· ${esc(g.notes[0])}</span>` : ""}</span>
+          <span class="row" style="gap:10px"><span class="mono">${g.train} train · ${g.held} test</span><button type="button" class="flat" data-lopen="${esc(g.id)}" aria-expanded="false">Listen</button></span></div><ul class="takes" data-lclips="${esc(g.id)}" hidden></ul></div>`).join("") || `<p class="hint" style="margin:0">Empty.</p>`}</div>`).join("") || `<p class="hint" style="margin:0">None.</p>`;
+    const tot = kind => d.sources.filter(x => x.kind === kind).flatMap(x => x.groups).reduce((a, g) => [a[0] + g.train, a[1] + g.held], [0, 0]);
+    const [pt, ph] = tot("wake"), [nt, nh] = tot("not_wake");
+    body.innerHTML = `<p style="margin:0">Synthetic voices: <b>${d.synthetic.positive.toLocaleString()}</b> clips of the phrase and <b>${d.synthetic.negative.toLocaleString()}</b> not the phrase, including ${d.sound_alikes} sound-alike phrases.${d.corrections ? ` ${d.corrections} label corrections from Review labels are applied.` : ""}</p>
+      <p style="margin:0">Real clips: the phrase <b>${pt} train · ${ph} test</b>; not the phrase <b>${nt} train · ${nh} test</b>. Test clips are never trained on: they're what Compare scores.</p>
+      <h3>The phrase</h3>${side("wake")}<h3>Not the phrase</h3>${side("not_wake")}
+      <p class="hint" style="margin:0">Change the folders under <b>Folders</b>; device clips go in with <b>Use the labeled clips</b> on Device clips, then a retrain (or <b>New version</b> on the wake words page).</p>`;
+  };
+  el.addEventListener("toggle", () => { if (el.open && !el.dataset.loaded) { el.dataset.loaded = 1; show(); } });
+  body.onclick = async e => {
+    const o = e.target.closest("[data-lopen]"), pl = e.target.closest("[data-lplay]"), more = e.target.closest("[data-lmore]");
+    if (pl) { audio?.pause(); audio = new Audio(`${base}/learns/audio?src=${enc(pl.dataset.src)}&f=${enc(pl.dataset.lplay)}`); audio.play().catch(() => {}); return; }
+    const id = o?.dataset.lopen || more?.dataset.lmore; if (!id) return;
+    const ul = body.querySelector(`[data-lclips="${CSS.escape(id)}"]`), off = more ? +more.dataset.off : 0;
+    if (o) { const open = ul.hidden; ul.hidden = !open; o.setAttribute("aria-expanded", open); o.textContent = open ? "Hide" : "Listen"; if (!open || ul.dataset.loaded) return; ul.dataset.loaded = 1; }
+    more?.closest("li").remove();
+    let r; try { r = await api(`${base}/learns/clips?group=${enc(id)}&offset=${off}`); } catch (x) { ul.insertAdjacentHTML("beforeend", `<li class="err">${esc(x.message)}</li>`); return; }
+    const src = id.split("/")[0];
+    ul.insertAdjacentHTML("beforeend", r.clips.map(c => `<li><button type="button" class="round" data-lplay="${esc(c.f)}" data-src="${esc(src)}" aria-label="Play ${esc(c.f)}">${icon("play", 14)}</button>
+      <span class="mono" style="flex:1 1 260px;overflow-wrap:anywhere">${esc(c.f)}</span>${c.said ? `<span class="hint">“${esc(c.said)}”</span>` : ""}${c.held ? `<span class="tag">test</span>` : ""}</li>`).join("")
+      + (off + r.clips.length < r.total ? `<li><button type="button" class="flat" data-lmore="${esc(id)}" data-off="${off + r.clips.length}">Show more (${r.total - off - r.clips.length} left)</button></li>` : ""));
+  };
+}
 async function voicesTab(p, base, steps) {
   const v = $("#view"), hasVoices = p.stages.generate?.status === "done";
-  let tab = "rec", rec = null, levels = Array(32).fill(0), busy = false;
+  let tab = voicesOpen || "rec", rec = null, levels = Array(32).fill(0), busy = false;
   v.innerHTML = `${steps("voices")}<div><div class="kicker">${esc(p.label)}</div><h1>Real voices</h1>
       <p class="sub">Synthetic voices train the model; real ones tell you whether it works. Some takes are kept aside for testing and never trained on, so the test is honest.</p></div>
+    <details class="panel learns" id="learns"><summary><h2 style="display:inline">What ${esc(p.label)} learns from</h2> <span class="hint">every source, how much of it trains and how much is kept aside to test, and its clips to play</span></summary><div id="learnsbody"><p class="hint">Loading…</p></div></details>
     <div role="tablist" aria-label="Where the voices come from" class="seg" id="tabs"></div>
     <div class="cols"><div class="wide" id="pane"></div>
     <aside class="narrow"><div class="summary"><h2>So far</h2><dl class="kv" id="sofar"></dl><div id="sofarnote"></div>
@@ -617,7 +925,9 @@ async function voicesTab(p, base, steps) {
       <div class="err" id="err"></div></div></aside></div>`;
   const err = m => $("#err").textContent = m || "";
   if ($("#cancelww")) $("#cancelww").onclick = () => deleteWakeWord(p.name, p.label, true);
-  const tabs = () => $("#tabs").innerHTML = [["rec", "Record here"], ["folders", "Folders"], ["cv", "Common Voice"]].map(([k, l]) =>
+  voicesOpen = null;
+  learnsPanel(p, base);
+  const tabs = () => $("#tabs").innerHTML = [["rec", "Record here"], ["folders", "Folders"], ["dev", "Device clips"], ["cv", "Common Voice"]].map(([k, l]) =>
     `<button type="button" role="tab" aria-selected="${tab === k}" data-tab="${k}">${l}</button>`).join("");
   $("#tabs").onclick = e => { const b = e.target.closest("[data-tab]"); if (b && !busy) { tab = b.dataset.tab; draw(); } };
 
@@ -626,9 +936,12 @@ async function voicesTab(p, base, steps) {
     const pos = rec.pos.takes, neg = rec.neg.takes, held = pos.filter(t => t.held).length;
     $("#sofar").innerHTML = `<dt>Takes recorded here</dt><dd class="mono">${pos.length}</dd><dt>for training</dt><dd class="mono">${pos.length - held}</dd>
       <dt>kept aside to test</dt><dd class="mono">${held}</dd><dt>Room sound clips</dt><dd class="mono">${neg.length}</dd>
-      <dt>Phrase folder</dt><dd style="word-break:break-all">${rec.pos.active ? "recorded here" : esc(rec.pos.setting || "none")}</dd>`;
+      <dt>Phrase from</dt><dd style="word-break:break-all">${rec.pos.active ? "takes recorded here" : `${esc(rec.pos.setting || "no folder")}${rec.pos.takes.length ? ` + ${rec.pos.takes.length} take${rec.pos.takes.length > 1 ? "s" : ""} recorded here` : ""}`}</dd>`;
     const voices = new Set(pos.map(t => (t.speaker || "").trim().toLowerCase()).filter(Boolean));
     $("#sofar").innerHTML += `<dt>Speakers named</dt><dd class="mono">${voices.size || "none"}</dd>`;
+    if (dev?.summary?.total) $("#sofar").innerHTML += `<dt>Device clips</dt><dd class="mono">${dev.summary.total}</dd>
+      <dt>labeled phrase / not</dt><dd class="mono">${dev.summary.labels.wake} / ${dev.summary.labels.not_wake}</dd>
+      <dt>in training</dt><dd>${dev.applied ? esc(new Date(dev.applied.applied * 1000).toLocaleDateString()) : "not yet"}</dd>`;
     $("#sofarnote").innerHTML = pos.length >= 8 && voices.size <= 1 ? `<div class="callout warn">${icon("bang", 18, 2)}<span>${voices.size ? "All takes are one voice" : "If these are all one voice"}: ask someone else to record five or so too. The test is far more trustworthy with a second voice.</span></div>`
       : pos.length && !held ? `<div class="callout warn">${icon("bang", 18, 2)}<span>No take is kept aside yet, so there is no honest test. Mark a few as "test".</span></div>` : "";
   };
@@ -638,13 +951,10 @@ async function voicesTab(p, base, steps) {
       This browser only allows the microphone on HTTPS or on this computer itself. Restart wakesmith with
       <code class="mono">wakesmith serve --host 0.0.0.0 --https</code> and open the https link (accept the certificate warning once),
       or open wakesmith at localhost on the machine it runs on. Until then, use Folders.</span></div>`;
-    const blocked = rec.pos.setting && !rec.pos.active;
     const n = rec.pos.takes.length + 1, prompt = PROMPTS[(n - 1) % PROMPTS.length];
-    return `${blocked ? `<div class="callout warn">${icon("bang", 18, 2)}<span>This project trains on the folder <code class="mono">${esc(rec.pos.setting)}</code>.
-        Takes recorded here go to the project's own folder, so it has to switch to that one.</span></div>
-        <div><button type="button" id="usehere">Switch to takes recorded here</button></div>` : ""}
+    return `${rec.pos.setting && !rec.pos.active ? `<p class="hint" style="margin:0">Takes you record here are used together with the folder <code class="mono">${esc(rec.pos.setting)}</code>: recording only adds.</p>` : ""}
       <section class="panel" aria-label="Record" style="flex-direction:row;flex-wrap:wrap;align-items:center;gap:28px">
-        <button type="button" class="mic" id="mic" aria-label="Start recording" ${blocked ? "disabled" : ""}>${icon("mic", 40)}</button>
+        <button type="button" class="mic" id="mic" aria-label="Start recording">${icon("mic", 40)}</button>
         <div style="flex:1 1 300px;display:flex;flex-direction:column;gap:12px">
           <div class="kicker" style="color:var(--warn);font-weight:600;letter-spacing:.04em;text-transform:uppercase;margin:0">Take ${n}${n % 4 === 0 ? " · kept aside to test" : ""}</div>
           <div style="font:600 24px/1.25 var(--head)">Say "${esc(p.phrase)}" ${esc(prompt)}.</div>
@@ -653,7 +963,7 @@ async function voicesTab(p, base, steps) {
           <label class="f" for="spk" style="max-width:320px">Who's speaking? <span class="hint">optional; helps check you have more than one voice</span>
             <input type="text" id="spk" value="${esc(lastSpeaker.get())}" placeholder="e.g. Sam" autocomplete="off"></label></div></section>
       <section class="panel" aria-labelledby="h-takes"><div class="row" style="justify-content:space-between"><h2 id="h-takes">Your takes</h2>
-        <button type="button" id="room" ${blocked ? "disabled" : ""}>${icon("mic", 16)}Record 10 s of room sound</button></div>
+        <button type="button" id="room">${icon("mic", 16)}Record 10 s of room sound</button></div>
         <ul class="takes" id="takes"></ul></section>`;
   };
   const drawTakes = () => {
@@ -719,6 +1029,151 @@ async function voicesTab(p, base, steps) {
       <p class="hint" style="margin:0">${cv.extracted ? "The phrase is already cut out of the takes, so training adds a few seconds." : "The next training run cuts the phrase out of the takes: one pass over the audio, about 20 minutes the first time, then it's kept."}
         The alignment model wakesmith uses for cutting (MMS) is CC BY-NC 4.0, like the personal data profile.</p><span class="hint" id="cvsaved"></span></section>`;
   };
+  // ---- device clips: what the devices saved, labeled into the next round (rounds.py) ----
+  let dev = null, devShow = null, holdFrom = "", sched = null, quick = null;
+  const DEVLABEL = { wake: "the phrase", not_wake: "not the phrase", skip: "leave out" };
+  const KEYS = { wake: "Y", not_wake: "N", skip: "L" };
+  const howTo = () => `<div class="callout info">${icon("help", 18, 2)}<div style="display:flex;flex-direction:column;gap:6px">
+      <b>How to label a clip: listen to it. The transcript is only Whisper's guess.</b>
+      <span><b>The phrase</b> (Y): a person in the room says “${esc(p.phrase)}” as a call, your own tests included.</span>
+      <span><b>Not the phrase</b> (N): “${esc(p.phrase)}” isn't said: TV, music, other talk, a cough, silence. These false alarms teach the model most.</span>
+      <span><b>Leave out</b> (L): you can't tell, it's cut off, or the words are said but not as a call (the TV saying it, or someone using the words in a sentence).</span>
+      <span class="hint">Clips where Whisper heard none of the phrase's words are labeled “not the phrase” by themselves; only the rest are listed under <b>Listen</b>. Disagree with one? Change it under <b>Not the phrase</b>.</span></div></div>`;
+  const loadDev = async () => {
+    if (!sched) api("/api/clips-schedule").then(r => { sched = r; if (tab === "dev" && $("#syncbox")) draw(); }).catch(e => { sched = { error: e.message }; });
+    try { dev = await api(base + "/devices" + (holdFrom ? `?holdout_from=${enc(holdFrom)}` : "")); } catch (e) { dev = { error: e.message }; }
+    if (dev.summary && !holdFrom && dev.summary.last) {  // default: hold out the newest day
+      const t = new Date(Date.parse(dev.summary.last) - 864e5); holdFrom = t.toISOString().slice(0, 13) + ":00";
+      try { dev = await api(base + "/devices?holdout_from=" + enc(holdFrom)); } catch {}
+    }
+    if (tab === "dev") draw();
+  };
+  const devPick = () => ({ todo: x => !x.label, unclear: x => !x.label && x.suggestion !== "not_wake",
+    wake: x => x.label === "wake", not_wake: x => x.label === "not_wake", all: () => true })[devShow];
+  const devRows = () => {
+    const c = dev.clips, pick = devPick();
+    const rows = c.filter(pick), shown = rows.slice(-300).reverse();
+    return `${shown.map(x => `<li><button type="button" class="round" data-dplay="${esc(x.id)}" aria-label="Play ${esc(x.id)}">${icon("play", 14)}</button>
+        <span class="mono hint" style="min-width:150px">${esc(x.device)}<br>${esc(new Date(x.at).toLocaleString([], { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }))}${x.score != null ? ` · ${Number(x.score).toFixed(2)}` : ""}</span>
+        <span style="flex:1 1 220px">${x.text == null ? `<span class="hint">not transcribed</span>` : `“${esc(x.text)}”`}${x.suggestion && !x.label ? ` <span class="tag">${x.suggestion === "unclear" ? "listen: unclear" : "sounds like " + DEVLABEL[x.suggestion]}</span>` : ""}</span>
+        ${["wake", "not_wake", "skip"].map(k => `<button type="button" class="tag ${x.label === k ? "test" : ""}" data-dlabel="${k}" data-id="${esc(x.id)}" aria-pressed="${x.label === k}">${DEVLABEL[k]}</button>`).join("")}</li>`).join("")
+      || `<li class="hint">Nothing here.</li>`}${rows.length > shown.length ? `<li class="hint">…and ${rows.length - shown.length} older ones.</li>` : ""}`;
+  };
+  const devPane = () => {
+    if (!dev) return `<section class="panel"><h2>Device clips</h2><p class="hint" style="margin:0">Loading…</p></section>`;
+    if (dev.error) return `<div class="callout warn">${icon("bang", 18, 2)}<span>${esc(dev.error)}</span></div>`;
+    const s = dev.summary, h = s.heldout || { wake: 0, not_wake: 0 };
+    devShow ??= s.to_check ? "unclear" : "not_wake";
+    const seg = [["unclear", `Listen (${s.to_check})`], ["wake", `Phrase (${s.labels.wake})`], ["not_wake", `Not the phrase (${s.labels.not_wake})`], ["all", "All"]];
+    return `${syncPane()}<section class="panel" aria-labelledby="h-dev"><h2 id="h-dev">Device clips</h2>
+      <p style="margin:0;color:var(--soft)">The clips your devices saved when the model fired (or nearly did). The false ones are the best "not the phrase" clips there are; real calls among them are the best takes of the phrase.</p>
+      <label class="f" for="devdir">Folder of device clips <span class="hint">any layout; a .json next to each clip with "at", "device", "model", "score" is read</span>
+        <input type="text" id="devdir" placeholder="/home/you/device-clips/incoming"></label>
+      <div class="row"><button type="button" id="devimport">Import new clips</button>
+        <button type="button" id="devtx" ${s.total > s.transcribed ? "" : "disabled"}>Transcribe ${s.total - s.transcribed} clips</button>
+        ${s.unlabelled > s.to_check ? `<button type="button" id="devaccept">Label the ${s.unlabelled - s.to_check} clear “not the phrase” clips</button>` : ""}<span class="hint" id="devmsg"></span></div>
+      <p class="hint" style="margin:0">${s.total} clips${s.first ? `, ${esc(new Date(s.first).toLocaleDateString())} to ${esc(new Date(s.last).toLocaleDateString())}` : ""}; ${s.transcribed} transcribed. Transcribing runs Whisper in the background (the whisper extra). Clips where the transcript has none of the phrase's words are labeled “not the phrase” by themselves; a person listens to the rest.</p></section>
+    <section class="panel" aria-labelledby="h-devl"><h2 id="h-devl" class="sr">Label the clips</h2>${howTo()}
+      <div class="row" style="justify-content:space-between"><div role="tablist" class="seg" id="devseg">${seg.map(([k, l]) => `<button type="button" role="tab" aria-selected="${devShow === k}" data-dseg="${k}">${l}</button>`).join("")}</div>
+        <button type="button" class="primary" id="quickgo" ${dev.clips.filter(devPick()).length ? "" : "disabled"}>${icon("play", 14)}Quick check, one at a time</button></div>
+      ${quick ? quickPane() : `<ul class="takes" id="devlist">${devRows()}</ul>`}</section>
+    <section class="panel" aria-labelledby="h-devr"><h2 id="h-devr">Use them in training</h2>
+      <label class="f" for="holdfrom">Keep aside to test: clips from <span class="hint">a time (UTC); whole newest days test best, since clips of one day share voices and noise</span>
+        <input type="text" id="holdfrom" class="mono" value="${esc(holdFrom)}" placeholder="2026-10-23T18:00"></label>
+      <p class="hint" style="margin:0">From then on: ${h.wake} of the phrase and ${h.not_wake} not-the-phrase clips are kept aside; ${s.labels.wake - h.wake} and ${s.labels.not_wake - h.not_wake} train.${dev.applied ? ` Last used ${esc(new Date(dev.applied.applied * 1000).toLocaleString())}.` : ""}</p>
+      <div class="row"><button type="button" class="primary" id="devapply" ${s.labels.wake + s.labels.not_wake ? "" : "disabled"}>Use the labeled clips</button><span class="hint" id="devapplied"></span></div>
+      <p class="hint" style="margin:0">Then <b>Retrain from recordings</b>. Unlabeled and "leave out" clips are never used.</p></section>`;
+  };
+  // Quick check: one clip at a time, played as it comes up; Y / N / L label it and go on, Space plays
+  // it again, Backspace goes back one. The list it walks is fixed when it starts.
+  const quickPane = () => {
+    const ids = quick.ids, x = dev.clips.find(c => c.id === ids[quick.i]);
+    if (!x) return `<div class="callout info">${icon("check", 18, 2)}<span>Done: ${ids.length} clip${ids.length > 1 ? "s" : ""} checked. <button type="button" id="quickend">Back to the list</button></span></div>`;
+    const btn = k => `<button type="button" class="${x.label === k ? "primary" : ""}" data-qlabel="${k}" aria-pressed="${x.label === k}" style="min-height:56px;flex:1 1 160px;font-size:16px"><span class="mono" style="opacity:.7">${KEYS[k]}</span> ${DEVLABEL[k][0].toUpperCase() + DEVLABEL[k].slice(1)}</button>`;
+    return `<div style="display:flex;flex-direction:column;gap:14px;padding:6px 0" id="quickbox">
+      <div class="row" style="justify-content:space-between"><b>Clip ${quick.i + 1} of ${ids.length}</b>
+        <span class="hint mono">${esc(x.device)} · ${esc(new Date(x.at).toLocaleString([], { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }))}${x.score != null ? ` · score ${Number(x.score).toFixed(2)}` : ""}</span></div>
+      <div style="font-size:18px">${x.text == null ? `<span class="hint">not transcribed</span>` : `Whisper heard: “${esc(x.text)}”`}</div>
+      <div class="row"><button type="button" id="qplay">${icon("play", 14)}Play again <span class="mono hint">Space</span></button>
+        <button type="button" id="qback" ${quick.i ? "" : "disabled"}>Back <span class="mono hint">⌫</span></button>
+        <button type="button" id="qskip">Skip for now <span class="mono hint">→</span></button>
+        <button type="button" id="quickend" style="margin-left:auto">Stop</button></div>
+      <div class="row" style="gap:10px">${btn("wake")}${btn("not_wake")}${btn("skip")}</div></div>`;
+  };
+  let quickAudio = null;
+  const quickPlay = () => { const id = quick?.ids[quick.i]; if (!id) return; quickAudio?.pause(); quickAudio = new Audio(`${base}/devices/audio?id=${enc(id)}`); quickAudio.play().catch(() => {}); };
+  const quickKey = e => {
+    // only on the page this quick check started on: leaving it (another wake word, another page) ends it
+    if (!quick || location.hash !== quick.hash) { document.removeEventListener("keydown", quickKey); quick = null; quickAudio?.pause(); return; }
+    if (!$("#quickbox") || e.target.closest("input, textarea, select")) return;
+    const k = { y: "wake", n: "not_wake", l: "skip" }[e.key.toLowerCase()];
+    if (k) { e.preventDefault(); quickLabel(k); }
+    else if (e.key === " ") { e.preventDefault(); quickPlay(); }
+    else if (e.key === "Backspace" && quick.i) { e.preventDefault(); quick.i--; draw(); quickPlay(); }
+    else if (e.key === "ArrowRight") { e.preventDefault(); quick.i++; draw(); quickPlay(); }
+    else if (e.key === "Escape") quickStop();
+  };
+  const quickStop = () => { quick = null; quickAudio?.pause(); document.removeEventListener("keydown", quickKey); loadDev(); };
+  const quickLabel = async k => {
+    const id = quick.ids[quick.i];
+    try { await api(base + "/devices/labels", { method: "POST", body: { labels: { [id]: k } } }); } catch (x) { err(x.message); return; }
+    const c = dev.clips.find(x => x.id === id); if (c) c.label = k;
+    quick.i++; draw(); quickPlay();
+  };
+  const syncPane = () => {
+    const y = dev.sync || {}, l = y.last, sc = sched || {};
+    const when = t => new Date(t * 1000).toLocaleString([], { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
+    const last = !l ? "Not synced yet." : `Last sync ${esc(when(l.at))}: ${esc(l.text)}.`;
+    const daily = sc.error ? `<span class="hint">${esc(sc.error)}</span>` : !sched ? `<span class="hint">checking…</span>`
+      : sc.installed ? `On, every day at ${esc(sc.at)} for every wake word with a folder set.${sc.next ? ` Next: ${esc(sc.next)}.` : ""}${sc.last_result && sc.last_result !== "success" ? ` Last run: ${esc(sc.last_result)}.` : ""}` : "Off.";
+    return `<section class="panel" aria-labelledby="h-sync" id="syncbox"><h2 id="h-sync">Sync automatically</h2>
+      <p style="margin:0;color:var(--soft)">Brings in this word's new clips from the folder your devices' clips arrive in and transcribes them, so you only need to listen to the unclear ones.</p>
+      <label class="f" for="syncsrc">Folder your device clips arrive in <span class="hint">read only: clips are copied, nothing there is moved or deleted</span>
+        <input type="text" id="syncsrc" value="${esc(y.source || "")}" placeholder="/home/you/device-clips/incoming"></label>
+      <label class="f" for="syncpre">Only clips from the model named <span class="hint">the start of "model" in each clip's .json, e.g. hey_jarvis; empty: every clip</span>
+        <input type="text" id="syncpre" class="mono" value="${esc(y.model_prefix || "")}" placeholder="hey_jarvis"></label>
+      <label class="f" for="syncsince">Only clips from <span class="hint">optional, a time (UTC), e.g. when this model went live</span>
+        <input type="text" id="syncsince" class="mono" value="${esc(y.since || "")}" placeholder="2026-10-24T18:00"></label>
+      <div class="row"><button type="button" id="syncsave">Save</button><button type="button" id="syncnow" ${y.source ? "" : "disabled"}>Sync now</button><span class="hint" id="syncmsg"></span></div>
+      <p class="hint" style="margin:0">${last}</p>
+      <div class="row"><label style="display:flex;gap:10px;align-items:center;min-height:44px;cursor:pointer"><input type="checkbox" id="syncday" ${sc.installed ? "checked" : ""} ${sched && !sc.error ? "" : "disabled"} style="width:22px;height:22px;margin:0;accent-color:var(--orange)"><b>Every day at</b></label>
+        <input type="text" id="syncat" class="mono" value="${esc(sc.at || "03:30")}" style="width:90px" aria-label="time of day, 24 hour"><span class="hint">${daily}</span></div></section>`;
+  };
+  const syncWire = () => {
+    const msg = t => { const m = $("#syncmsg"); if (m) m.textContent = t; };
+    $("#syncsave").onclick = async () => { err(); try { dev.sync = await api(base + "/devices/sync", { method: "PUT", body: { source: $("#syncsrc").value, model_prefix: $("#syncpre").value, since: $("#syncsince").value } }); draw(); msg("saved"); } catch (e) { err(e.message); } };
+    $("#syncnow").onclick = async () => { err(); try { await api(base + "/devices/sync", { method: "POST" }); msg("syncing in the background: Training shows the log; come back in a few minutes"); } catch (e) { err(e.message); } };
+    const setDaily = async () => { err(); try { sched = await api("/api/clips-schedule", { method: "PUT", body: { on: $("#syncday").checked, at: $("#syncat").value.trim() } }); draw(); } catch (e) { err(e.message); $("#syncday").checked = !!sched?.installed; } };
+    $("#syncday").onchange = setDaily;
+    $("#syncat").onchange = () => { if ($("#syncday").checked) setDaily(); };
+  };
+  const devWire = () => {
+    syncWire();
+    const msg = t => { const m = $("#devmsg"); if (m) m.textContent = t; };
+    $("#devimport").onclick = async () => { err(); try { const r = await api(base + "/devices/import", { method: "POST", body: { folder: $("#devdir").value } }); msg(`${r.added} new, ${r.known} already here`); await loadDev(); } catch (e) { err(e.message); } };
+    $("#devtx").onclick = async () => { err(); try { await api(base + "/devices/transcribe", { method: "POST" }); msg("transcribing in the background: come back in a few minutes (Training shows the log)"); } catch (e) { err(e.message); } };
+    if ($("#devaccept")) $("#devaccept").onclick = async () => { err(); try { const r = await api(base + "/devices/accept", { method: "POST" }); msg(`${r.changed} labeled`); await loadDev(); } catch (e) { err(e.message); } };
+    $("#devseg").onclick = e => { const b = e.target.closest("[data-dseg]"); if (b) { if (quick) quickStop(); devShow = b.dataset.dseg; draw(); } };
+    $("#quickgo").onclick = () => { quick = { ids: dev.clips.filter(devPick()).reverse().map(x => x.id), i: 0, hash: location.hash };
+      window.addEventListener("hashchange", () => { document.removeEventListener("keydown", quickKey); quickAudio?.pause(); quick = null; }, { once: true });
+      document.removeEventListener("keydown", quickKey); document.addEventListener("keydown", quickKey); draw(); quickPlay(); };
+    if (quick) {
+      $("#quickend").onclick = quickStop;
+      if ($("#qplay")) { $("#qplay").onclick = quickPlay; $("#qback").onclick = () => { quick.i--; draw(); quickPlay(); };
+        $("#qskip").onclick = () => { quick.i++; draw(); quickPlay(); };
+        $("#quickbox").onclick = e => { const b = e.target.closest("[data-qlabel]"); if (b) quickLabel(b.dataset.qlabel); }; }
+    }
+    $("#holdfrom").onchange = async () => { holdFrom = $("#holdfrom").value.trim(); await loadDev(); };
+    $("#devapply").onclick = async () => { err(); try { const r = await api(base + "/devices/apply", { method: "POST", body: { holdout_from: $("#holdfrom").value.trim() } });
+      $("#devapplied").textContent = Object.entries(r).map(([k, v]) => `${k === "pos" ? "phrase" : "not the phrase"}: ${v.train} train, ${v.heldout} test`).join("; ") || "nothing labeled"; } catch (e) { err(e.message); } };
+    if ($("#devlist")) $("#devlist").onclick = async e => {
+      const pl = e.target.closest("[data-dplay]"), lb = e.target.closest("[data-dlabel]");
+      if (pl) new Audio(`${base}/devices/audio?id=${enc(pl.dataset.dplay)}`).play();
+      if (lb) { const cur = lb.getAttribute("aria-pressed") === "true";
+        try { await api(base + "/devices/labels", { method: "POST", body: { labels: { [lb.dataset.id]: cur ? null : lb.dataset.dlabel } } });
+          const c = dev.clips.find(x => x.id === lb.dataset.id); if (c) c.label = cur ? null : lb.dataset.dlabel; await loadDev(); } catch (x) { err(x.message); } }
+    };
+  };
   const loadCv = async () => { try { cv = await api(base + "/commonvoice"); } catch (e) { cv = { error: e.message }; } if (tab === "cv") draw(); };
   const saveCv = async () => {
     err();
@@ -728,14 +1183,15 @@ async function voicesTab(p, base, steps) {
   };
   const draw = () => {
     tabs(); sofar();
-    $("#pane").innerHTML = tab === "rec" ? recPane() : tab === "folders" ? foldersPane() : cvPane();
+    $("#pane").innerHTML = tab === "rec" ? recPane() : tab === "folders" ? foldersPane() : tab === "dev" ? devPane() : cvPane();
     if (tab === "cv" && !cv) loadCv();
+    if (tab === "dev") { if (!dev) loadDev(); else devWire(); }
     if ($("#cvon")) $("#cvon").onchange = saveCv;
     if ($("#cvtrain")) $("#cvtrain").onchange = saveCv;
     if (tab === "rec" && $("#takes")) { drawTakes(); meter(0); }
     if ($("#mic")) $("#mic").onclick = () => take("pos");
     if ($("#room")) $("#room").onclick = () => take("neg");
-    if ($("#usehere")) $("#usehere").onclick = async () => { try { await api(`${base}/recordings/pos/use`, { method: "POST" }); await load(); draw(); } catch (e) { err(e.message); } };
+
     if ($("#takes")) $("#takes").onclick = async e => {
       const pl = e.target.closest("[data-play]"), dl = e.target.closest("[data-del]"), hd = e.target.closest("[data-held]"), sp = e.target.closest("[data-spk]");
       try {
@@ -754,23 +1210,42 @@ async function voicesTab(p, base, steps) {
   };
   const train = async from => {
     if (tab === "folders" && !await save()) return;
-    try { await api(base + "/train", { method: "POST", body: from ? { from } : {} }); location.hash = `#/p/${enc(p.name)}/train`; }
+    try { await api(base + "/train", { method: "POST", body: { ...(from ? { from } : {}), ...(runningElsewhere(p.name) ? { queue: true } : {}) } }); location.hash = `#/p/${enc(p.name)}/train`; }
     catch (e) { err(e.message); }
   };
   $("#go").onclick = () => train(); if (hasVoices) $("#retrain").onclick = () => train("real");
   try { await load(); draw(); } catch (e) { err(e.message); }
 }
 
+// The Training page's note on an archived project: when, how much it freed, and what Train rebuilds first.
+function archNote(p) {
+  const a = p.archive; if (!a?.archived) return "";
+  const day = new Date(a.archived_at * 1000).toLocaleDateString([], { year: "numeric", month: "short", day: "numeric" });
+  const re = (a.to_rebuild || []).filter(s => STAGE_NAMES[s]), secs = re.reduce((t, s) => t + (p.estimates?.[s] || 0), 0);
+  return `<div class="callout info">${icon("info", 18, 2)}<span><b>Archived on ${day}</b>${a.by === "auto" ? " because it wasn't used for a while" : ""}: ${gb(a.freed_bytes)} of files wakesmith can make again were removed.
+    ${re.length ? `Train and Retrain first make them again (${re.map(s => STAGE_NAMES[s]).join(", ")}${secs ? `: ${secs < 60 ? "under a minute" : "about " + dur(secs)}` : ""}), then carry on as usual.` : ""}
+    Your recordings, results, exported files and the trained model were kept.${a.clips ? " Its synthetic clips were removed too, so Train makes them again (the slow part)." : ""}</span></div>`;
+}
+
 function trainTab(p, base, steps) {
   const v = $("#view");
-  const off = k => (k.startsWith("mww") && !p.microwakeword.enabled) || (k.startsWith("oww") && !p.openwakeword.enabled) || (k === "commonvoice" && !p.commonvoice?.enabled);
+  const off = k => (k.startsWith("mww") && !p.microwakeword.enabled) || (k.startsWith("oww") && !p.openwakeword.enabled) || (k === "commonvoice" && !p.commonvoice?.enabled) || (k === "conversational" && !(p.conversational?.clips > 0));
   v.innerHTML = `${steps("train")}<div class="head"><div><div class="kicker">${esc(p.label)}</div><h1>Training</h1></div>
       <div class="row"><button type="button" class="primary" id="go">Train</button>
         <button type="button" id="retrain" title="After changing recordings or review verdicts: reuses the synthetic clips">Retrain from recordings</button>
         <button type="button" class="danger" id="stop">Stop</button></div></div>
-    <div id="prog"></div><div class="err" id="err"></div>
+    <div id="prog"></div><div id="queued"></div><div class="err" id="err"></div><div id="fail"></div>${archNote(p)}
     <div class="cols"><section class="panel wide" aria-labelledby="h-st" style="gap:4px"><h2 id="h-st">Stages</h2><ol class="stages" id="stages"></ol></section>
-      <aside class="narrow"><section class="panel" aria-labelledby="h-run"><h2 id="h-run">This project</h2><dl class="kv" id="recipe"></dl></section>
+      <aside class="narrow"><section class="panel" aria-labelledby="h-mem" id="mem" hidden><h2 id="h-mem">Memory</h2><div id="membars"></div></section>
+        <section class="panel" aria-labelledby="h-run"><h2 id="h-run">This project</h2><dl class="kv" id="recipe"></dl>
+          <label class="f" for="conv">Everyday sentences as not-the-phrase clips (needs the AI assistant)
+            <input type="number" id="conv" min="0" max="100000" step="100" value="${p.conversational?.clips || 0}">
+            <span class="hint">Experimental, 0 is off. Sentences that use words of the phrase without saying it, spoken by the synthetic voices. <span id="convsaved"></span></span></label>
+          ${p.microwakeword.enabled && p.microwakeword.candidates > 1 ? `<label style="display:flex;gap:10px;align-items:flex-start"><input type="checkbox" id="comb" ${p.microwakeword.combine ? "checked" : ""} style="width:20px;height:20px;accent-color:var(--orange)">
+            <span>Combine the candidates into one model (fewer false triggers; ${p.microwakeword.candidates}x size)<span class="hint" style="display:block" id="combsaved"></span></span></label>` : ""}
+          ${p.microwakeword.enabled ? `<label style="display:flex;gap:10px;align-items:flex-start"><input type="checkbox" id="hrir" ${p.microwakeword.house_rirs ? "checked" : ""} style="width:20px;height:20px;accent-color:var(--orange)">
+            <span>Use this house's room echoes<span class="hint" style="display:block" id="hrirsaved">Claps from <a href="#/room">Record a room</a>, mixed in as often as the standard room echoes. Used from the next Train or Retrain from recordings.</span></span></label>` : ""}</section>
+        <section class="panel" aria-labelledby="h-q" id="queue" hidden></section>
         <details class="adv"><summary>Log</summary><pre class="log" id="log"></pre></details>
         <p class="hint" style="margin:0">You can close this page: training keeps running, and Wake words shows when it's done.</p>
         <section class="panel danger-zone" aria-labelledby="h-del"><h2 id="h-del">${unfinished(p) ? "Not finished?" : "Delete"}</h2>
@@ -779,7 +1254,8 @@ function trainTab(p, base, steps) {
   $("#recipe").innerHTML = `<dt>Models</dt><dd>${[p.microwakeword.enabled && "microWakeWord", p.openwakeword.enabled && "openWakeWord"].filter(Boolean).join(", ")}</dd>
     <dt>Synthetic takes</dt><dd class="mono">${p.samples.positive.toLocaleString()}</dd><dt>Sound-alikes</dt><dd class="mono">${p.samples.negative.toLocaleString()} takes of ${p.negatives.length}</dd>
     <dt>Real recordings</dt><dd>${p.real.positives ? "yes" : "none"}${p.real.negatives ? " · not-the-phrase clips" : ""}</dd>
-    ${p.microwakeword.enabled ? `<dt>Front end</dt><dd>${esc(p.microwakeword.frontend)}</dd>` : ""}`;
+    ${p.microwakeword.enabled ? `<dt>Front end</dt><dd>${esc(p.microwakeword.frontend)}</dd>` : ""}
+    <dt>Live model</dt><dd>${liveLine(p.live) || "none set"} · <a href="#/p/${enc(p.name)}/results">Models</a></dd>`;
   const renderStages = (stages, d) => {
     $("#stages").innerHTML = Object.keys(STAGE_NAMES).map(s => {
       const st = stages[s] || {};
@@ -787,18 +1263,83 @@ function trainTab(p, base, steps) {
       let t = st.time ? (st.time < 90 ? Math.round(st.time) + " s" : Math.round(st.time / 60) + " min") : "";
       if (!off(s) && d?.job.running && pending(d, s)) { status = "waiting"; t = d.estimates?.[s] ? (d.estimates[s] < 60 ? "<1 min" : "~" + dur(d.estimates[s])) : ""; }
       const mark = status === "done" ? icon("check", 14, 3) : status === "running" ? icon("spin", 14, 2.5) : status === "failed" ? icon("bang", 14, 3) : "";
-      const word = { done: "done", running: "running", failed: "stopped", off: "off", waiting: "waiting" }[status] || status;
+      const word = { done: "done", running: "running", failed: "stopped", off: "off", waiting: "waiting", archived: "removed to save space" }[status] || status;
       return `<li class="${status}"><span class="sdot">${mark}</span><div class="sbody"><div class="sline"><b>${STAGE_NAMES[s]}</b><span>${word}${t ? " · " + t : ""}</span></div>
-        <div class="hint">${status === "failed" && st.error ? `<span style="color:var(--warn)">${esc(st.error)}</span>` : STAGE_HELP[s]}</div>
+        <div class="hint">${status === "failed" && st.error ? `<span style="color:var(--warn)">${esc(st.error)}</span>` : status === "archived" ? "Its files were removed when the project was archived. The next Train or Retrain makes them again first." : STAGE_HELP[s]}</div>
         ${status === "running" ? `<div class="bar sm"><div id="sbar"></div></div>` : ""}</div></li>`;
     }).join("");
   };
   renderStages(p.stages);
   const act = async (path, body) => { $("#err").textContent = ""; try { await api(base + path, { method: "POST", body: body || {} }); } catch (e) { $("#err").textContent = e.message; } };
-  $("#go").onclick = () => act("/train");
-  $("#retrain").onclick = () => act("/train", { from: "real" });
+  // Another wake word is training: these buttons queue the run instead (it starts when that one ends).
+  const train = async body => {
+    $("#err").textContent = "";
+    try { await api(base + "/train", { method: "POST", body: { ...body, ...(runningElsewhere(p.name) ? { queue: true } : {}) } }); }
+    catch (e) {
+      if (!/already running/.test(e.message)) { $("#err").textContent = e.message; return; }
+      $("#err").innerHTML = `${esc(e.message)}. <button type="button" id="qinstead">Queue this run</button>`;
+      $("#qinstead").onclick = () => act("/train", { ...body, queue: true }).then(watchJobs);
+      return;
+    }
+    watchJobs();
+  };
+  const queueState = () => {
+    const o = runningElsewhere(p.name), mine = (JOBS?.queue || []).map((x, i) => ({ ...x, i })).filter(x => x.project === p.name);
+    $("#go").textContent = o ? "Queue this run" : "Train";
+    $("#retrain").textContent = o ? "Queue retrain" : "Retrain from recordings";
+    $("#go").title = o ? `${o.label} is training now: this run starts when it ends` : "";
+    $("#queued").innerHTML = mine.map(x => `<div class="callout info">${icon("clock", 18, 2)}<span>${esc(jobTitle(x.title))} is waiting in the queue (number ${x.i + 1}). It starts by itself${o ? ` after ${esc(o.label)}` : ""}; you can close this page.</span></div>`).join("");
+  };
+  onJobs = J => { if (!$("#go")) return; drawQueue($("#queue"), J); queueState(); };
+  if (JOBS) onJobs(JOBS);
+  $("#go").onclick = () => train({});
+  $("#retrain").onclick = () => train({ from: "real" });
   $("#stop").onclick = () => act("/stop");
   $("#delww").onclick = () => deleteWakeWord(p.name, p.label, unfinished(p));
+  if ($("#comb")) $("#comb").onchange = async () => {
+    $("#err").textContent = ""; $("#combsaved").textContent = "";
+    try { const r = await api(base, { method: "PUT", body: { microwakeword: { combine: $("#comb").checked } } });
+      p.microwakeword = r.microwakeword; $("#combsaved").textContent = "Saved: built after microWakeWord training, and exported instead of the kept candidate."; }
+    catch (e) { $("#err").textContent = e.message; $("#comb").checked = p.microwakeword.combine; }
+  };
+  if ($("#hrir")) $("#hrir").onchange = async () => {
+    $("#err").textContent = "";
+    try { const r = await api(base, { method: "PUT", body: { microwakeword: { house_rirs: $("#hrir").checked } } });
+      p.microwakeword = r.microwakeword; $("#hrirsaved").textContent = r.microwakeword.house_rirs ? "Saved: the next Train or Retrain from recordings mixes in the house's claps." : "Saved: standard room echoes only."; }
+    catch (e) { $("#err").textContent = e.message; $("#hrir").checked = p.microwakeword.house_rirs; }
+  };
+  $("#conv").onchange = async () => {
+    $("#err").textContent = ""; $("#convsaved").textContent = "";
+    try { const r = await api(base, { method: "PUT", body: { conversational: { clips: +$("#conv").value || 0 } } });
+      p.conversational = r.conversational; $("#conv").value = r.conversational.clips; renderStages(r.stages);
+      $("#convsaved").textContent = "Saved: takes effect on the next training run."; }
+    catch (e) { $("#err").textContent = e.message; $("#conv").value = p.conversational?.clips || 0; }
+  };
+
+  // why the last job stopped: wakesmith's own checks always, the AI's explanation on request
+  let failKey = null;
+  const loadFail = async () => {
+    let f;
+    try { [f] = await Promise.all([api(base + "/failure"), AI ? null : aiLoad()]); } catch { return; }
+    const el = $("#fail"); if (!el) return;
+    if (!f.stage) { el.innerHTML = ""; return; }
+    el.innerHTML = `<section class="panel" aria-labelledby="h-fail"><h2 id="h-fail">Why it stopped</h2>
+      <p class="hint" style="margin:0">${esc(STAGE_NAMES[f.stage] || f.stage)} didn't finish.${f.quick.length ? " What wakesmith found in the log:" : ""}</p>
+      ${f.quick.map(q => `<div class="callout warn">${icon("bang", 18, 2)}<span><b>${esc(q.title)}.</b> ${esc(q.advice)}${q.evidence ? `<br><span class="mono" style="font-size:12px;opacity:.8;word-break:break-word">${esc(q.evidence)}</span>` : ""}</span></div>`).join("")
+        || `<p class="hint" style="margin:0">wakesmith's own checks don't recognize this one: the Log below shows what happened.</p>`}
+      ${AI?.enabled ? `<div class="row"><button type="button" id="explain">${icon("help", 16)}Explain this failure</button><span class="hint" id="explmsg"></span></div><div class="err" id="explerr"></div><div id="expl" style="display:flex;flex-direction:column;gap:10px"></div>`
+        : `<p class="hint" style="margin:0">For a plain-language explanation from your own AI model, turn on the AI assistant under <a href="#/hardware">Hardware</a>.</p>`}</section>`;
+    if ($("#explain")) $("#explain").onclick = async () => {
+      const b = $("#explain"); b.disabled = true; $("#explerr").textContent = "";
+      $("#explmsg").textContent = "asking your model: this can take a minute…";
+      try {
+        const r = await api(base + "/explain", { method: "POST" });
+        $("#expl").innerHTML = aiAnswer(r, `<details class="qa"><summary>What was sent</summary><pre class="log">${esc(r.sent)}</pre></details>`);
+        $("#explmsg").textContent = "";
+      } catch (e) { $("#explerr").textContent = e.message; $("#explmsg").textContent = ""; }
+      finally { b.disabled = false; }
+    };
+  };
 
   let wasRunning = p.job.running;
   es = new EventSource(base + "/events");
@@ -807,10 +1348,20 @@ function trainTab(p, base, steps) {
     if (!log) return;
     d.off = Object.fromEntries(Object.keys(STAGE_NAMES).map(k => [k, off(k)]));
     renderStages(d.stages, d);
+    const fk = d.job.running ? "running" : Object.keys(STAGE_NAMES).filter(k => d.stages[k]?.status === "failed").join(",");
+    if (fk !== failKey) { failKey = fk; if (d.job.running) $("#fail").innerHTML = ""; else loadFail(); }
     if (d.lines.length) { log.textContent += d.lines.join("\n") + "\n"; log.scrollTop = log.scrollHeight; }
+    if (d.sys) {  // live memory while a job runs: system RAM, and what the job holds on each GPU
+      const bar = (label, used, total, warn) => `<div class="hbar" title="${label}"><span style="min-width:84px">${label}</span><div class="track"><div style="width:${Math.min(100, 100 * used / Math.max(total, 0.1)).toFixed(1)}%;background:${warn ? "var(--orange)" : "var(--bar-caught)"}"></div></div><span class="mono" style="white-space:nowrap">${used.toFixed(1)}/${Math.round(total)} GB</span></div>`;
+      const r = d.sys.ram, gmax = Math.max(0, ...(HW?.gpus || []).map(g => g.memory_gb));
+      $("#mem").hidden = !d.job.running;
+      $("#membars").innerHTML = bar("System RAM", r.used_gb, r.total_gb, r.used_gb > 0.9 * r.total_gb)
+        + d.sys.gpus.map((g, i) => ({ ...g, i })).filter(g => g.vram_gb >= 0.5).map(g => bar(`GPU ${d.sys.gpus.length > 1 ? g.i : ""}`.trim(), g.vram_gb, gmax || g.vram_gb, gmax && g.vram_gb > 0.85 * gmax)).join("")
+        + (r.used_gb > 0.9 * r.total_gb ? `<div class="callout warn">${icon("bang", 18, 2)}<span>System memory is nearly full. Close other big programs; if it runs out, the training job is stopped first (your other programs are kept).</span></div>` : "");
+    }
     $("#go").disabled = $("#retrain").disabled = d.job.running;
     $("#stop").disabled = !d.job.running;
-    $("#delww").disabled = d.job.running;
+    $("#delww").disabled = $("#conv").disabled = d.job.running;
     const pr = d.progress, run = Object.entries(d.stages).find(([, s]) => s?.status === "running");
     let pct = null, label = "";
     if (d.job.running && run) {
@@ -831,6 +1382,9 @@ function trainTab(p, base, steps) {
           const i = splits.indexOf(x.split); splits.slice(0, i).forEach(sp => done += sizes[sp]); done += x.done;
         }
         if (work > 0) pct = 100 * done / work;
+      } else if (s === "conversational" && pr["generate-conversational"]?.time >= (d.stages.conversational?.started || 0)) {
+        const x = pr["generate-conversational"]; pct = 100 * x.done / Math.max(1, x.total);
+        label = `${x.split === "sentences" ? "writing sentences" : "speaking them"} ${x.done}/${x.total}`;
       } else if (s === "mww-train" && pr["mww-train"]) { pct = 100 * pr["mww-train"].done / pr["mww-train"].total; label = `step ${pr["mww-train"].done.toLocaleString()} of ${pr["mww-train"].total.toLocaleString()}`; }
       else if (s === "oww-train" && pr["oww-train"]) {
         const o = pr["oww-train"], n = p.openwakeword.steps;
@@ -849,31 +1403,143 @@ function trainTab(p, base, steps) {
     } else if (d.job.running) {
       $("#prog").innerHTML = `<div class="callout info">${icon("spin", 18, 2)}<span>${esc(d.job.title)} running…</span></div>`;
     } else $("#prog").innerHTML = "";
-    if (wasRunning && !d.job.running) { hardware(); }
+    if (wasRunning !== d.job.running) { watchJobs(); if (wasRunning) hardware(); }
     wasRunning = d.job.running;
   };
 }
 
+// The verdict: this version against the one on the devices, on the same test clips (verdict.py).
+function verdictPanel(p, base) {
+  const el = $("#verdict"), vs = Object.values(p.verdict || {});
+  const tested = Object.keys(p.results || {}).length;
+  const line = v => v.error ? `<div class="callout warn">${icon("bang", 18, 2)}<span>${esc(v.error)}</span></div>`
+    : `<div class="callout ${v.better ? "info" : "warn"}">${icon(v.better ? "check" : "bang", 18, 2)}<span>${esc(v.sentence)}</span></div>`;
+  if (!Object.keys(p.live_version || {}).length) {
+    el.innerHTML = `<h2 id="h-vd">Against what's on your devices</h2><p class="hint" style="margin:0">No version of ${esc(p.word || p.label)} is marked live yet. When a model goes on your devices, mark it <b>live</b> under Models below: every new version is then compared with it here.</p>`;
+    return;
+  }
+  el.innerHTML = `<h2 id="h-vd">Against what's on your devices</h2>
+    ${vs.length ? vs.map(line).join("") : `<p class="hint" style="margin:0">${tested ? "Not compared yet." : "Test this version first; then it is compared by itself."}</p>`}
+    <div class="row"><button type="button" id="vdgo" ${tested ? "" : "disabled"}>${vs.length ? "Compare again" : "Compare with the version on your devices"}</button><span class="hint" id="vdmsg"></span></div>
+    <p class="hint" style="margin:0">Both models are scored on this version's test recordings; the cutoff shown is the one that catches the most without more false triggers than the live model. Nothing changes on your devices.</p>`;
+  $("#vdgo").onclick = async () => { $("#vdmsg").textContent = "scoring the live model, about a minute…"; $("#vdgo").disabled = true;
+    try { p.verdict = await api(base + "/verdict", { method: "POST" }); verdictPanel(p, base); } catch (e) { $("#vdmsg").textContent = e.message; $("#vdgo").disabled = false; } };
+}
+// Each cutoff in everyday terms: calls caught and missed, false alarms a day on the devices.
+async function everydayPanel(p, base, picks, rerender) {
+  const kind = p.microwakeword.enabled ? "mww" : "oww", el = $("#everyday");
+  let d; try { d = await api(`${base}/everyday?kind=${kind}`); } catch { return; }
+  el.hidden = false;
+  let i = d.rows.findIndex(r => Math.abs(r.cutoff - picks[kind]) < 1e-9); if (i < 0) i = Math.floor(d.rows.length / 2);
+  const say = () => {
+    const r = d.rows[i], miss = d.positives - r.caught;
+    const caught = `Catches <b>${r.caught} of ${d.positives}</b> test takes: ${miss ? `misses about <b>1 in ${Math.max(1, Math.round(d.positives / miss))}</b>` : "<b>misses none</b>"}.`;
+    const fa = d.days ? `About <b>${(r.device_false / d.days).toFixed(r.device_false / d.days < 10 ? 1 : 0)} false alarms a day</b> across your devices (${r.device_false} on ${d.device_clips} test device clips over ${d.days.toFixed(1)} days).`
+      : `<b>${r.false} false trigger${r.false === 1 ? "" : "s"}</b> on ${d.negatives.toLocaleString()} not-the-phrase clips. <span class="hint">(No test device clips with times here, so no daily rate.)</span>`;
+    $("#edtxt").innerHTML = `<p style="margin:0">${caught}</p><p style="margin:0">${fa}</p>`;
+    $("#edcut").textContent = r.cutoff.toFixed(2);
+  };
+  el.innerHTML = `<h2 id="h-ed">The cutoff in everyday terms</h2>
+    <label class="f" for="edr">Cutoff <span class="mono" id="edcut"></span><span class="hint">left: catches more, more false alarms · right: fewer false alarms, more misses</span>
+      <input type="range" id="edr" min="0" max="${d.rows.length - 1}" step="1" value="${i}" style="width:100%;accent-color:var(--cyan)"></label>
+    <div id="edtxt" style="display:flex;flex-direction:column;gap:6px"></div>
+    <div class="row"><button type="button" id="eduse">Use this cutoff</button><span class="hint" id="edmsg"></span></div>
+    ${d.half ? `<p class="hint" style="margin:0">Counted on the half of the test recordings that wasn't used to pick the model.</p>` : ""}`;
+  say();
+  $("#edr").oninput = () => { i = +$("#edr").value; say(); $("#edmsg").textContent = ""; };
+  $("#eduse").onclick = () => { picks[kind] = d.rows[i].cutoff; rerender(); $("#edmsg").textContent = "chosen: Export below writes it into the model files"; };
+}
 async function resultsTab(p, base, steps) {
   const v = $("#view");
   const picks = { mww: p.microwakeword.cutoff, oww: p.openwakeword.threshold };
-  v.innerHTML = `${steps("results")}<div><div class="kicker">${esc(p.label)}</div><h1>Compare &amp; pick the cutoff</h1>
+  v.innerHTML = `${steps("results")}<div><div class="kicker">${esc(p.label)}</div><h1>Results &amp; cutoff</h1>
       <p class="sub">The cutoff is the score a sound must reach to count as the wake word. Higher means fewer false triggers and more misses. Click a row to choose it.</p></div>
+    <section class="panel" aria-labelledby="h-vd" id="verdict"></section>
+    <section class="panel" aria-labelledby="h-ed" id="everyday" hidden></section>
     <section class="panel" aria-labelledby="h-runs" id="runs" hidden></section>
-    <div id="results" style="display:flex;flex-direction:column;gap:22px"></div><div class="err" id="err"></div>
+    <section class="panel" aria-labelledby="h-cands" id="cands" hidden></section>
+    <div id="results" style="display:flex;flex-direction:column;gap:22px"></div>
+    <section class="panel" aria-labelledby="h-sets" id="sets" hidden></section>
+    <section class="panel" aria-labelledby="h-adv" id="advice" hidden></section><div class="err" id="err"></div>
     <div class="cols"><section class="panel wide" aria-labelledby="h-rv"><h2 id="h-rv">Review labels</h2>
-        <p class="hint" style="margin:0">Lists your recordings the model disagrees with: usually labelling mistakes. Mark what was really said, then "Retrain from recordings" on the Training page. Held-out clips are never moved.</p>
+        <p class="hint" style="margin:0">Lists your recordings the model disagrees with: usually labeling mistakes. Mark what was really said, then "Retrain from recordings" on the Training page. Held-out clips are never moved.</p>
         <div class="row"><select id="rmodel" style="width:auto"><option value="mww">microWakeWord</option><option value="oww">openWakeWord</option></select>
           <button type="button" id="rbuild">Build review list</button>
           <a id="ropen" href="/p/${enc(p.name)}/review/" target="_blank">Open review page (${p.review_clips} clips)</a></div></section>
       <aside class="narrow"><div class="summary"><h2>Export</h2><p class="hint" style="margin:0;color:var(--soft)">The chosen cutoffs go into the exported files.</p>
+        ${p.combined && p.microwakeword.enabled ? `<div class="radio" role="radiogroup" aria-label="microWakeWord model">
+          <label><input type="radio" name="mwwpick" value="single" ${p.microwakeword.combine ? "" : "checked"}><span><b>Kept candidate</b><span class="hint">one model</span></span></label>
+          <label><input type="radio" name="mwwpick" value="combined" ${p.microwakeword.combine ? "checked" : ""}><span><b>Combined</b><span class="hint">${esc(p.combined.note)}; ${p.combined.candidates.length}x size and tensor arena</span></span></label></div>` : ""}
         <button type="button" class="primary" id="export">${icon("down", 18, 2)}Export with these cutoffs</button><div class="files" id="files"></div>
-        ${p.data_profile === "personal" ? `<p class="hint" style="margin:0">Trained with data that allows non-commercial use only: these models are for personal use. <a href="#/data">Why</a></p>` : ""}</div></aside></div>`;
+        ${p.data_profile === "personal" ? `<p class="hint" style="margin:0">Trained with data that allows non-commercial use only: these models are for personal use. <a href="#/data">Why</a></p>` : ""}</div></aside></div>
+    <section class="panel" aria-labelledby="h-models" id="models"></section>`;
+  modelsPanel(p, base);
+  verdictPanel(p, base);
+  everydayPanel(p, base, picks, () => renderResults(p.results));
+  api(base + "/candidates").then(c => {  // best of N: which microWakeWord candidate was kept, and why
+    const now = c?.candidates?.length, prev = c?.previous;
+    if (!now && !prev) return;
+    const el = $("#cands"), held = now && c.candidates.some(x => "caught" in x), two = !!c?.split;
+    el.hidden = false;
+    // the previous round's candidates, kept when a new best-of-N run starts (mww/candidates.previous)
+    const prevRow = prev ? `<div class="row"><span class="hint" style="flex:1 1 300px"><b>Previous round:</b> ${prev.candidates} candidate${prev.candidates === 1 ? "" : "s"} kept (${prev.numbers.map(n => `s${n}${n === prev.picked ? " (was kept)" : ""}`).join(", ")})${prev.combined ? ", with its combined model" : ""}. Combining them builds a new combined model from that round, in place of the current one; it is tested like any model.</span>
+        ${prev.candidates > 1 ? `<button type="button" id="combprev">Combine previous</button>` : ""}</div>` : "";
+    el.innerHTML = !now ? `<h2 id="h-cands">microWakeWord candidates</h2>${prevRow}` : `<h2 id="h-cands">microWakeWord candidates</h2>
+      <p class="hint" style="margin:0">Training ran ${c.candidates.length} times with different seeds (runs of one recipe differ a lot) and kept the one marked: ${esc(c.why)}.</p>
+      ${two ? `<p class="hint" style="margin:0"><b>Picked on</b> half of your test recordings (${c.split.pick.positives} phrase clips, ${c.split.pick.negatives} others). <b>Reported on</b> the other half (${c.split.report.positives} phrase clips, ${c.split.report.negatives} others), which played no part in choosing: the results below come from it, so they aren't flattered by the choice.</p>`
+        : held && c.split_note ? `<div class="callout warn">${icon("bang", 18, 2)}<span>Picked and reported on the same recordings: ${esc(c.split_note)}.</span></div>`
+        : held ? `<p class="hint" style="margin:0">Picked and reported on the same test recordings (trained before the split into halves), so the kept one's numbers look a little better than they are.</p>` : ""}
+      <div class="tablebox"><table><thead><tr><th scope="col">Run</th><th scope="col">Seed</th><th scope="col">Validation</th>
+        ${held ? `<th scope="col">Test takes caught${two ? " (picked on)" : ""}</th><th scope="col">False triggers${two ? " (picked on)" : ""}</th>` : ""}
+        ${two ? `<th scope="col">Caught (other half)</th><th scope="col">False (other half)</th>` : ""}</tr></thead><tbody>
+      ${c.candidates.map(x => `<tr class="${x.n === c.picked ? "pick" : ""}"><td class="mono">s${x.n}${x.n === c.picked ? ` <span class="badge warn" style="padding:2px 8px">kept</span>` : ""}</td>
+        <td class="mono">${x.seed}</td><td class="mono">${x.failed ? `<span class="err">failed</span>` : x.validation == null ? "–" : x.validation.toFixed(3)}</td>
+        ${held ? `<td class="mono">${x.caught ?? "–"}/${x.positives ?? "–"}</td><td class="mono">${x.false ?? "–"}/${x.negatives ?? "–"}${x.cutoff != null ? ` at ${x.cutoff.toFixed(2)}` : ""}</td>` : ""}
+        ${two ? `<td class="mono">${x.report ? `${x.report.caught}/${x.report.positives}` : "–"}</td><td class="mono">${x.report ? `${x.report.false}/${x.report.negatives}` : "–"}</td>` : ""}</tr>`).join("")}
+      </tbody></table></div>
+      <div class="row"><span class="hint" style="flex:1 1 300px">${p.combined
+        ? `Combined model: ${esc(p.combined.note)}, ${Math.round(p.combined.bytes / 1024)} KB, tensor arena ${p.combined.tensor_arena_size.toLocaleString()}. It averages the candidates' scores: fewer false triggers for the same takes caught. Its results are below; choose it under Export.`
+        : `Combine them: one model that averages all of them. Fewer false triggers for the same takes caught, ${c.candidates.filter(x => !x.failed).length}x the size.`}</span>
+        <button type="button" id="combine">${p.combined ? "Rebuild combined model" : "Combine the candidates"}</button></div>${prevRow}`;
+    const run = previous => async () => {
+      $("#err").textContent = "";
+      try { await api(base + "/combine", { method: "POST", body: previous ? { previous: true } : {} }); location.hash = `#/p/${enc(p.name)}/train`; }
+      catch (e) { $("#err").textContent = e.message; }
+    };
+    if ($("#combine")) $("#combine").onclick = run(false);
+    if ($("#combprev")) $("#combprev").onclick = run(true);
+  }).catch(() => {});
+  let sets = null;  // test results per test set (source folder), at every cutoff
+  const drawSets = () => {
+    const box = $("#sets"), kinds = ["mww", "mww-combined", "oww"].filter(k => sets?.[k]?.sets.length);
+    if (!kinds.length) { box.hidden = true; return; }
+    box.hidden = false;
+    const rows = new Map();
+    kinds.forEach(k => sets[k].sets.forEach(x => rows.set(x.id, { ...x, ...rows.get(x.id) })));
+    const cell = (k, id) => {
+      const x = sets[k].sets.find(s => s.id === id), i = sets[k].cutoffs.findIndex(c => Math.abs(c - picks[k.split("-")[0]]) < 1e-9);
+      return x && i >= 0 ? `<td class="mono">${x.hits[i]}/${x.clips}</td>` : `<td class="hint">–</td>`;
+    };
+    const group = (phrase, title) => { const list = [...rows.values()].filter(x => x.phrase === phrase);
+      return list.length ? `<tr><td colspan="${kinds.length + 1}" class="hint" style="font-weight:600">${title}</td></tr>` + list.map(x => {
+        const [src, folder] = x.id.split(/\/(.*)/), alike = !phrase && /synthetic|look-?alike|sound-?alike/i.test(x.note);
+        return `<tr><td>${alike ? "Sound-alikes" : SET_NAMES[src] || SET_NAMES.other}${folder ? ` <span class="mono hint">${esc(folder)}</span>` : ""}${x.note ? `<div class="hint">${esc(x.note)}</div>` : ""}</td>${kinds.map(k => cell(k, x.id)).join("")}</tr>`; }).join("") : ""; };
+    box.innerHTML = `<h2 id="h-sets">By test set</h2>
+      <p class="hint" style="margin:0">The test clips by where they came from, at the chosen cutoff. A weak spot shows up here even when the totals look fine.${kinds.some(k => sets[k].half === "report") ? " microWakeWord: only the half of the test recordings that played no part in choosing the kept candidate." : ""}</p>
+      <div class="tablebox"><table><thead><tr><th scope="col">Test set</th>${kinds.map(k => `<th scope="col">${MODEL_NAMES[k]} at ${picks[k.split("-")[0]].toFixed(2)}</th>`).join("")}</tr></thead><tbody>
+      ${group(true, "The phrase: caught")}${group(false, "Not the phrase: false triggers")}</tbody></table></div>`;
+  };
+  api(base + "/sets").then(r => { sets = r; drawSets(); }).catch(() => {});
+  const halfNote = (r, base) => { const f = r.full, row = f.table.find(x => Math.abs(x.threshold - picks[base]) < 1e-9);
+    return `<p class="hint" style="margin:0">The kept candidate was chosen using half of your test recordings; the numbers below are from the other half, which played no part in choosing${r.positives_split === false ? " (all the Common Voice takes, which were never used for choosing, and the other half of the other clips)" : ""}.
+      ${row ? `On all ${f.positives} + ${f.negatives} test clips, including the half used for choosing (as older runs were reported): ${row.caught}/${f.positives} caught, ${row.false}/${f.negatives} false at ${row.threshold.toFixed(2)}.` : ""}</p>`; };
   const renderResults = res => {
-    $("#results").innerHTML = ["mww", "mww-cv", "oww", "oww-cv"].filter(k => res[k]).map(k => {
+    drawSets();
+    $("#results").innerHTML = RESULT_KINDS.filter(k => res[k]).map(k => {
       const r = res[k], maxf = Math.max(1, ...r.table.map(row => row.false)), base = k.split("-")[0];
       return `<section class="panel" aria-labelledby="h-${k}"><div class="row" style="justify-content:space-between"><h2 id="h-${k}">${MODEL_NAMES[k]}</h2>
-          <span class="hint">${k.endsWith("-cv") ? `${r.positives} takes from Common Voice speakers it never trained on` : `${r.positives} held-out phrase clips`} · ${r.negatives} other clips</span></div>
+          <span class="hint">${k.includes("combined") && p.combined ? `${esc(p.combined.note)} · ` : ""}${k.endsWith("-cv") ? `${r.positives} takes from Common Voice speakers it never trained on` : `${r.positives} test phrase clips`} · ${r.negatives} other clips</span></div>
+        ${r.half === "report" ? halfNote(r, base) : ""}
         <div class="tablebox"><table data-k="${k}"><thead><tr><th scope="col">Cutoff</th>
           <th scope="col" style="width:42%"><span class="row" style="gap:6px"><span aria-hidden="true" style="width:10px;height:10px;border-radius:2px;background:var(--bar-caught)"></span>Caught</span></th>
           <th scope="col" style="width:30%"><span class="row" style="gap:6px"><span aria-hidden="true" style="width:10px;height:10px;border-radius:2px;background:var(--bar-false)"></span>False triggers</span></th></tr></thead><tbody>
@@ -882,44 +1548,70 @@ async function resultsTab(p, base, steps) {
           <td><div class="hbar" title="${row.caught} of ${r.positives} caught"><div class="track"><div style="width:${c.toFixed(1)}%;background:var(--bar-caught)"></div></div><span class="mono">${row.caught}/${r.positives}</span></div></td>
           <td><div class="hbar" title="${row.false} of ${r.negatives} false"><div class="track"><div style="width:${(100 * row.false / maxf).toFixed(1)}%;background:var(--bar-false)"></div></div><span class="mono">${row.false}/${r.negatives}</span></div></td></tr>`; }).join("")}
         </tbody></table></div></section>`;
-    }).join("") || `<div class="callout info">${icon("info", 18, 2)}<span>No results yet. They appear after the held-out test, which needs real recordings with a HELDOUT.txt: add them under <a href="#/p/${enc(p.name)}/voices">Real voices</a>. You can still export the trained models.</span></div>`;
+    }).join("") || `<div class="callout info">${icon("info", 18, 2)}<span>No results yet. They appear after the test, which needs real recordings with a HELDOUT.txt: add them under <a href="#/p/${enc(p.name)}/voices">Real voices</a>. You can still export the trained models.</span></div>`;
   };
   const kinds = files => [["microwakeword", "microWakeWord (ESPHome)"], ["openwakeword", "openWakeWord"]].filter(([k]) => files.some(f => f.startsWith(k + "/")));
   const renderFiles = files => $("#files").innerHTML = files.length ? kinds(files).map(([k, label]) =>
       `<a class="btn" style="margin-top:8px" href="${base}/zip/${k}" download>${icon("down", 16, 2)}${label} (.zip)</a>`).join("") +
     `<details class="qa" style="margin-top:10px"><summary>Single files</summary>${files.map(f => `<a href="${base}/files/${f.split("/").map(enc).join("/")}" download>${esc(f)}</a>`).join("")}</details>` : "";
   renderResults(p.results); renderFiles(p.exported);
+  // the round advisor (optional AI assistant): advice on the numbers above, it changes nothing
+  (AI ? Promise.resolve(AI) : aiLoad()).then(ai => {
+    const el = $("#advice");
+    if (!el || !ai.enabled || !Object.keys(p.results).length) return;
+    el.hidden = false;
+    el.innerHTML = `<h2 id="h-adv">Advice</h2>
+      <p class="hint" style="margin:0">Ask your AI model which cutoff to use, whether this model looks ready for a device, and what to record next.
+        It is sent the numbers on this page (with the cutoffs chosen above), the candidates and device-clip counts. Advice only: nothing changes.</p>
+      <div class="row"><button type="button" id="askadv">${icon("help", 16)}Ask for advice</button><span class="hint" id="advmsg"></span></div>
+      <div class="err" id="adverr"></div><div id="advout" style="display:flex;flex-direction:column;gap:10px"></div>`;
+    $("#askadv").onclick = async () => {
+      const b = $("#askadv"); b.disabled = true; $("#adverr").textContent = "";
+      $("#advmsg").textContent = "asking your model: this can take a minute…";
+      try {
+        const r = await api(base + "/advice", { method: "POST", body: { cutoff: picks.mww, threshold: picks.oww } });
+        $("#advout").innerHTML = aiAnswer(r, `<details class="qa"><summary>The numbers it was given</summary><pre class="log">${esc(JSON.stringify(r.numbers, null, 1))}</pre></details>`);
+        $("#advmsg").textContent = "";
+      } catch (e) { $("#adverr").textContent = e.message; $("#advmsg").textContent = ""; }
+      finally { b.disabled = false; }
+    };
+  });
   // past runs, side by side at one cutoff
-  let runs = [], cut = null, model = p.microwakeword.enabled ? "mww" : "oww";
+  let runs = [], cut = null, model = p.microwakeword.enabled ? "mww" : "oww", whole = false;
   const pick = new Set();
-  const atCut = (r, k) => { const t = r.results[k]; if (!t) return null; const row = t.table.find(x => Math.abs(x.threshold - cut) < 1e-9); return row ? { ...row, pos: t.positives, neg: t.negatives } : null; };
+  // a best-of-N run reports on the half of the test clips not used for choosing; "whole" shows all of them
+  const resOf = (r, k) => { const t = r.results[k]; return t && whole && t.full ? t.full : t; };
+  const atCut = (r, k) => { const t = resOf(r, k); if (!t) return null; const row = t.table.find(x => Math.abs(x.threshold - cut) < 1e-9); return row ? { ...row, pos: t.positives, neg: t.negatives } : null; };
   const name = r => r.label || r.title.replace(/^train /, "") || r.id;
   const when = r => new Date(r.time * 1000).toLocaleString([], { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
   const drawRuns = () => {
     const box = $("#runs");
     if (!runs.length) { box.hidden = true; return; }
+    const kinds = RESULT_KINDS.filter(k => runs.some(r => r.results[k]));
+    if (!kinds.length) { box.hidden = true; return; }  // runs without test results: nothing to compare
     box.hidden = false;
-    const kinds = ["mww", "mww-cv", "oww", "oww-cv"].filter(k => runs.some(r => r.results[k]));
     if (!kinds.includes(model)) model = kinds[0];
     const cuts = [...new Set(runs.flatMap(r => r.results[model]?.table.map(x => x.threshold) || []))].sort((a, b) => a - b);
     if (cut == null || !cuts.includes(cut)) cut = cuts.includes(picks[model.split("-")[0]]) ? picks[model.split("-")[0]] : cuts[Math.floor(cuts.length / 2)];
     const shown = runs.filter(r => pick.has(r.id) && r.results[model]);
     const maxf = Math.max(1, ...shown.map(r => atCut(r, model)?.false || 0));
-    const sameTest = new Set(shown.map(r => `${r.results[model].positives}/${r.results[model].negatives}`)).size <= 1;
+    const sameTest = new Set(shown.map(r => `${resOf(r, model).positives}/${resOf(r, model).negatives}`)).size <= 1;
+    const halves = runs.some(r => r.results[model]?.full);
     box.innerHTML = `<div class="row" style="justify-content:space-between"><h2 id="h-runs">Runs</h2>
         <div class="row">${kinds.length > 1 ? `<div class="seg" role="group" aria-label="Model">${kinds.map(k => `<button type="button" data-model="${k}" aria-selected="${k === model}">${MODEL_NAMES[k].replace("Common Voice speakers", "CV")}</button>`).join("")}</div>` : ""}
+        ${halves ? `<label class="f" style="flex-direction:row;align-items:center;gap:8px">Clips <select id="rwhole" style="width:auto"><option value="">the half not used for choosing</option><option value="1" ${whole ? "selected" : ""}>all test (as older runs)</option></select></label>` : ""}
         <label class="f" style="flex-direction:row;align-items:center;gap:8px">Cutoff <select id="rcut" style="width:auto">${cuts.map(c => `<option value="${c}" ${c === cut ? "selected" : ""}>${c.toFixed(2)}</option>`).join("")}</select></label></div></div>
-      ${sameTest ? "" : `<div class="callout warn">${icon("bang", 18, 2)}<span>These runs were tested on different held-out recordings, so their numbers aren't directly comparable.</span></div>`}
+      ${sameTest ? "" : `<div class="callout warn">${icon("bang", 18, 2)}<span>These runs were tested on different test recordings, so their numbers aren't directly comparable.</span></div>`}
       <div class="tablebox"><table><thead><tr><th scope="col">Compare</th><th scope="col">Run</th>
         <th scope="col" style="width:30%"><span class="row" style="gap:6px"><span aria-hidden="true" style="width:10px;height:10px;border-radius:2px;background:var(--bar-caught)"></span>Caught</span></th>
         <th scope="col" style="width:24%"><span class="row" style="gap:6px"><span aria-hidden="true" style="width:10px;height:10px;border-radius:2px;background:var(--bar-false)"></span>False triggers</span></th><th scope="col"><span style="position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)">Actions</span></th></tr></thead><tbody>
       ${runs.map((r, i) => { const x = atCut(r, model), on = pick.has(r.id);
         return `<tr><td><input type="checkbox" data-pick="${r.id}" ${on ? "checked" : ""} aria-label="Compare ${esc(name(r))}" style="width:20px;height:20px;accent-color:var(--orange)"></td>
-          <td><button type="button" class="tag" data-label="${r.id}" data-cur="${esc(r.label)}" title="rename" style="font-size:14px;background:transparent;padding:0;color:var(--text);justify-content:flex-start;text-align:left;font-weight:600">${esc(name(r))}</button>${i === 0 ? ` <span class="badge info" style="padding:2px 8px">latest</span>` : ""}<div class="hint">${when(r)} · ${r.results[model] ? `${r.results[model].positives} held-out · ${r.results[model].negatives} other` : "no results for this model"}</div></td>
+          <td><button type="button" class="tag" data-label="${r.id}" data-cur="${esc(r.label)}" title="rename" style="font-size:14px;background:transparent;padding:0;color:var(--text);justify-content:flex-start;text-align:left;font-weight:600">${esc(name(r))}</button>${i === 0 ? ` <span class="badge info" style="padding:2px 8px">latest</span>` : ""}<div class="hint">${when(r)} · ${r.results[model] ? `${resOf(r, model).positives} test · ${resOf(r, model).negatives} other${r.results[model].full && !whole ? " · the half not used for choosing" : ""}` : "no results for this model"}</div></td>
           ${x && on ? `<td><div class="hbar" title="${x.caught} of ${x.pos} caught"><div class="track"><div style="width:${(100 * x.caught / Math.max(1, x.pos)).toFixed(1)}%;background:var(--bar-caught)"></div></div><span class="mono">${x.caught}/${x.pos}</span></div></td>
             <td><div class="hbar" title="${x.false} of ${x.neg} false"><div class="track"><div style="width:${(100 * x.false / maxf).toFixed(1)}%;background:var(--bar-false)"></div></div><span class="mono">${x.false}/${x.neg}</span></div></td>`
             : `<td class="hint">${on ? "no row at this cutoff" : ""}</td><td></td>`}
-          <td><div class="row" style="gap:6px;flex-wrap:nowrap">${r.exported.map(k => `<a class="btn" style="min-height:36px;padding:0 10px;font-size:13px" href="${base}/runs/${r.id}/zip/${k}" download title="download ${k}">${icon("down", 14, 2)}${k === "microwakeword" ? "mWW" : "oWW"}</a>`).join("")}
+          <td><div class="row" style="gap:6px;flex-wrap:nowrap">${r.exported.map(k => `<a class="btn" style="min-height:36px;padding:0 10px;font-size:13px" href="${base}/runs/${r.id}/zip/${k}" download title="download ${k}">${icon("down", 14, 2)}${{ microwakeword: "mWW", openwakeword: "oWW" }[k] || k}</a>`).join("")}
             <button type="button" class="round flat" data-rdel="${r.id}" aria-label="Delete run ${esc(name(r))}">${icon("trash", 16)}</button></div></td></tr>`; }).join("")}
       </tbody></table></div><p class="hint" style="margin:0">Every run that finishes is kept here. Click a run's name to rename it (e.g. "added soft takes").</p>`;
   };
@@ -934,6 +1626,7 @@ async function resultsTab(p, base, steps) {
   };
   $("#runs").onchange = e => {
     if (e.target.id === "rcut") { cut = +e.target.value; drawRuns(); }
+    if (e.target.id === "rwhole") { whole = !!e.target.value; drawRuns(); }
     if (e.target.dataset.pick) { e.target.checked ? pick.add(e.target.dataset.pick) : pick.delete(e.target.dataset.pick); drawRuns(); }
   };
   loadRuns().catch(e => $("#err").textContent = e.message);
@@ -943,7 +1636,8 @@ async function resultsTab(p, base, steps) {
   };
   $("#export").onclick = async () => {
     $("#err").textContent = "";
-    try { renderFiles(await api(base + "/export", { method: "POST", body: { cutoff: picks.mww, threshold: picks.oww } })); }
+    const mp = document.querySelector("input[name=mwwpick]:checked");
+    try { renderFiles(await api(base + "/export", { method: "POST", body: { cutoff: picks.mww, threshold: picks.oww, ...(mp ? { combined: mp.value === "combined" } : {}) } })); modelsPanel(p, base); }
     catch (e) { $("#err").textContent = e.message; }
   };
   $("#rbuild").onclick = async () => {
@@ -951,6 +1645,306 @@ async function resultsTab(p, base, steps) {
     try { await api(base + "/review/build", { method: "POST", body: { model: $("#rmodel").value } }); $("#ropen").textContent = "Review list is being built (see Training)…"; }
     catch (e) { $("#err").textContent = e.message; }
   };
+}
+
+// ---- model history: every exported model, its status (exported, offered, live, retired) and notes ----
+const KIND_NAMES = { mww: "microWakeWord", oww: "openWakeWord" };
+const STATUS_BADGE = { exported: "idle", offered: "info", live: "ok", retired: "idle" };
+// Clipboard API where allowed, else the old select-and-copy (plain http on the LAN has no clipboard API)
+async function copyText(t) {
+  try { await navigator.clipboard.writeText(t); return; } catch {}
+  const a = document.createElement("textarea"); a.value = t; a.style.position = "fixed"; a.style.opacity = "0";
+  document.body.append(a); a.select(); const ok = document.execCommand("copy"); a.remove();
+  if (!ok) throw new Error("couldn't copy: select the sha by hand");
+}
+const liveLine = live => Object.entries(live || {}).map(([k, s]) => `${KIND_NAMES[k]} <span class="mono">${esc(s)}</span>`).join(" · ");
+async function modelsPanel(p, base) {
+  const box = $("#models");
+  let list = [], msg = "";
+  const when = t => new Date(t * 1000).toLocaleString([], { year: "numeric", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
+  const since = e => { const h = e.history; let i = h.length - 1; while (i > 0 && h[i - 1].status === e.status) i--; return h[i].time; };
+  const cut = e => e.cutoff == null ? "–" : e.cutoff.toFixed(2);
+  const draw = () => {
+    box.innerHTML = `<div class="row" style="justify-content:space-between"><h2 id="h-models">Models</h2>
+        <button type="button" id="mfind">${icon("refresh", 16, 2)}Find earlier exports</button></div>
+      <p class="hint" style="margin:0">Every model file exported for ${esc(p.label)}, newest first. Set its status as it moves on: offered when you hand it out to try, live when it runs on your devices (wakesmith doesn't deploy it). One model per engine is live: making one live marks the one before it retired.</p>
+      ${msg}
+      ${list.length ? `<div class="tablebox"><table style="min-width:900px"><thead><tr><th scope="col">Model</th><th scope="col">sha256</th><th scope="col">Cutoff</th>
+        <th scope="col">Test result at that cutoff</th><th scope="col">Status</th><th scope="col" style="width:30%">Notes</th></tr></thead><tbody>
+      ${list.map(e => `<tr${e.status === "retired" ? ' style="opacity:.7"' : ""}><td><b>${KIND_NAMES[e.kind] || esc(e.kind)}</b><div class="hint">${when(e.created)}${e.run ? ` · run ${esc(e.run)}` : ""}</div><div class="hint mono">${esc(e.file)}</div></td>
+        <td><span class="row" style="gap:4px;flex-wrap:nowrap"><span class="mono" title="${esc(e.sha256)}">${esc(e.sha)}</span>
+          <button type="button" class="round flat" data-copy="${esc(e.sha256)}" aria-label="Copy the full sha256 of ${esc(e.sha)}" title="Copy full sha256">${icon("doc", 16)}</button></span></td>
+        <td class="mono">${cut(e)}</td>
+        <td class="mono" style="white-space:nowrap">${e.heldout ? `${e.heldout.caught}/${e.heldout.positives} caught<div class="hint">${e.heldout.false}/${e.heldout.negatives} false</div>` : `<span class="hint">no test results</span>`}</td>
+        <td><span class="badge ${STATUS_BADGE[e.status]}">${e.status === "live" ? icon("check", 14, 2.5) : ""}${esc(e.status)}</span>
+          <div style="margin-top:6px"><select data-status="${esc(e.sha256)}" aria-label="Status of ${esc(e.sha)}" style="width:auto;min-height:36px">
+            ${["exported", "offered", "live", "retired"].map(s => `<option value="${s}" ${s === e.status ? "selected" : ""}>${s}</option>`).join("")}</select></div>
+          <div class="hint">since ${when(since(e))}</div></td>
+        <td><input type="text" data-notes="${esc(e.sha256)}" value="${esc(e.notes)}" placeholder="Add a note" aria-label="Notes for ${esc(e.sha)}" maxlength="2000"></td></tr>`).join("")}
+      </tbody></table></div>`
+      : `<p class="hint" style="margin:0">No models listed yet. Every export is listed from now on; "Find earlier exports" adds the models in kept runs and the export folder.</p>`}`;
+  };
+  const load = async () => { list = await api(base + "/models"); draw(); };
+  const note = (kind, text) => `<div class="callout ${kind}">${icon(kind === "warn" ? "bang" : "info", 18, 2)}<span>${text}</span></div>`;
+  box.onclick = async e => {
+    const c = e.target.closest("[data-copy]"), f = e.target.closest("#mfind");
+    try {
+      if (c) { await copyText(c.dataset.copy); c.innerHTML = icon("check", 16, 2.5); setTimeout(() => { c.innerHTML = icon("doc", 16); }, 1500); }
+      if (f) { f.disabled = true; const r = await api(base + "/models/backfill", { method: "POST" });
+        msg = note("info", r.added ? `Added ${r.added} earlier model${r.added > 1 ? "s" : ""}.` : "No earlier exports that aren't listed already."); await load(); }
+    } catch (x) { msg = note("warn", esc(x.message)); draw(); }
+  };
+  box.onchange = async e => {
+    const s = e.target.dataset.status, n = e.target.dataset.notes;
+    try {
+      if (s) {
+        const r = await api(`${base}/models/${s}/status`, { method: "POST", body: { status: e.target.value } });
+        msg = r.retired.length ? note("info", `<span class="mono">${esc(r.entry.sha)}</span> is live now; ${r.retired.map(x => `<span class="mono">${esc(x)}</span>`).join(", ")}, live before, is marked retired.`) : "";
+        await load();
+      }
+      if (n !== undefined) { await api(`${base}/models/${n}/notes`, { method: "POST", body: { notes: e.target.value } }); msg = ""; }
+    } catch (x) { msg = note("warn", esc(x.message)); await load().catch(() => draw()); }
+  };
+  try { await load(); } catch (x) { msg = note("warn", esc(x.message)); draw(); }
+}
+
+// ---- record a room: one long recording for every wake word, split into takes (sessions.py) -------------
+// The phone lies next to the device; the person walks around and follows the script. Audio goes up in
+// ~10 s pieces while recording, so a page that dies loses at most the last piece.
+const ROOM_LABELS = { spot: "spot marker", other: "other speech: not the phrase, all", room: "room sound: not the phrase, all",
+  clap: "clap: room echo", unclear: "unclear: left out", skip: "leave out" };
+const fmtT = t => `${Math.floor(t / 60)}:${(t % 60).toFixed(1).padStart(4, "0")}`;
+function roomScript(phrases, spots) {
+  const said = phrases.map(p => `"${p}" 3 times`).join(", pause, then ");
+  return [`Put the phone next to the device, screen up, and press Start. Then leave it there.`,
+    `Stay quiet for 10 seconds (room sound).`,
+    `Clap 3 times, about 2 seconds apart, from the middle of the room.`,
+    ...spots.map(s => `${s[0].toUpperCase() + s.slice(1)}: say the spot out loud ("${s}"), wait a moment, then say ${said}.`),
+    `Walk back to the phone and press Stop.`];
+}
+async function viewRoom() {
+  nav("#/room");
+  const v = $("#view");
+  let info;
+  try { info = await api("/api/sessions"); } catch (e) { v.innerHTML = `<p class="err">${esc(e.message)}</p>`; return; }
+  const mic = window.isSecureContext && navigator.mediaDevices?.getUserMedia;
+  const prev = (() => { try { return JSON.parse(localStorage.getItem("ws-room") || "{}"); } catch { return {}; } })();
+  v.innerHTML = `<div><h1>Record a room</h1><p class="sub">One recording per room for all your wake words. Put the phone next to the device, press Start,
+      and walk around following the script. wakesmith cuts it into takes for each wake word, room sound and claps; you check them before they are used.</p></div>
+    ${mic ? "" : `<div class="callout warn">${icon("bang", 18, 2)}<span>This browser only allows the microphone on HTTPS or on this computer itself. Restart wakesmith with
+      <code class="mono">wakesmith serve --host 0.0.0.0 --https</code> and open the https link on the phone (accept the certificate warning once).</span></div>`}
+    <div class="cols"><div class="wide">
+      <section class="panel" aria-labelledby="h-rs" id="rsetup"><h2 id="h-rs">Which room, who, which wake words</h2>
+        <div class="row" style="align-items:flex-end"><label class="f grow" for="rroom">Room <input type="text" id="rroom" list="rrooms" placeholder="e.g. study" autocomplete="off" value="${esc(prev.room || "")}"></label>
+          <label class="f grow" for="rspk">Who's speaking <span class="hint">names, separated by commas</span><input type="text" id="rspk" placeholder="e.g. Sam" autocomplete="off" value="${esc(prev.speakers || lastSpeaker.get())}"></label></div>
+        <datalist id="rrooms">${info.rooms.map(r => `<option value="${esc(r)}">`).join("")}</datalist>
+        <fieldset class="rchk"><legend>Wake words to say</legend>${info.projects.length ? info.projects.map(p => `<label><input type="checkbox" name="rproj" value="${esc(p.name)}" ${p.default ? "checked" : ""}>
+          <span><b>${esc(p.phrase)}</b> <span class="hint">${esc(p.name)}${p.live ? " · live model" : ""}</span></span></label>`).join("") : `<p class="hint">No wake words yet: make one first.</p>`}</fieldset>
+        <fieldset class="rchk"><legend>Spots</legend>${info.spots.map(s => `<label><input type="checkbox" name="rspot" value="${esc(s)}" checked><span>${esc(s)}</span></label>`).join("")}</fieldset></section>
+      <section class="panel rscript" aria-labelledby="h-sc"><div class="row" style="justify-content:space-between"><h2 id="h-sc">Script</h2><button type="button" id="rprint">Print the script</button></div>
+        <ol id="rsteps"></ol><p class="hint" style="margin:0">Takes from one spot get that spot as their condition. Saying the spot out loud lets wakesmith tell them apart; if it misses one, you can fix it when you check the takes.</p></section>
+      <section class="panel" aria-label="Record" style="flex-direction:row;flex-wrap:wrap;align-items:center;gap:28px">
+        <button type="button" class="mic" id="rgo" aria-label="Start recording" ${mic && info.projects.length ? "" : "disabled"}>${icon("mic", 40)}</button>
+        <div style="flex:1 1 300px;display:flex;flex-direction:column;gap:12px">
+          <div style="font:600 40px/1 var(--mono)" id="rtime" aria-live="off">0:00</div>
+          <div class="meter" id="rmeter" role="img" aria-label="Microphone level">${Array(32).fill("<span></span>").join("")}</div>
+          <div class="hint" id="rstate" aria-live="polite">Press Start, then leave the phone next to the device. Keep this page open; the screen stays on while recording.</div>
+          <div class="err" id="err"></div></div></section></div>
+    <aside class="narrow"><section class="panel" aria-labelledby="h-rp"><h2 id="h-rp">Earlier recordings</h2><ul class="takes" id="rlist"></ul>
+      <p class="hint" style="margin:0">${info.house_rirs ? `${info.house_rirs} clap${info.house_rirs > 1 ? "s" : ""} saved as this house's room echoes.` : "Claps become this house's room echoes once you send a recording."}</p></section></aside></div>`;
+  $("#rlist").innerHTML = info.sessions.map(s => `<li><a href="#/room/${enc(s.id)}" style="flex:1 1 160px"><b>${esc(s.room)}</b></a>
+      <span class="hint">${esc((s.started || "").slice(0, 16))} · ${fmtT(s.seconds || 0).replace(/\.\d$/, "")}${s.status === "recording" ? " · not finished" : s.split === "running" ? " · splitting" : s.segments ? ` · ${s.segments} pieces` : ""}</span></li>`).join("")
+    || `<li class="hint">None yet.</li>`;
+  const picked = () => [...document.querySelectorAll("input[name=rproj]:checked")].map(x => x.value);
+  const spots = () => [...document.querySelectorAll("input[name=rspot]:checked")].map(x => x.value);
+  const phrases = () => { const seen = []; for (const n of picked()) { const ph = info.projects.find(p => p.name === n).phrase; if (!seen.includes(ph)) seen.push(ph); } return seen; };
+  const steps = () => { $("#rsteps").innerHTML = roomScript(phrases(), spots()).map(s => `<li>${esc(s)}</li>`).join(""); };
+  steps();
+  $("#rsetup").onchange = e => { if (e.target.name === "rproj" || e.target.name === "rspot") steps(); };
+  $("#rprint").onclick = () => {
+    const w = window.open("", "_blank");
+    if (!w) return;
+    w.document.write(`<!doctype html><title>Recording script</title><body style="font:18px/1.6 sans-serif;max-width:40em;margin:2em auto">
+      <h1>Record a room: ${esc($("#rroom").value || "")}</h1><ol>${roomScript(phrases(), spots()).map(s => `<li>${esc(s)}</li>`).join("")}</ol></body>`);
+    w.document.close(); w.print();
+  };
+  let levels = Array(32).fill(0), R = null;
+  const meter = rms => {
+    levels.push(Math.min(1, Math.sqrt(rms) * 2.2)); levels = levels.slice(-32);
+    const m = $("#rmeter"); if (!m) return;
+    [...m.children].forEach((s, i) => { const h = levels[i]; s.style.height = `${4 + h * 36}px`; s.style.background = h > 0.85 ? "var(--orange)" : h > 0.05 ? "var(--gold)" : "#34405a"; });
+  };
+  const state = m => { if ($("#rstate")) $("#rstate").textContent = m; };
+  const lock = async () => { try { if (R && "wakeLock" in navigator && !document.hidden) R.lock = await navigator.wakeLock.request("screen"); } catch { R && (R.lock = null); } };
+  const onVis = () => { if (R && !document.hidden) lock(); };
+  const onLeave = e => { if (R) { e.preventDefault(); e.returnValue = ""; } };
+  const pump = async () => {  // pieces go up in order; a failed one is retried
+    if (!R || R.sending) return;
+    R.sending = true;
+    try {
+      while (R.pending.length) {
+        const c = R.pending[0];
+        const r = await fetch(`/api/sessions/${enc(R.sid)}/chunk?seq=${c.seq}`, { method: "POST", body: c.blob });
+        if (!r.ok) { let m = r.statusText; try { m = (await r.json()).detail || m; } catch {} throw new Error(m); }
+        R.pending.shift(); R.sent += c.seconds;
+      }
+      R.failed = "";
+    } catch (e) { R.failed = e.message || "upload failed"; }
+    finally { R.sending = false; }
+  };
+  const flush = () => {  // the audio since the last piece, as a 16 kHz WAV piece
+    if (!R.buf.length) return Promise.resolve();
+    const seq = R.seq++, chunks = R.buf; R.buf = []; R.bufN = 0;
+    return to16k(chunks, R.rate).then(a => { R.pending.push({ seq, blob: wav16(a), seconds: a.length / 16000 }); R.pending.sort((x, y) => x.seq - y.seq); return pump(); });
+  };
+  const start = async () => {
+    $("#err").textContent = "";
+    const room = $("#rroom").value.trim(), projects = picked();
+    if (!room) { $("#err").textContent = "Name the room first."; $("#rroom").focus(); return; }
+    if (!projects.length) { $("#err").textContent = "Pick at least one wake word."; return; }
+    const speakers = $("#rspk").value.split(",").map(s => s.trim()).filter(Boolean);
+    let stream;
+    try { stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false, channelCount: 1 } }); }
+    catch (e) { $("#err").textContent = e.name === "NotAllowedError" ? "The browser blocked the microphone: allow it for this page and try again." : e.message; return; }
+    let s;
+    try { s = await api("/api/sessions", { method: "POST", body: { room, speakers, projects, spots: spots(), device: navigator.userAgent } }); }
+    catch (e) { stream.getTracks().forEach(t => t.stop()); $("#err").textContent = e.message; return; }
+    try { localStorage.setItem("ws-room", JSON.stringify({ room, speakers: speakers.join(", ") })); } catch {}
+    const ctx = new AudioContext(), url = URL.createObjectURL(new Blob([WORKLET], { type: "text/javascript" }));
+    await ctx.resume();
+    await ctx.audioWorklet.addModule(url);
+    const node = new AudioWorkletNode(ctx, "tap"), src = ctx.createMediaStreamSource(stream);
+    src.connect(node);
+    R = { sid: s.id, ctx, stream, node, src, url, rate: ctx.sampleRate, buf: [], bufN: 0, got: 0, seq: 0, pending: [], sent: 0, sending: false, failed: "", lock: null, acc: 0, accN: 0, t0: Date.now() };
+    node.port.onmessage = e => {
+      const d = e.data; R.buf.push(d); R.bufN += d.length; R.got += d.length;
+      for (const x of d) R.acc += x * x; R.accN += d.length;
+      if (R.accN >= R.rate * 0.05) { meter(Math.sqrt(R.acc / R.accN)); R.acc = 0; R.accN = 0; }
+      if (R.bufN >= R.rate * 10) flush();
+    };
+    await lock();
+    document.addEventListener("visibilitychange", onVis); window.addEventListener("beforeunload", onLeave);
+    R.tick = setInterval(() => {
+      const t = R.got / R.rate, wait = R.pending.reduce((a, c) => a + c.seconds, 0);
+      $("#rtime").textContent = fmtT(t).replace(/\.\d$/, "");
+      if (R.failed) pump();
+      state(`Recording. ${Math.round(R.sent)} s uploaded${wait > 1 ? `, ${Math.round(wait)} s waiting${R.failed ? ` (${R.failed}; retrying)` : ""}` : ""}.`
+        + (R.lock && !R.lock.released ? " Screen kept on." : " Keep the screen on: this browser can't do it by itself."));
+    }, 1000);
+    const b = $("#rgo"); b.classList.add("on"); b.setAttribute("aria-label", "Stop recording"); b.innerHTML = icon("x", 40, 2.5);
+    v.querySelectorAll("input").forEach(x => x.disabled = true);
+  };
+  const errEl = () => $("#err") || { set textContent(x) {}, set innerHTML(x) {} };
+  const stop = async (away = false) => {
+    const r = R, b = $("#rgo") || {};
+    b.disabled = true; clearInterval(r.tick);
+    r.src.disconnect(); r.node.disconnect(); r.stream.getTracks().forEach(t => t.stop());
+    await flush(); r.ctx.close(); URL.revokeObjectURL(r.url);
+    try { await r.lock?.release(); } catch {}
+    for (let i = 0; i < 20 && r.pending.length; i++) { state(`Uploading the last ${Math.round(r.pending.reduce((a, c) => a + c.seconds, 0))} s…`); await pump(); if (r.pending.length) await new Promise(res => setTimeout(res, 3000)); }
+    if (r.pending.length) {
+      state(""); errEl().innerHTML = `${esc(r.failed)}: ${Math.round(r.pending.reduce((a, c) => a + c.seconds, 0))} s are still on this phone. <button type="button" id="rretry">Try again</button>`;
+      if ($("#rretry")) $("#rretry").onclick = () => { b.disabled = false; stop2(r, away); };
+      return;
+    }
+    stop2(r, away);
+  };
+  const stop2 = async (r, away) => {
+    await pump();
+    if (r.pending.length) { errEl().textContent = `Upload still failing (${r.failed}). Keep this page open and try again.`; return; }
+    try { await api(`/api/sessions/${enc(r.sid)}/stop`, { method: "POST" }); } catch (e) { errEl().textContent = e.message; return; }
+    R = null; document.removeEventListener("visibilitychange", onVis); window.removeEventListener("beforeunload", onLeave);
+    if (!away) location.hash = `#/room/${enc(r.sid)}`;
+  };
+  let starting = false;  // a second tap while the microphone opens must not start a second recording
+  $("#rgo").onclick = () => {
+    if (R) { if (!$("#rgo").disabled && Date.now() - R.t0 > 1500) stop(); return; }  // not a double tap
+    if (starting) return;
+    starting = true;
+    start().catch(e => { $("#err").textContent = e.message; }).finally(() => { starting = false; });
+  };
+  // leaving the page stops the recording and keeps what was recorded (finished under Earlier recordings)
+  const leave = () => { if (R && location.hash !== "#/room") stop(true); window.removeEventListener("hashchange", leave); };
+  window.addEventListener("hashchange", leave);
+}
+
+async function viewSession(sid) {
+  nav("#/room");
+  const v = $("#view"), base = `/api/sessions/${enc(sid)}`;
+  let d = null, poll = null, filter = "all", msg = "";
+  const load = async () => { d = await api(base); };
+  const optFor = (s, x) => {
+    const words = s.phrases.map(p => [p.project, `"${p.phrase}" (${p.project})`]);
+    return [...words, ...Object.entries(ROOM_LABELS)].map(([k, l]) => `<option value="${esc(k)}" ${x.label === k ? "selected" : ""}>${esc(l)}</option>`).join("");
+  };
+  v.innerHTML = `<div id="sess" style="display:flex;flex-direction:column;gap:22px"></div>`;
+  const box = $("#sess");
+  const draw = () => {
+    if (!box.isConnected) { clearInterval(poll); return; }
+    const s = d.session, sp = d.split || {}, segs = d.segments, run = sp.status === "running";
+    const count = k => segs.filter(x => x.label === k).length;
+    const words = s.phrases.map(p => `${count(p.project)} × "${esc(p.phrase)}"`).join(", ");
+    const shown = segs.filter(x => filter === "all" || (filter === "words" ? s.phrases.some(p => p.project === x.label) : filter === "check" ? ["unclear", "spot", "other"].includes(x.label) : !x.sent.length));
+    box.innerHTML = `<div class="head"><div><div class="kicker"><a href="#/room">Record a room</a></div><h1>${esc(s.room)}</h1>
+        <p class="sub">${esc(s.started)} · ${fmtT(s.seconds || 0).replace(/\.\d$/, "")} · ${esc(s.speakers.join(", ") || "speaker not named")} · ${s.phrases.map(p => `"${esc(p.phrase)}"`).join(", ")}</p></div>
+      <div class="row"><button type="button" class="primary" id="ssend" ${run || !segs.length ? "disabled" : ""}>Send to the wake words</button>
+        <button type="button" id="ssplit" ${run ? "disabled" : ""}>${s.status === "recording" ? "Finish and split" : "Split again"}</button></div></div>
+      <div class="err" id="err"></div>${msg}
+      ${s.missing?.length ? `<div class="callout warn">${icon("bang", 18, 2)}<span>${s.missing.length} piece${s.missing.length > 1 ? "s" : ""} of ~10 s never arrived (the phone lost the connection); the rest is joined without them.</span></div>` : ""}
+      ${run ? `<div class="callout info">${icon("spin", 18, 2)}<span>Finding the takes and listening to what was said${sp.started ? ` (started ${when(sp.started)})` : ""}. This takes a minute or two; you can leave this page.</span></div><pre class="log" id="slog"></pre>` : ""}
+      ${sp.status === "failed" || sp.status === "stopped" ? `<div class="callout warn">${icon("bang", 18, 2)}<span>Splitting ${sp.status === "failed" ? `failed: ${esc(sp.error || "see the log")}` : "stopped before it finished"}. Press Split again.</span></div><pre class="log" id="slog"></pre>` : ""}
+      ${d.audio ? `<audio controls preload="none" src="${base}/audio" style="width:100%"></audio>` : ""}
+      ${segs.length ? `<section class="panel" aria-labelledby="h-sg"><div class="row" style="justify-content:space-between"><h2 id="h-sg">What was found</h2>
+          <div class="filters row" role="group" aria-label="Show">${[["all", "All"], ["words", "Wake words"], ["check", "To check"], ["new", "Not sent yet"]].map(([k, l]) => `<button type="button" data-f="${k}" aria-pressed="${filter === k}">${l}</button>`).join("")}</div></div>
+        <p class="hint" style="margin:0">"All" means every wake word in this recording. ${words}; ${count("room")} room sound, ${count("clap")} claps, ${count("other")} other speech, ${count("unclear")} unclear. ${s.speakers.length > 1 ? "More than one speaker: set who said each take." : ""}
+          Changes are saved as you make them; Split again starts over from what it hears.</p>
+        <datalist id="sspots">${s.spots.map(x => `<option value="${esc(x)}">`).join("")}</datalist>
+        <ul class="takes">${shown.map(x => `<li data-i="${x.i}"><button type="button" class="round" data-play="${x.i}" aria-label="Play ${fmtT(x.start)}">${icon("play", 14)}</button>
+          <span class="mono" style="min-width:110px">${fmtT(x.start)} <span class="hint">${(x.end - x.start).toFixed(1)} s</span></span>
+          <span style="flex:1 1 180px">${x.text != null ? `“${esc(x.text)}”` : `<span class="hint">${x.kind === "room" ? "quiet" : x.kind}</span>`}${x.note ? `<span class="hint" style="display:block">${esc(x.note)}</span>` : ""}</span>
+          <select data-label="${x.i}" aria-label="What it is" style="max-width:300px">${optFor(s, x)}</select>
+          <input type="text" data-spot="${x.i}" list="sspots" value="${esc(x.spot || "")}" placeholder="spot" aria-label="Spot" style="width:150px">
+          ${s.speakers.length > 1 ? `<select data-spk="${x.i}" aria-label="Who">${["", ...s.speakers].map(n => `<option ${n === x.speaker ? "selected" : ""}>${esc(n)}</option>`).join("")}</select>` : ""}
+          ${x.sent.length ? `<span class="tag" title="already sent to ${esc(x.sent.join(", "))}">sent</span>` : ""}</li>`).join("") || `<li class="hint">Nothing here.</li>`}</ul></section>` : run ? "" : `<p class="hint">Nothing found yet.</p>`}
+      <section class="panel danger-zone" aria-labelledby="h-sdel"><h2 id="h-sdel">Delete</h2><p class="hint" style="margin:0">Removes this recording. Takes already sent stay in the wake words.</p>
+        <button type="button" class="danger" id="sdel">${icon("trash", 16)}Delete this recording</button></section>`;
+    if ($("#slog")) api(base + "/log").then(r => r.text()).then(t => { if ($("#slog")) $("#slog").textContent = t.split("\n").slice(-12).join("\n"); }).catch(() => {});
+  };
+  const err = m => { if ($("#err")) $("#err").textContent = m || ""; };
+  const refresh = async () => { try { await load(); draw(); } catch (e) { err(e.message); } if (d?.split?.status !== "running") { clearInterval(poll); poll = null; } };
+  let player = null;
+  box.onclick = async e => {
+    const b = e.target.closest("button");
+    if (!b) return;
+    if (b.dataset.play) { const x = d.segments.find(s => s.i === +b.dataset.play); player?.pause(); player = new Audio(`${base}/audio?start=${x.start}&end=${x.end}`); player.play().catch(x => err(x.message)); return; }
+    if (b.dataset.f) { filter = b.dataset.f; draw(); return; }
+    if (b.id === "ssplit") {
+      if (d.segments.some(x => x.label !== x.auto) && !await ask("Split again?", "Your changes to the labels are replaced by fresh guesses. Takes already sent are not sent twice.", "Split again")) return;
+      try { d = await api(base + (d.session.status === "recording" ? "/stop" : "/split"), { method: "POST" }); msg = ""; draw(); if (!poll) poll = setInterval(refresh, 3000); } catch (x) { err(x.message); }
+    }
+    if (b.id === "ssend") {
+      b.disabled = true; err("");
+      try {
+        const r = await api(base + "/send", { method: "POST" });
+        const lines = Object.entries(r.added).map(([n, a]) => `<li><b>${esc(n)}</b>: ${a.pos} take${a.pos === 1 ? "" : "s"} of the phrase, ${a.neg} not-the-phrase clip${a.neg === 1 ? "" : "s"}${r.errors[n] ? ` · <span style="color:var(--warn)">${esc(r.errors[n])}</span>` : ""}${r.notes?.[n] ? ` · <span class="hint">${esc(r.notes[n])}</span>` : ""}</li>`).join("");
+        msg = `<div class="callout ${Object.keys(r.errors).length ? "warn" : "info"}">${icon(Object.keys(r.errors).length ? "bang" : "check", 18, 2)}<span>Sent. Nothing is sent twice.<ul style="margin:6px 0">${lines}</ul>
+          ${r.claps ? `${r.claps} clap${r.claps > 1 ? "s" : ""} saved as this house's room echoes: turn on "Use this house's room echoes" on a wake word's Training page to train with them. ` : ""}Retrain from recordings on each wake word to use the new takes.</span></div>`;
+        d = r; draw();
+      } catch (x) { err(x.message); b.disabled = false; }
+    }
+    if (b.id === "sdel" && await ask("Delete this recording?", "The audio and the list of pieces go. Takes already sent stay in the wake words.", "Delete")) {
+      try { await api(base, { method: "DELETE" }); location.hash = "#/room"; } catch (x) { err(x.message); }
+    }
+  };
+  box.onchange = async e => {
+    const t = e.target, i = t.dataset.label ?? t.dataset.spot ?? t.dataset.spk;
+    if (i === undefined) return;
+    const ch = t.dataset.label !== undefined ? { label: t.value } : t.dataset.spot !== undefined ? { spot: t.value } : { speaker: t.value };
+    try { d = await api(base + "/segments", { method: "PUT", body: { changes: { [i]: ch } } }); } catch (x) { err(x.message); }
+  };
+  try { await load(); } catch (e) { box.innerHTML = `<p class="err">${esc(e.message)}</p>`; return; }
+  draw();
+  if (d.split?.status === "running") poll = setInterval(refresh, 3000);
 }
 
 // ---- help, hardware, data & licenses -----------------------------------------------------------
@@ -962,69 +1956,201 @@ function viewHelp() {
       <li><span>1</span><b>Say what it's for</b>ESPHome, Home Assistant or your own device. That picks the model type and export.</li>
       <li><span>2</span><b>Type the phrase</b>Two to four syllables. Listen to it, then trim the sound-alikes list.</li>
       <li><span>3</span><b>Add real voices</b>Folders of your own takes, near and far. Optional, but it is the biggest gain.</li>
-      <li><span>4</span><b>Train, compare, export</b>Pick the cutoff with the fewest misses you can live with.</li></ol></section>
+      <li><span>4</span><b>Train, compare, export</b>Pick the cutoff with the fewest misses you can live with.</li>
+      <li><span>5</span><b>Keep improving</b>Your devices save clips when the model fires. Listen to the few that need you, then make a new version and see if it beats the one you have.</li></ol></section>
     <div class="cols"><section class="panel wide" aria-labelledby="h-gl" style="gap:0"><h2 id="h-gl" style="margin-bottom:6px">What the words mean</h2>
-      ${qa("Cutoff", "The score (0 to 1) a sound must reach to count as the wake word. Higher means fewer false triggers and more misses. You choose it on Compare &amp; cutoff; it goes into the exported file.")}
-      ${qa("Held-out recordings", "Real recordings listed in HELDOUT.txt and never trained on. They are the honest test: a model always looks good on what it learned from.")}
+      ${qa("Cutoff", "The score (0 to 1) a sound must reach to count as the wake word. Higher means fewer false triggers and more misses. You choose it on Results; it goes into the exported file.")}
+      ${qa("Test recordings", "Real recordings listed in HELDOUT.txt and never trained on. They are the honest test: a model always looks good on what it learned from.")}
       ${qa("False trigger", "The model fires on something that is not the phrase: TV, talk, a sound-alike. Counted on your not-the-phrase clips.")}
       ${qa("Sound-alikes", "Words and phrases close to yours (\"commuter\" for \"computer\"). Synthetic voices say them so the model learns to ignore them.")}
       ${qa("Front end", "How a device turns audio into the features a model sees. ESPHome uses the TFLite Micro front end; some custom devices use another. The export is tagged with the one it was trained on.")}
-      ${qa("microWakeWord and openWakeWord", "The two model types. microWakeWord runs on small ESP32 boards (ESPHome); openWakeWord runs in Home Assistant's Wyoming add-on and on bigger devices.")}</section>
+      ${qa("microWakeWord and openWakeWord", "The two model types. microWakeWord runs on small ESP32 boards (ESPHome); openWakeWord runs in Home Assistant's Wyoming add-on and on bigger devices.")}
+      ${qa("Candidates", "A Standard run trains microWakeWord several times with different seeds and keeps the one with the fewest false triggers on half of your test recordings. The results come from the other half, which played no part in choosing. Results lists all three and says why one was kept.")}
+      ${qa("Combined model", "One microWakeWord file that averages the candidates' scores. Seeds make different mistakes, so the average can fire less on noise without missing calls, but not every round gains: compare it with the kept candidate before choosing it. It is about three times the size and needs three times the tensor arena; it runs anywhere a single model does. Turn it on under Advanced or on the Training page, or press Combine the candidates on Results; choose it under Export. A new run keeps the previous round's candidates: Combine previous on Results averages those instead.")}
+      ${qa("Do I have to open each wake word to record?", "No. Record a room makes one recording for all of them: put the phone next to the device, press Start and follow the script (room sound, three claps, then each wake word from each spot). wakesmith cuts it into takes, you check the guesses, and Send puts each take in its own wake word, with room sound and other talk as not-the-phrase clips for all of them. The claps become this house's room echoes for training.")}
+      ${qa("Versions (v1, v2, …)", "Each wake word can have several versions: every round of training you try is one, numbered in the order you made them, with a short note on what it tried. The wake words page shows one row per word; the arrow folds out its versions. The version marked Live is the one on your devices. Rename the word or edit a version's note from the ⋯ menu.")}
+      ${qa("New version", "In a wake word's ⋯ menu. It copies the version's recipe and recordings, reuses its synthetic voices, brings in the device clips that came since (the clear false alarms labeled by themselves), keeps the newest day of clips aside for the test, trains, and compares the result with what's on your devices. The version before stays as it was.")}
+      ${qa("Next step", "The line under a wake word on the wake words page: the one thing worth doing next, such as checking device clips, testing a trained version, or comparing one that beats what's on your devices. No line means nothing is waiting.")}
+      ${qa("Better than what's on your devices?", "After a version is tested, the model on your devices is scored on the same test clips, and Results says in one sentence how they compare. It counts as better only when it catches at least as many calls, and either catches more or false-triggers less; one that catches fewer is a trade-off, never better. Two things lean the comparison: device clips in the test were saved because the live model fired or nearly did (against it), and the new version's cutoff is picked on these same clips (for it); the sentence says both. Nothing on your devices changes until you change it.")}
+      ${qa("Device clips", "Clips your devices saved when the model fired (or nearly did). Real voices &gt; Device clips brings them in and transcribes them. Clips where Whisper heard none of the phrase's words are labeled “not the phrase” by themselves; the rest wait under Listen. Those false alarms are the best not-the-phrase clips there are.")}
+      ${qa("How do I label a device clip?", "Listen to it: the transcript is only Whisper's guess. <b>The phrase</b>: a person in the room says it as a call (your tests count). <b>Not the phrase</b>: it isn't said: TV, music, other talk, a cough, silence. <b>Leave out</b>: you can't tell, it's cut off, or the words are said but not as a call (the TV saying it, or someone using the words in a sentence). Quick check plays one clip at a time: Y, N or L labels it and moves on, Space plays it again, Backspace goes back.")}
+      ${qa("What a version learns from", "Real voices &gt; What it learns from lists every source: your recordings, labeled device clips and the synthetic voices, with how many clips train and how many are kept aside for the test, and plays any of them.")}
+      ${qa("The cutoff in everyday terms", "On Results, a slider turns each cutoff into calls caught and missed (“misses about 1 in 7”) and, when the test has device clips with times, false alarms a day across your devices.")}
+      ${qa("Sync device clips automatically", "Real voices &gt; Device clips &gt; Sync automatically: set the folder your devices' clips arrive in and the model name they carry, then Sync now or turn on Every day. Only new clips are copied and transcribed, so you only listen to the unclear ones; the Wake words card shows how many are waiting.")}
+      ${qa("Models list", "Every model you export, with its checksum, cutoff and numbers. Mark one offered or live as it moves to your devices; one model per engine is live at a time.")}
+      ${qa("The queue", "Start a run while another is going and it waits its turn: one heavy job at a time keeps memory safe. It goes on even with this page closed; a notice says when each run finishes or fails.")}
+      ${qa("AI assistant", "Optional, on the Hardware page: a language model you run yourself explains failed runs, advises on a cutoff, and can write everyday sentences as not-the-phrase clips. It is off until you turn it on, and audio is never sent. What it gets: the numbers, settings and log lines it explains, and your run labels and version notes; point it only at a server you trust (on this computer or your own network).")}</section>
     <aside class="narrow"><section class="panel" aria-labelledby="h-tr" style="gap:0"><h2 id="h-tr" style="margin-bottom:6px">Something wrong?</h2>
-      ${qa("Training is slow", "Training runs on the CPU; synthetic voices use the GPU if there is one. Close other big programs. The Training page shows the time left from this machine's measured rates.")}
-      ${qa("A stage says stopped", "The training process ended before the stage finished: Stop was pressed, it ran out of memory, or the machine restarted. Press Train to resume from there. microWakeWord needs about 16 GB of RAM.")}
-      ${qa("Intel GPU stopped responding", "A crashed GPU job can leave the driver stuck until a reboot. Reboot, or start wakesmith with --cpu (see Hardware).")}
-      ${qa("Not enough disk", "Each project needs about 23 GB. Delete project folders you no longer need from ~/.local/share/wakesmith/projects/.")}
+      ${qa("Training is slow", "Every heavy stage uses the GPU when there is one (see Hardware); without one, everything runs on the CPU and takes much longer. Close other big programs: worker counts follow free RAM. The Training page shows the time left from this machine's measured rates.")}
+      ${qa("A stage says stopped", "The training process ended before the stage finished: Stop was pressed, it ran out of memory, or the machine restarted. The Training page's Why it stopped panel says what the log shows. Press Train to resume from there. microWakeWord needs about 16 GB of RAM.")}
+      ${qa("Intel GPU stopped responding", "Check that Intel's compute runtime is 26.35 or newer: run wakesmith doctor, which tests it. A crashed GPU job can leave the driver stuck until a reboot. Reboot, or start wakesmith with --cpu (see Hardware).")}
+      ${qa("Not enough disk", "Each project needs about 23 GB, nearly all of it training features. Archive the ones you aren't training (Hardware &gt; Storage): that frees about 20 GB each and keeps recordings, results and models; the next Train rebuilds the features in a few minutes. Wake words idle for 14 days are archived automatically unless a model of theirs is marked offered or live.")}
       ${qa("It misses the word on my device", "Add real recordings from the room the device is in (near and far), retrain from recordings, and compare cutoffs.")}</section>
-      <section class="panel dark"><a href="https://github.com/HuskerMinion/wakesmith#readme" target="_blank" rel="noopener">Full guide (README)</a>
-        <a href="https://github.com/HuskerMinion/wakesmith/issues" target="_blank" rel="noopener">Report a problem</a>
-        <span class="hint">Include the output of <code class="mono">wakesmith doctor</code>.</span></section></aside></div>`;
+      <section class="panel dark"><a href="/guide" target="_blank" rel="noopener">Full guide (README)</a>
+        <span class="hint">Questions or problems: <a href="https://github.com/HuskerMinion/wakesmith/issues" target="_blank" rel="noopener">open an issue on GitHub</a> with the output of <code class="mono">wakesmith doctor</code>.</span></section></aside></div>`;
 }
 
 async function viewHardware() {
   nav("#/hardware");
   const v = $("#view");
   v.innerHTML = `<div class="head"><div><h1>Hardware</h1><p class="sub">What wakesmith found on this machine and the settings that follow from it.</p></div>
-    <button type="button" id="again">${icon("refresh", 16, 2)}Detect again</button></div><div id="hwbody"><p class="hint">detecting…</p></div>`;
+    <button type="button" id="again">${icon("refresh", 16, 2)}Detect again</button></div><div id="hwbody"><p class="hint">detecting…</p></div>
+    <section class="panel" aria-labelledby="h-sto" id="storage" style="margin-top:22px"><h2 id="h-sto">Storage</h2><p class="hint" style="margin:0">measuring…</p></section>
+    <section class="panel" aria-labelledby="h-ai" id="ai"><h2 id="h-ai">AI assistant (optional)</h2><p class="hint" style="margin:0">loading…</p></section>`;
   const draw = h => {
     const vendor = (name, col, fg) => `<span class="vendor" style="border-color:${col};color:${fg}">${name}</span>`;
     const warn = [h.problem, h.disk_warning, h.ram_warning].filter(Boolean);
     $("#hwbody").innerHTML = `${warn.map(w => `<div class="callout warn" style="margin-bottom:16px">${icon("bang", 18, 2)}<span>${esc(w)}</span></div>`).join("")}
       <div class="grid">${h.gpus.map(g => `<article class="card"><div class="row" style="justify-content:space-between">${(([n, c, f]) => vendor(n, c, f))(/intel/i.test(g.name) ? ["Intel", "#4a90e2", "#a9c9f0"] : /amd|radeon/i.test(g.name) ? ["AMD", "#ff4a4a", "#ff9c9c"]
           : /nvidia|geforce|rtx|quadro|tesla/i.test(g.name) ? ["NVIDIA", "#76b900", "#b5e06a"] : ["GPU", "#9aa8bd", "#e6ecf5"])}<span class="badge ok">${icon("check", 14, 2.5)}working</span></div>
-          <h2>${esc(g.device)}</h2><dl class="kv"><dt>Name</dt><dd>${esc(g.name.replace(/\(R\)/g, ""))}</dd><dt>Memory</dt><dd class="mono">${g.memory_gb} GB</dd><dt>Used for</dt><dd>synthetic voices</dd></dl></article>`).join("")}
+          <h2>${esc(g.device)}</h2><dl class="kv"><dt>Name</dt><dd>${esc(g.name.replace(/\(R\)/g, ""))}</dd><dt>Memory</dt><dd class="mono">${g.memory_gb} GB</dd><dt>Used for</dt><dd>synthetic voices${g.device === h.mww_device ? " and microWakeWord training" : ""}</dd></dl></article>`).join("")}
         <article class="card"><div class="row" style="justify-content:space-between">${vendor("CPU", "#9aa8bd", "#e6ecf5")}<span class="badge ok">${icon("check", 14, 2.5)}working</span></div>
           <h2>Processor</h2><dl class="kv"><dt>Cores</dt><dd class="mono">${h.cpus}</dd><dt>RAM</dt><dd class="mono">${Math.round(h.ram_free_gb)} of ${Math.round(h.ram_gb)} GB free</dd>
-          <dt>Used for</dt><dd>${h.gpus.length ? "features and training" : "everything"}</dd></dl></article></div>
+          <dt>Used for</dt><dd>${h.gpus.length ? (h.mww_device === "cpu" ? "features and training" : "augmenting clips and building batches") : "everything"}</dd></dl></article></div>
       <div class="cols" style="margin-top:22px"><section class="panel wide" aria-labelledby="h-set"><h2 id="h-set">Settings that follow</h2><dl class="kv">
         <dt>Synthetic voices</dt><dd>on ${esc(h.tts_devices.join(", "))}, batch ${h.tts_batch}</dd>
-        <dt>Training</dt><dd>on the CPU (microWakeWord's TensorFlow has no Intel GPU support; the openWakeWord head is small)</dd>
+        <dt>Training</dt><dd>microWakeWord on ${h.mww_device === "cpu" ? "the CPU" : esc(h.mww_device)} (wakesmith's PyTorch port; microWakeWord exports the model); openWakeWord features on ${h.oww_feature_device === "cpu" ? "the CPU" : esc(h.oww_feature_device)}, its head on ${h.oww_device === "tf" || h.oww_device === "torch-cpu" ? "the CPU" : esc(h.oww_device)}</dd>
         <dt>Workers</dt><dd>${h.workers}, from free RAM</dd><dt>Disk</dt><dd>${Math.round(h.disk_free_gb)} GB free; about 23 GB per project</dd></dl>
         <p class="hint" style="margin:0">To ignore the GPU (for one that misbehaves), start wakesmith with <code class="mono">wakesmith serve --cpu</code>.</p></section>
         <aside class="narrow"><section class="panel" aria-labelledby="h-sup"><h2 id="h-sup">Supported</h2>
           <div class="row" style="justify-content:space-between">${vendor("Intel Arc", "#4a90e2", "#a9c9f0")}<span>tested</span></div>
-          <div class="row" style="justify-content:space-between">${vendor("NVIDIA", "#76b900", "#b5e06a")}<span>tested on one card (WSL2)</span></div>
-          <div class="row" style="justify-content:space-between">${vendor("AMD", "#ff4a4a", "#ff9c9c")}<span style="color:var(--warn)">experimental (ROCm), not tested yet</span></div>
+          <div class="row" style="justify-content:space-between">${vendor("NVIDIA", "#76b900", "#b5e06a")}<span>tested (RTX 5060 Ti, WSL2)</span></div>
+          <div class="row" style="justify-content:space-between">${vendor("AMD", "#ff4a4a", "#ff9c9c")}<span style="color:var(--warn)">experimental (ROCm)</span></div>
           <div class="row" style="justify-content:space-between">${vendor("CPU", "#9aa8bd", "#e6ecf5")}<span>works, slower voices</span></div></section></aside></div>`;
   };
   const load = async () => { try { await hardware(); draw(HW); } catch (e) { $("#hwbody").innerHTML = `<p class="err">${esc(e.message)}</p>`; } };
   $("#again").onclick = load;
+  const drawAi = s => {
+    $("#ai").innerHTML = `<h2 id="h-ai">AI assistant (optional)</h2>
+      <p style="margin:0;color:var(--soft)">An AI model can explain why a training job stopped and give advice on a round's results. It runs on your own model server
+        (llama.cpp's llama-server, Ollama, LM Studio, vLLM or anything else that speaks the OpenAI chat API); wakesmith doesn't include one.</p>
+      <div class="callout info">${icon("info", 18, 2)}<span>What gets sent to that server: log excerpts, the project's settings (folder names left out), this machine's hardware summary and result numbers.
+        Never audio. Nothing is sent while it's off, and it only gives advice: it never changes a project.</span></div>
+      <label style="display:flex;gap:12px;align-items:flex-start;min-height:44px;cursor:pointer"><input type="checkbox" id="aion" ${s.enabled ? "checked" : ""} style="width:22px;height:22px;margin:2px 0 0;accent-color:var(--orange)">
+        <span><b>Use the AI assistant</b><br><span class="hint">Adds "Explain this failure" on Training and "Ask for advice" on Results.</span></span></label>
+      <label class="f" for="aiurl">Server address <span class="hint">llama-server: http://127.0.0.1:8080 · Ollama: http://127.0.0.1:11434 · LM Studio: http://127.0.0.1:1234</span>
+        <input type="text" id="aiurl" class="mono" value="${esc(s.base_url)}" autocomplete="off"></label>
+      <div class="row" style="align-items:flex-end">
+        <label class="f grow" for="aimodel">Model <span class="hint">optional; Ollama and LM Studio need its name</span><input type="text" id="aimodel" value="${esc(s.model)}" placeholder="the server's default" autocomplete="off"></label>
+        <label class="f grow" for="aikey">API key <span class="hint">${s.has_key ? `saved (${esc(s.key_hint)})` : "only if your server asks for one"}</span>
+          <input type="password" id="aikey" autocomplete="off" placeholder="${s.has_key ? "leave empty to keep the saved key" : "none"}"></label>
+        <label class="f" for="aitime" style="flex:0 1 150px">Timeout, seconds <input type="number" id="aitime" min="5" max="900" value="${esc(s.timeout)}"></label></div>
+      <div class="row"><button type="button" class="primary" id="aisave">Save</button><button type="button" id="aitest">Test</button>
+        ${s.has_key ? `<button type="button" class="danger" id="aiforget">Forget the key</button>` : ""}<span class="hint" id="aimsg"></span></div>
+      <div class="err" id="aierr"></div><div id="aiout" style="display:flex;flex-direction:column;gap:10px"></div>`;
+    const msg = t => $("#aimsg").textContent = t, err = t => $("#aierr").textContent = t || "";
+    const save = async extra => {
+      const key = $("#aikey").value.trim();
+      AI = await api("/api/assistant", { method: "PUT", body: { enabled: $("#aion").checked, base_url: $("#aiurl").value, model: $("#aimodel").value,
+        timeout: $("#aitime").value, ...(key ? { api_key: key } : {}), ...extra } });
+      return AI;
+    };
+    $("#aisave").onclick = async () => { err(); try { drawAi(await save()); $("#aimsg").textContent = AI.enabled ? "saved: the assistant is on" : "saved: the assistant is off"; } catch (e) { err(e.message); } };
+    if ($("#aiforget")) $("#aiforget").onclick = async () => { err(); try { drawAi(await save({ api_key: "" })); $("#aimsg").textContent = "key forgotten"; } catch (e) { err(e.message); } };
+    $("#aitest").onclick = async () => {
+      err(); $("#aiout").innerHTML = "";
+      if (!$("#aion").checked) { err("Turn the assistant on first: nothing is sent while it's off."); return; }
+      const b = $("#aitest"); b.disabled = true; msg("saving and asking your model…");
+      try {
+        await save();
+        const r = await api("/api/assistant/test", { method: "POST" });
+        msg(`${r.model || "your model"} answered in ${r.seconds} s`); $("#aiout").innerHTML = `<div class="aians">${mdLite(r.answer)}</div>`;
+      } catch (e) { msg(""); err(e.message); }
+      finally { b.disabled = false; }
+    };
+  };
+  aiLoad().then(drawAi);
   if (HW) draw(HW); else load();
+  storagePanel();
+}
+
+// Disk use per wake word, Archive buttons and the auto-archive setting (archive.py).
+async function storagePanel() {
+  const el = $("#storage"); if (!el) return;
+  let d;
+  try { d = await api("/api/storage"); } catch (e) { el.innerHTML = `<h2 id="h-sto">Storage</h2><p class="err">${esc(e.message)}</p>`; return; }
+  if (!$("#storage")) return;
+  const rows = d.projects, days = d.settings.archive_after_days, rule = d.rule_days;
+  const idle = rows.filter(r => !r.auto_skip);
+  const total = rows.reduce((t, r) => t + r.bytes, 0), free = rows.reduce((t, r) => t + r.freeable, 0);
+  const ago = r => r.idle_days < 1 ? "today" : `${Math.floor(r.idle_days)} day${Math.floor(r.idle_days) === 1 ? "" : "s"} ago`;
+  const use = r => [r.live && `${r.live} live`, r.offered && `${r.offered} offered`].filter(Boolean).join(", ") || "none";
+  const clips = r => r.clips.own ? (r.clips.shared_with.length ? `own, shared with ${r.clips.shared_with.map(esc).join(", ")}` : "own") : r.clips.link_to ? `${esc(r.clips.link_to)}'s` : "none";
+  const busy = r => r.running || r.queued;
+  el.innerHTML = `<h2 id="h-sto">Storage</h2>
+    <p style="margin:0;color:var(--soft)">${rows.length} wake word${rows.length === 1 ? "" : "s"} use ${gb(total)}. Archiving can free ${gb(free)}: it removes only files wakesmith makes again by itself
+      (training features, prepared copies of your recordings, spare checkpoints of best-of-N runs). Settings, recordings, device clips, results, exported files and the trained model stay,
+      and the next Train rebuilds the features first (a few minutes).</p>
+    <div class="err" id="stoerr"></div>
+    <div class="tablebox"><table style="min-width:820px"><thead><tr><th scope="col">Wake word</th><th scope="col">Size</th><th scope="col">Can free</th><th scope="col">Last used</th>
+      <th scope="col">Models offered or live</th><th scope="col">Synthetic clips</th><th scope="col"></th></tr></thead><tbody>
+      ${rows.map(r => `<tr><td><b>${esc(r.label)}</b> <span class="hint mono">${esc(r.name)}</span>${r.archived ? ` <span class="tag">Archived</span>` : ""}${r.running ? ` <span class="badge info">training</span>` : r.queued ? ` <span class="badge idle">queued</span>` : ""}</td>
+        <td class="mono">${gb(r.bytes)}</td><td class="mono"${r.kept.length ? ` title="${esc(r.kept.join("\n"))}"` : ""}>${r.freeable >= 1e6 ? gb(r.freeable) : "—"}${r.kept.length ? ` <span class="hint">(some kept)</span>` : ""}</td><td>${ago(r)}</td><td>${use(r)}</td><td>${clips(r)}</td>
+        <td><div class="row" style="gap:6px;flex-wrap:nowrap">${r.freeable >= 1e6 ? `<button type="button" data-arch="${esc(r.name)}" ${busy(r) ? "disabled title=\"wait until its job ends\"" : ""}>Archive</button>` : ""}
+          ${r.clips.own && !r.clips.shared_with.length && r.freeable_with_clips > r.freeable ? `<button type="button" class="danger" data-arch="${esc(r.name)}" data-clips="1" ${busy(r) ? "disabled" : ""} title="also remove its own synthetic clips">+ clips</button>` : ""}</div></td></tr>`).join("")}
+      </tbody></table></div>
+    <div class="row"><button type="button" id="archidle" ${idle.length ? "" : "disabled"}>Archive all idle (${idle.length})</button>
+      <span class="hint">Idle: nothing happened in it for ${rule} days or more, no job running or queued, and no model marked offered or live on its Models list. Clips are never removed this way.</span></div>
+    <div class="row" style="align-items:flex-end"><label class="f" for="archdays" style="flex:0 1 260px">Archive automatically after this many idle days
+        <input type="number" id="archdays" min="0" max="3650" value="${days}"></label>
+      <button type="button" id="archsave">Save</button><span class="hint" id="archmsg">${days ? `On: checked when wakesmith starts and once a day.` : "Off."} 0 turns it off.</span></div>`;
+  const err = m => $("#stoerr").textContent = m || "";
+  el.onclick = async e => {
+    const b = e.target.closest("button[data-arch]"); if (!b) return;
+    const r = rows.find(x => x.name === b.dataset.arch), withClips = !!b.dataset.clips;
+    const body = withClips
+      ? `This removes ${r.label}'s training features, prepared recordings and spare checkpoints, and its own synthetic clips: ${gb(r.freeable_with_clips)}. Making the clips again takes a long time (speech synthesis). Settings, recordings, results, exported files and the trained model stay.`
+      : `This removes ${gb(r.freeable)} of files wakesmith makes again by itself: training features, prepared copies of recordings and spare checkpoints. Settings, recordings, device clips, results, exported files, the trained model and the synthetic clips stay. The next Train rebuilds the features first.`;
+    if (!await ask(`Archive ${r.label}?`, body, withClips ? "Archive with clips" : "Archive")) return;
+    err(); b.disabled = true;
+    try { await api(`/api/projects/${enc(r.name)}/archive`, { method: "POST", body: { clips: withClips } }); storagePanel(); }
+    catch (x) { err(x.message); b.disabled = false; }
+  };
+  $("#archidle").onclick = async () => {
+    if (!await ask(`Archive ${idle.length} idle wake word${idle.length === 1 ? "" : "s"}?`,
+      `${idle.map(r => r.label).join(", ")}: frees about ${gb(idle.reduce((t, r) => t + r.freeable, 0))}. Clips, settings, recordings, results, exported files and trained models stay.`, "Archive them")) return;
+    err(); $("#archidle").disabled = true;
+    try { await api("/api/storage/archive-idle", { method: "POST" }); storagePanel(); } catch (x) { err(x.message); $("#archidle").disabled = false; }
+  };
+  $("#archsave").onclick = async () => {
+    err();
+    try { await api("/api/storage", { method: "PUT", body: { archive_after_days: +$("#archdays").value || 0 } }); storagePanel(); }
+    catch (x) { err(x.message); }
+  };
 }
 
 async function viewData() {
   nav("#/data");
   const v = $("#view");
-  v.innerHTML = `<div><h1>Data &amp; licenses</h1><p class="sub">Everything a model is trained on, and the terms that come with it. wakesmith's own code is Apache-2.0; the models you make carry the terms of their training data.</p></div>
-    <div class="callout warn">${icon("bang", 18, 2)}<span><b>Personal profile (the default):</b> some of this data allows non-commercial use only (CC BY-NC), so the models you make are for personal use. An "open" profile with CC BY / CC0 data only is planned.</span></div>
+  v.innerHTML = `<div><h1>Data &amp; licenses</h1><p class="sub">Everything a model is trained on, and the terms that come with it. wakesmith itself is free for noncommercial use (PolyForm Noncommercial); the models you make carry the terms of their training data.</p></div>
+    <section class="panel" aria-labelledby="h-dl" id="dlbox"><h2 id="h-dl">Training data</h2><p class="hint" style="margin:0">checking…</p></section>
+    <div class="callout warn">${icon("bang", 18, 2)}<span><b>Personal profile (the default):</b> some of this data allows non-commercial use only (CC BY-NC), so the models you make are for personal use.</span></div>
     <section class="panel" aria-labelledby="h-ds"><h2 id="h-ds">Downloaded data</h2><div class="tablebox" id="assets"><p class="hint">loading…</p></div></section>`;
-  try {
-    const list = await api("/api/assets");
-    const tag = l => /NC/.test(l) ? "warn" : /no license/i.test(l) ? "idle" : "ok";
-    $("#assets").innerHTML = `<table style="min-width:680px"><thead><tr><th scope="col">Data</th><th scope="col">Used for</th><th scope="col">Size</th><th scope="col">License</th></tr></thead><tbody>
-      ${list.map(a => `<tr><td><b>${esc(a.name)}</b>${a.present ? "" : ` <span class="badge idle">not downloaded</span>`}</td><td style="color:var(--soft)">${esc(a.used_for)}</td>
-        <td class="mono">${a.gb.toFixed(2)} GB</td><td><span class="badge ${tag(a.license)}" style="white-space:normal">${esc(a.license)}</span></td></tr>`).join("")}</tbody></table>`;
-  } catch (e) { $("#assets").innerHTML = `<p class="err">${esc(e.message)}</p>`; }
+  const table = async () => {
+    try {
+      const list = await api("/api/assets");
+      const tag = l => /NC/.test(l) ? "warn" : /no license/i.test(l) ? "idle" : "ok";
+      $("#assets").innerHTML = `<table style="min-width:680px"><thead><tr><th scope="col">Data</th><th scope="col">Used for</th><th scope="col">Size</th><th scope="col">License</th></tr></thead><tbody>
+        ${list.map(a => `<tr><td><b>${esc(a.name)}</b>${a.present ? "" : ` <span class="badge idle">not downloaded</span>`}</td><td style="color:var(--soft)">${esc(a.used_for)}</td>
+          <td class="mono">${a.gb.toFixed(2)} GB</td><td><span class="badge ${tag(a.license)}" style="white-space:normal">${esc(a.license)}</span></td></tr>`).join("")}</tbody></table>`;
+    } catch (e) { $("#assets").innerHTML = `<p class="err">${esc(e.message)}</p>`; }
+  };
+  let timer = null;
+  const box = async () => {
+    const el = $("#dlbox"); if (!el) { clearInterval(timer); return; }
+    let d; try { d = await api("/api/assets/download"); } catch (e) { el.innerHTML = `<h2 id="h-dl">Training data</h2><p class="err">${esc(e.message)}</p>`; return; }
+    const pct = d.current_size ? Math.min(100, Math.round(100 * d.current_bytes / d.current_size)) : null;
+    el.innerHTML = `<h2 id="h-dl">Training data</h2>${d.running
+      ? `<p style="margin:0">${icon("spin", 16, 2.5)} Downloading <b>${esc(d.current || "")}</b>${pct != null ? ` · ${pct}%` : ""} · ${d.done.length} done, ${d.missing.length} to go (${d.missing_gb} GB). You can leave this page; it goes on.</p>`
+      : d.missing.length ? `<p style="margin:0">${d.missing.length} item${d.missing.length > 1 ? "s" : ""} not downloaded yet (${d.missing_gb} GB). Training needs them.</p>
+          ${d.error ? `<div class="callout warn">${icon("bang", 18, 2)}<span>${esc(d.error)}. Press Download again to resume.</span></div>` : ""}
+          <div class="row"><button type="button" class="primary" id="dlgo">${icon("down", 16, 2)}Download them</button><span class="hint">or run <code class="mono">wakesmith setup</code> in a terminal</span></div>`
+      : `<p style="margin:0">${icon("check", 16, 2.5)} All training data is here.</p>`}`;
+    if ($("#dlgo")) $("#dlgo").onclick = async () => { try { await api("/api/assets/download", { method: "POST" }); } catch (e) { alert(e.message); } box(); };
+    if (!d.running && timer) { clearInterval(timer); timer = null; table(); }
+    if (d.running && !timer) timer = setInterval(box, 3000);
+  };
+  table(); box();
 }
 
 hardware(); route();

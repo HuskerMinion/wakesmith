@@ -1,0 +1,43 @@
+# A version tag (v0.3.0, ...) builds the wheel, checks it, and attaches it to a GitHub Release.
+name: release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  wheel:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          python-version: "3.12"
+      - name: Build
+        run: uv build --wheel
+      - name: Check the version matches the tag
+        run: |
+          v=$(uv run --no-project python -c "import tomllib; print(tomllib.load(open('pyproject.toml','rb'))['project']['version'])")
+          test "v$v" = "$GITHUB_REF_NAME" || { echo "pyproject version $v does not match tag $GITHUB_REF_NAME"; exit 1; }
+      - name: Check what the wheel ships
+        run: |
+          python3 - <<'PY'
+          import glob, sys, zipfile
+          names = zipfile.ZipFile(glob.glob("dist/*.whl")[0]).namelist()
+          need = ["LICENSE", "THIRD_PARTY_NOTICES.md", "wakesmith/web/index.html", "wakesmith/web/review.html",
+                  "wakesmith/web/FONTS-LICENSE.txt", "wakesmith/web/favicon.png", "wakesmith/tts/vits/LICENSE"]
+          missing = [n for n in need if not any(x.endswith(n) for x in names)]
+          bad = [x for x in names if x.endswith((".wav", ".tflite", ".onnx", ".pt")) or "/tests/" in x]
+          meta = zipfile.ZipFile(glob.glob("dist/*.whl")[0]).read([n for n in names if n.endswith("METADATA")][0]).decode()
+          fonts = sum(x.endswith(".woff2") for x in names)
+          ok = "License-Expression: PolyForm-Noncommercial-1.0.0" in meta and meta.count("License-File: ") == 4 and fonts == 7
+          print(len(names), "files; missing:", missing, "unexpected:", bad, "fonts:", fonts, "license metadata ok:", ok)
+          sys.exit(1 if missing or bad or not ok else 0)
+          PY
+      - name: Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "$GITHUB_REF_NAME" dist/*.whl --title "wakesmith ${GITHUB_REF_NAME#v}" --notes-file RELEASE_NOTES.md

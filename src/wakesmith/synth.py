@@ -76,12 +76,25 @@ def complete(p: Project) -> bool:
     )
 
 
+def _free_gpu() -> None:
+    """Hand cached GPU memory back to the driver once the speech models are gone."""
+    import gc
+
+    import torch
+
+    gc.collect()
+    for backend in (torch.cuda, getattr(torch, "xpu", None)):
+        if backend is not None and backend.is_available():
+            backend.empty_cache()
+
+
 def run(p: Project, devices: list[str], batch_size: int, log=print) -> dict:
     """Generate every part, one process per device when there are several."""
     if len(devices) < 2:
         stats = {}
         for part in SPLITS:
             stats[part] = run_part(p, part, devices[0], batch_size)
+        _free_gpu()  # in-process: torch's cache would hold the card (12 GB of 16) through training
         return stats
     procs = {}
     for part, dev in zip(SPLITS, devices):
@@ -93,6 +106,29 @@ def run(p: Project, devices: list[str], batch_size: int, log=print) -> dict:
     for part, (proc, logf) in procs.items():
         rc = proc.wait()
         logf.close()
+        # A GPU process can abort outright (Intel XPU: a device-side "index out of bounds" assert on some
+        # sound-alike texts). Finished clips are kept and a resumed run uses new seeds, so retry on the same
+        # GPU, then finish the part on the CPU.
+        dev = devices[list(procs).index(part)]
+        for attempt, retry_dev in enumerate((dev, dev, "cpu"), 1):
+            if rc == 0:
+                break
+            log(
+                f"generating {part} clips on {dev} failed (exit {rc}); attempt {attempt} on {retry_dev}"
+            )
+            cmd = [
+                sys.executable,
+                "-m",
+                "wakesmith.synth",
+                str(p.dir),
+                part,
+                retry_dev,
+                str(batch_size),
+            ]
+            with open(p.path("logs", f"generate-{part}.log"), "a") as logf:
+                rc = subprocess.run(
+                    cmd, stdout=logf, stderr=subprocess.STDOUT, check=False
+                ).returncode
         if rc != 0:
             raise RuntimeError(f"generation of {part} clips failed: see logs/generate-{part}.log")
         stats[part] = json.loads(p.path("logs", f"generate-{part}.result.json").read_text())

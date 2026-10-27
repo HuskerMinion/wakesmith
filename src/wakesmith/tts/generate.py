@@ -163,12 +163,17 @@ class Generator:
 
         self._resample = lambda a: AF.resample(a, self.rate, OUT_RATE)
 
+    def _pick_length_scale(self, settings: VoiceSettings) -> float:
+        self.length_scale = self.rng.choice(settings.length_scales)
+        return self.length_scale
+
     def batch(
         self, texts: Sequence[str], settings: VoiceSettings | None = None
     ) -> list[np.ndarray]:
         """One batch, shared voice settings, random speaker pair per clip. float32 at 16 kHz."""
         settings = settings or VoiceSettings()
         r = self.rng
+        self.length_scale = 1.0
         ids = [phonemize.phoneme_ids(t, self.id_map, self.voice) for t in texts]
         n = len(ids)
         spk1 = torch.tensor([r.randrange(self.n_speakers) for _ in range(n)], device=self.device)
@@ -180,7 +185,7 @@ class Generator:
             spk1,
             spk2,
             t,
-            r.choice(settings.length_scales),
+            self._pick_length_scale(settings),
             r.choice(settings.noise_scales),
             r.choice(settings.noise_ws),
             self.device,
@@ -208,8 +213,75 @@ def write_wav(path, audio: np.ndarray) -> None:
         w.writeframes(pcm.tobytes())
 
 
+def _clip_ok(path: Path) -> bool:
+    try:
+        with wave.open(str(path), "rb") as w:
+            return w.getnframes() > 0 and path.stat().st_size >= 44 + w.getnframes() * 2
+    except (wave.Error, EOFError, OSError):
+        return False
+
+
 def count_clips(out_dir: Path) -> int:
-    return len(list(out_dir.glob("clip_[0-9][0-9][0-9][0-9][0-9][0-9].wav")))
+    """Clips written so far: the unbroken run from clip_000000. A PC that resets mid-batch can leave a cut-off
+    or zero-filled clip; it and every clip after it are deleted, so generation redoes them."""
+    for part in out_dir.glob("clip_*.wav.part"):
+        part.unlink()
+    clips = sorted(out_dir.glob("clip_[0-9][0-9][0-9][0-9][0-9][0-9].wav"))
+    good = next(
+        (i for i, c in enumerate(clips) if c.name != f"clip_{i:06d}.wav" or not _clip_ok(c)),
+        len(clips),
+    )
+    if good < len(clips):
+        logger.warning(
+            "%s: %s is cut off or out of order; generating again from it",
+            out_dir.name,
+            clips[good].name,
+        )
+        for c in clips[good:]:
+            c.unlink()
+    return good
+
+
+GPU_MEMORY_SHARE = 0.7  # aim for this share of the card's memory (measured peaks vary by ~10%)
+
+
+class _MemoryGuard:
+    """Sizes GPU batches from measured memory. An Intel GPU that runs out spills into system RAM (until the
+    kernel's OOM killer steps in) instead of failing, so the batch is kept inside the card: the first batch
+    is a quarter-size probe, and every batch's peak per clip, scaled up to the slowest speaking speed
+    (memory grows with clip length; each batch draws one speed), caps the batches after it. Batches only
+    ever shrink below the configured size."""
+
+    def __init__(self, device: torch.device, batch_size: int, slowest: float):
+        self.slowest = slowest
+        self.api = getattr(torch, device.type, None) if device.type in ("cuda", "xpu") else None
+        self.device, self.limit = device, batch_size
+        self.total = 0
+        if self.api is not None:
+            try:
+                self.total = self.api.get_device_properties(device).total_memory
+            except (RuntimeError, AttributeError):
+                self.api = None
+
+    def next_size(self, first: bool) -> int:
+        if self.api is None or not first:
+            return self.limit
+        return max(1, self.limit // 4)
+
+    def measured(self, n_clips: int, length_scale: float) -> None:
+        if self.api is None or n_clips < 1:
+            return
+        peak = self.api.max_memory_reserved(self.device)
+        self.api.empty_cache()  # else the cache keeps the largest batch reserved and every later peak shows it
+        self.api.reset_peak_memory_stats(self.device)
+        per_clip = peak / n_clips * max(1.0, self.slowest / length_scale)
+        fit = int(GPU_MEMORY_SHARE * self.total / per_clip)
+        if fit < self.limit:
+            logger.warning(
+                "TTS batch %d -> %d: a batch of %d clips took %.1f of %.1f GB on %s",
+                self.limit, max(1, fit), n_clips, peak / 2**30, self.total / 2**30, self.device,
+            )  # fmt: skip
+            self.limit = max(1, fit)
 
 
 def generate(
@@ -222,8 +294,10 @@ def generate(
     seed: int | None = None,
     settings: VoiceSettings | None = None,
     on_progress: Callable[[int, int], None] | None = None,
+    in_order: bool = False,
 ) -> dict:
     """Write `n` clips of `phrases` (cycled at random) to out_dir/clip_NNNNNN.wav, resuming.
+    With in_order, clip i says phrases[i % len(phrases)]: each text once before any repeats.
 
     Returns {"written": .., "failed": ..}. A batch that raises (e.g. the occasional XPU kernel error)
     is retried at half size down to 1 clip; only clips that fail alone are skipped."""
@@ -231,7 +305,11 @@ def generate(
     done = count_clips(out_dir)
     if done >= n:
         return {"written": 0, "failed": 0}
+    # a resumed run continues with other voices: the same seed would repeat the first clips exactly
+    if seed is not None and done:
+        seed += done
     gen = Generator(model_path, device, seed)
+    guard = _MemoryGuard(gen.device, batch_size, max((settings or VoiceSettings()).length_scales))
     rng = random.Random(seed)
     idx, failed = done, 0
 
@@ -239,6 +317,7 @@ def generate(
         nonlocal idx, failed
         try:
             clips = gen.batch(texts, settings)
+            guard.measured(len(texts), gen.length_scale)
         except RuntimeError as e:
             if len(texts) == 1:
                 failed += 1
@@ -251,11 +330,21 @@ def generate(
         for c in clips:
             if idx >= n:
                 break
-            write_wav(out_dir / f"clip_{idx:06d}.wav", c)
+            tmp = (
+                out_dir / f"clip_{idx:06d}.wav.part"
+            )  # renamed once whole: no half clip under the real name
+            write_wav(tmp, c)
+            tmp.replace(out_dir / f"clip_{idx:06d}.wav")
             idx += 1
 
+    first = True
     while idx < n:
-        texts = [rng.choice(phrases) for _ in range(min(batch_size, n - idx))]
+        size = min(guard.next_size(first), n - idx)
+        if in_order:
+            texts = [phrases[(idx + k) % len(phrases)] for k in range(size)]
+        else:
+            texts = [rng.choice(phrases) for _ in range(size)]
+        first = False
         run(texts)
         if on_progress:
             on_progress(idx, n)

@@ -3,6 +3,8 @@
 Two source folders, which wakesmith only ever reads:
   positives  clips of the wake phrase          (class "wake")
   negatives  clips that are not the phrase      (class "not_wake"), ideally real false triggers
+plus, once device clips have been labeled (rounds.py), the project's own <project>/devices/pos and
+devices/neg ("dpos", "dneg").
 Each may hold labels.csv (column "file": paths relative to the folder; other columns are shown on
 the review page) and HELDOUT.txt (relative paths, one per line, "#" comments). Held-out clips are
 never trained on; they are what `wakesmith test` scores. Without labels.csv every *.wav below the
@@ -10,7 +12,7 @@ folder counts.
 
 Review-page verdicts (<project>/review/decisions.json) correct training labels only. Held-out clips
 are never moved, so scores stay comparable between models; corrections to them are only reported.
-Clip ids are "pos/<file>" and "neg/<file>".
+Clip ids are "<source>/<file>", e.g. "pos/<file>", "dneg/<file>".
 """
 
 from __future__ import annotations
@@ -26,7 +28,15 @@ import soundfile as sf
 from .project import Project
 
 SR = 16000
-NATIVE = {"wake": "pos", "not_wake": "neg"}
+# each source's class: the chosen folders, labeled device clips (rounds.py), takes recorded on the page
+KIND = {
+    "pos": "wake",
+    "neg": "not_wake",
+    "dpos": "wake",
+    "dneg": "not_wake",
+    "rpos": "wake",
+    "rneg": "not_wake",
+}
 VERDICTS = ("wake", "not_wake", "unsure", "bad_audio")
 
 
@@ -38,6 +48,21 @@ class RealData:
             for k, v in (("pos", project.real.positives), ("neg", project.real.negatives))
             if v
         }
+        for k, sub in (("dpos", "pos"), ("dneg", "neg")):  # labeled device clips (rounds.py)
+            d = project.path("devices", sub)
+            if (d / "labels.csv").exists():
+                self.sources[k] = d
+        # takes recorded on the page (and sent from Record a room): always used, next to a chosen folder;
+        # when that folder is the recordings folder itself, it already counts as "pos" / "neg"
+        for k, sub in (("rpos", "pos"), ("rneg", "neg")):
+            d = project.path("recordings", sub)
+            chosen = [v.resolve() for key, v in self.sources.items() if key in ("pos", "neg")]
+            if (d / "labels.csv").exists() and d.resolve() not in chosen:
+                self.sources[k] = d
+
+    def of_kind(self, kind: str) -> list[str]:
+        """The sources holding clips of class `kind` ("wake" or "not_wake")."""
+        return [s for s in self.sources if KIND[s] == kind]
 
     def __bool__(self) -> bool:
         return bool(self.sources)
@@ -82,22 +107,22 @@ class RealData:
     def training_items(self, want: str) -> tuple[list[tuple[str, str]], list[str]]:
         """Training clips of class `want` as (src, file), corrections applied, held-out excluded."""
         v_by_id = self.verdicts()
-        native = NATIVE[want]
         items, notes = [], []
         for src in self.sources:
             files, held, _ = self.listing(src)
             for f in files:
                 v = v_by_id.get(f"{src}/{f}")
+                native = KIND[src] == want
                 if f in held:
-                    if src == native and v and v != want:
+                    if native and v and v != want:
                         notes.append(f"held-out {src}/{f} reviewed as {v}: kept in the test set")
                     continue
-                if src == native and v in (None, want):
+                if native and v in (None, want):
                     items.append((src, f))
-                elif src != native and v == want:
+                elif not native and v == want:
                     items.append((src, f))
                     notes.append(f"moved in: {src}/{f}")
-                elif src == native:
+                elif native:
                     notes.append(f"dropped ({v}): {src}/{f}")
         return items, notes
 
@@ -117,9 +142,9 @@ class RealData:
     def prepare(self) -> dict[str, int]:
         """Write real/{train,test} (trimmed positives) and real_neg/{train,test}."""
         stats: dict[str, int] = {}
-        if "pos" in self.sources:
+        if self.of_kind("wake"):
             stats.update(self._prep_positives())
-        if "neg" in self.sources:
+        if self.of_kind("not_wake"):
             stats.update(self._prep_negatives())
         return stats
 
@@ -127,7 +152,7 @@ class RealData:
         out = self.p.path("real")
         shutil.rmtree(out, ignore_errors=True)
         train, _ = self.training_items("wake")
-        held = [("pos", f) for f in self.heldout("pos")]
+        held = [(s, f) for s in self.of_kind("wake") for f in self.heldout(s)]
         n = skipped = 0
         for split, items in (("test", held), ("train", train)):
             d = out / split
@@ -150,9 +175,9 @@ class RealData:
         shutil.rmtree(out, ignore_errors=True)
         for d in ("train", "test"):
             (out / d).mkdir(parents=True)
-        held = self.heldout("neg")
-        for f in held:
-            shutil.copy(self.file("neg", f), out / "test" / flat_name("neg", f))
+        held = [(s, f) for s in self.of_kind("not_wake") for f in self.heldout(s)]
+        for s, f in held:
+            shutil.copy(self.file(s, f), out / "test" / flat_name(s, f))
         train, _ = self.training_items("not_wake")
         n_win = 0
         for src, f in train:

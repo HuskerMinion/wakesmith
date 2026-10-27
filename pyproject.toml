@@ -4,10 +4,11 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "wakesmith"
-version = "0.2.0"
+version = "0.3.0"
 description = "Forge your own wake word: train microWakeWord and openWakeWord models from synthetic speech plus your own recordings, on Intel Arc, NVIDIA or CPU"
 readme = "README.md"
-license = "Apache-2.0"
+license = "PolyForm-Noncommercial-1.0.0"
+license-files = ["LICENSE", "THIRD_PARTY_NOTICES.md", "src/wakesmith/tts/vits/LICENSE", "src/wakesmith/web/FONTS-LICENSE.txt"]
 requires-python = ">=3.10,<3.13"
 authors = [{ name = "HuskerMinion" }]
 # torch/torchaudio are not listed: `wakesmith setup` installs the build that matches the hardware
@@ -29,6 +30,9 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = ["pytest>=8", "ruff>=0.6"]
+# transcribing device clips (wakesmith clips transcribe): Whisper on any torch device; faster-whisper
+# (Home Assistant's engine) is used instead when it is installed
+whisper = ["transformers>=4.40"]
 
 [project.scripts]
 wakesmith = "wakesmith.cli:app"
