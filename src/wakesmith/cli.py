@@ -26,9 +26,11 @@ def _cpu_only(cpu: bool) -> None:
 @app.command()
 def doctor(cpu: bool = typer.Option(False, "--cpu", help=CPU_HELP)) -> None:
     """Show detected hardware, the settings that follow from it, and downloaded data."""
-    from . import assets, hardware, mww
+    from . import assets, hardware, mww, setup_env
 
     _cpu_only(cpu)
+    if bad_python := setup_env.python_problem():
+        typer.echo(f"warning: {bad_python}")
     hw, problem = hardware.detect_safe()
     if problem:
         typer.echo(f"warning: {problem}")
@@ -255,9 +257,12 @@ def setup(
     from . import assets
     from . import setup_env as se
 
+    if problem := se.python_problem():
+        typer.echo(problem)
+        raise typer.Exit(1)
     missing = se.missing_tools()
     if missing:
-        typer.echo(f"missing: {', '.join(missing)} (e.g. sudo apt install {' '.join(missing)})")
+        typer.echo(f"missing: {', '.join(missing)} (e.g. {se.install_hint(missing)})")
         raise typer.Exit(1)
     gpus = se.find_gpus()
     accel = "cpu" if cpu else se.choose_accel(gpus)

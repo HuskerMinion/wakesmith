@@ -34,13 +34,19 @@ What makes it different:
 
 ```bash
 sudo apt install espeak-ng git          # Debian/Ubuntu; espeak-ng phonemizes the TTS text
+# macOS instead: brew install espeak-ng git
 curl -LsSf https://astral.sh/uv/install.sh | sh   # uv, if you don't have it; then open a new shell
-uv tool install ./wakesmith-<version>-py3-none-any.whl   # the wheel from the GitHub Releases page
+uv tool install --python 3.12 ./wakesmith-<version>-py3-none-any.whl   # the wheel from the Releases page
 wakesmith setup                         # right PyTorch for your GPU; downloads ~24 GB of data
 wakesmith serve                         # then open http://localhost:8765/
 ```
 
-To update, run `uv tool install` on the newer wheel with `--force`, then `wakesmith setup` again: the
+wakesmith needs Python 3.10 to 3.12 (TensorFlow and microWakeWord's dependencies have no packages for
+newer ones); `--python 3.12` makes uv fetch it if needed. On macOS, install the tools with
+`brew install espeak-ng git` instead of apt. macOS hasn't been tested yet, and setup doesn't use Apple
+GPUs: everything runs on the CPU (see [Status](#status)).
+
+To update, run `uv tool install --python 3.12` on the newer wheel with `--force`, then `wakesmith setup` again: the
 reinstall starts a fresh environment without PyTorch, and setup puts the right build back (the data
 stays).
 
@@ -384,8 +390,8 @@ are under Hardware below.
 
 ## Hardware
 
-`wakesmith setup` looks at your PCI devices before installing anything, picks the matching PyTorch
-build, then checks the GPU really works and falls back to the CPU if not. `wakesmith doctor` (and
+`wakesmith setup` looks at your PCI devices (on Linux and WSL2) before installing anything, picks the
+matching PyTorch build, then checks the GPU really works and falls back to the CPU if not. `wakesmith doctor` (and
 the Hardware page) shows what it found and the settings that follow: TTS batch size from GPU memory,
 one generation process per GPU, and worker counts from free RAM. `--cpu` on `doctor`, `train` and
 `serve` ignores the GPU.
@@ -443,8 +449,9 @@ isn't responding, reboot. A job that outgrows the card's memory spills into syst
 
 wakesmith trains the microWakeWord and openWakeWord models running on the Echo-style devices of one
 household. It runs on Linux (Ubuntu 26.04 with two Intel Arc cards; a CPU-only Ubuntu 24.04 virtual
-machine) and on Windows 11 through WSL2 (with an NVIDIA card). English is the language; German is
-experimental ([Other languages](#other-languages-experimental)).
+machine) and on Windows 11 through WSL2 (with an NVIDIA card). macOS is untested: setup installs the
+CPU build of PyTorch there (no Apple GPU), and reports from Mac users are welcome. English is the
+language; German is experimental ([Other languages](#other-languages-experimental)).
 Fixes and improvements are welcome: see [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## Licensing

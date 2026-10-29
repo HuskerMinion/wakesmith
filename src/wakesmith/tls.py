@@ -30,7 +30,9 @@ def certificate() -> tuple[Path, Path]:
     if cert.exists() and key.exists():
         return cert, key
     if not shutil.which("openssl"):
-        raise SystemExit("--https needs the openssl command (sudo apt install openssl)")
+        from .setup_env import install_hint
+
+        raise SystemExit(f"--https needs the openssl command ({install_hint(['openssl'])})")
     d.mkdir(parents=True, exist_ok=True)
     names = ["DNS:localhost", f"DNS:{socket.gethostname()}"] + [f"IP:{ip}" for ip in _addresses()]
     subprocess.run(

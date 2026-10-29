@@ -10,7 +10,8 @@ Seite heißen.
 
 ## Was du brauchst
 
-- **System:** Linux (z. B. Ubuntu) oder Windows 11 mit WSL2
+- **System:** Linux (z. B. Ubuntu) oder Windows 11 mit WSL2. macOS ist noch nicht getestet und
+  rechnet dort nur auf dem Prozessor.
 - **Grafikkarte:** NVIDIA, Intel Arc oder AMD (experimentell). Ohne GPU geht es auch, nur langsamer.
 - **Speicher:** etwa 25 GB freier Plattenplatz, 16 GB RAM oder mehr
 - **Mikrofon** für echte Aufnahmen im Browser. Deine Stimme und die deiner Familie machen das Modell
@@ -23,12 +24,16 @@ Lade die neueste `wakesmith-<version>-py3-none-any.whl` (0.4.0 oder neuer) von d
 Terminal, im Ordner mit der Datei:
 
 ```bash
-sudo apt install espeak-ng git                       # espeak-ng macht aus Text Laute
+sudo apt install espeak-ng git                       # Debian/Ubuntu; espeak-ng wandelt Text in Lautschrift um
+# auf macOS stattdessen: brew install espeak-ng git
 curl -LsSf https://astral.sh/uv/install.sh | sh      # uv installiert Python-Programme
-uv tool install ./wakesmith-<version>-py3-none-any.whl
+uv tool install --python 3.12 ./wakesmith-<version>-py3-none-any.whl
 wakesmith setup      # passendes PyTorch für deine GPU, lädt ~24 GB Daten
 wakesmith serve      # dann http://localhost:8765/ im Browser öffnen
 ```
+
+wakesmith braucht Python 3.10 bis 3.12; `--python 3.12` sorgt dafür, dass uv die passende Version
+nimmt (und sie bei Bedarf lädt). Auf macOS statt apt: `brew install espeak-ng git`.
 
 Nach der uv-Installation einmal ein neues Terminal öffnen, damit der Befehl `wakesmith` gefunden
 wird. `wakesmith setup` dauert je nach Leitung eine Weile. `wakesmith doctor` zeigt, ob alles da ist

@@ -19,7 +19,11 @@ _CLAUSE = re.compile(r"([,:;.!?])")
 def check_espeak() -> str:
     path = shutil.which("espeak-ng")
     if path is None:
-        raise RuntimeError("espeak-ng not found: install it (e.g. `sudo apt install espeak-ng`)")
+        from ..setup_env import install_hint
+
+        raise RuntimeError(
+            f"espeak-ng not found: install it (e.g. `{install_hint(['espeak-ng'])}`)"
+        )
     return path
 
 

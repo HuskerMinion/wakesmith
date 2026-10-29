@@ -17,6 +17,29 @@ from pathlib import Path
 
 from . import assets
 
+PYTHONS = ((3, 10), (3, 12))  # what TensorFlow and microWakeWord's dependencies have packages for
+
+
+def python_problem() -> str | None:
+    """Why this Python can't run wakesmith, or None. uv can set a tool up on a newer Python than the
+    wheel allows (seen with a local .whl file); the failure would only come minutes later, in a
+    dependency's source build."""
+    v = sys.version_info[:2]
+    if PYTHONS[0] <= v <= PYTHONS[1]:
+        return None
+    return (
+        f"wakesmith needs Python 3.10 to 3.12, and this install runs on {v[0]}.{v[1]}. "
+        "Reinstall it on 3.12: uv tool install --python 3.12 --force ./wakesmith-<version>-py3-none-any.whl"
+    )
+
+
+def install_hint(tools: list[str]) -> str:
+    """The command that installs system tools here (Homebrew on macOS, apt elsewhere)."""
+    if sys.platform == "darwin":
+        return f"brew install {' '.join(tools)}"
+    return f"sudo apt install {' '.join(tools)}"
+
+
 MWW_REPO = "https://github.com/kahrendt/microWakeWord.git"
 MWW_COMMIT = "4665173cd35f1cff9a61e06fc427f124766c488e"
 TORCH_INDEX = {

@@ -3463,3 +3463,18 @@ def test_a_folder_of_another_word_does_not_block_a_new_one(tmp_path, monkeypatch
     )  # an early German one
     new = project.create("hallo computer")
     assert old.family != new.family and new.name == "hallo_computer_2" and new.version == 0
+
+
+def test_setup_stops_early_on_a_python_it_cannot_use(monkeypatch):
+    import sys
+
+    from wakesmith import setup_env as se
+
+    monkeypatch.setattr(sys, "version_info", (3, 14, 0))
+    assert "--python 3.12" in se.python_problem()
+    monkeypatch.setattr(sys, "version_info", (3, 12, 7))
+    assert se.python_problem() is None
+    monkeypatch.setattr(sys, "platform", "darwin")
+    assert se.install_hint(["espeak-ng"]) == "brew install espeak-ng"
+    monkeypatch.setattr(sys, "platform", "linux")
+    assert se.install_hint(["espeak-ng", "git"]) == "sudo apt install espeak-ng git"
