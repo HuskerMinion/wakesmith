@@ -30,6 +30,7 @@ from .. import (
     evaluate,
     hardware,
     jobs,
+    languages,
     models,
     mww,
     oww,
@@ -161,6 +162,8 @@ def create_app(token: str | None = None) -> FastAPI:
             return projects.load(name)
         except FileNotFoundError:
             raise HTTPException(404, f"no project {name}") from None
+        except (ValueError, TypeError) as e:  # a hand-edited project.yaml it can't use
+            raise HTTPException(409, f"{name}: project.yaml can't be used ({e})") from None
 
     # -- pages -------------------------------------------------------------------------------
     @app.get("/", response_class=HTMLResponse)
@@ -222,6 +225,7 @@ def create_app(token: str | None = None) -> FastAPI:
                 "used_for": a.used_for,
             }
             for a in assets.ASSETS.values()
+            if not a.optional or a.present()
         ]
 
     # -- downloading the training data from the page (what `wakesmith setup` downloads) ----------
@@ -237,7 +241,7 @@ def create_app(token: str | None = None) -> FastAPI:
 
     def _download_all() -> None:
         try:
-            for a in [a for a in assets.ASSETS.values() if not a.present()]:
+            for a in [a for a in assets.required() if not a.present()]:
                 dl["current"] = a.name
                 assets.fetch(a, progress=False)
                 dl["done"].append(a.name)
@@ -249,7 +253,7 @@ def create_app(token: str | None = None) -> FastAPI:
     @app.get("/api/assets/download")
     def download_status():
         cur = assets.ASSETS.get(dl["current"]) if dl["current"] else None
-        missing = [a for a in assets.ASSETS.values() if not a.present()]
+        missing = [a for a in assets.required() if not a.present()]
         return {
             **dl,
             "missing": [a.name for a in missing],
@@ -269,19 +273,51 @@ def create_app(token: str | None = None) -> FastAPI:
         threading.Thread(target=_download_all, daemon=True).start()
         return download_status()
 
+    def offered(language: str) -> None:
+        """400 unless new wake words may be in this language (experimental ones only when turned on)."""
+        if language not in [x.code for x in languages.available()]:
+            raise HTTPException(
+                400,
+                f"language {language!r} isn't offered (experimental languages: Data & licenses page)",
+            )
+
     @app.get("/api/suggest")
-    def suggest(phrase: str, n: int = 50):
-        return phrases.suggest(phrase, n)
+    def suggest(phrase: str, n: int = 50, language: str = "en"):
+        offered(language)
+        return phrases.suggest(phrase, n, language=language)
+
+    @app.get("/api/languages")
+    def language_list():
+        """The languages a new wake word can be in; experimental ones only when turned on."""
+        return {
+            "languages": [
+                {"code": x.code, "name": x.name, "experimental": x.experimental}
+                for x in languages.available()
+            ],
+            "experimental": languages.experimental_on(),
+        }
+
+    @app.post("/api/languages")
+    async def language_settings(request: Request):
+        try:
+            body = await request.json()
+        except ValueError:
+            body = None
+        if not isinstance(body, dict) or not isinstance(body.get("experimental"), bool):
+            raise HTTPException(400, 'send {"experimental": true} or {"experimental": false}')
+        languages.set_experimental(body["experimental"])
+        return language_list()
 
     @app.get("/api/preview")
-    def preview(text: str):
+    def preview(text: str, language: str = "en"):
         """One TTS clip of `text` (random voice), as WAV, from a separate CPU process."""
         from ..tts import preview as pv
 
         if not text.strip() or len(text) > 80:
             raise HTTPException(400, "text must be 1-80 characters")
+        offered(language)
         try:
-            data = pv.wav(text.strip())
+            data = pv.wav(text.strip(), language)
         except RuntimeError as e:
             raise HTTPException(503, str(e)) from None
         return Response(data, media_type="audio/wav", headers={"Cache-Control": "no-store"})
@@ -306,8 +342,10 @@ def create_app(token: str | None = None) -> FastAPI:
             "microwakeword": vars(p.microwakeword),
             "openwakeword": vars(p.openwakeword),
             "commonvoice": vars(p.commonvoice),
+            "uses_commonvoice": p.uses_commonvoice,  # off for other languages, whatever the setting
             "conversational": vars(p.conversational),
             "data_profile": p.data_profile,
+            "language": p.language,
             "stages": jobs.stages(p, STAGES),
             "estimates": eta.estimates(p),
             "job": jobs.status(p),
@@ -425,12 +463,15 @@ def create_app(token: str | None = None) -> FastAPI:
         if not phrase:
             raise HTTPException(400, "phrase required")
         negs = [str(x).strip() for x in body.get("negatives", []) if str(x).strip()]
+        language = str(body.get("language") or "en")
+        offered(language)
         try:
             p = projects.create(
                 phrase,
                 body.get("name") or None,
                 label=body.get("label", ""),
-                negatives=negs or phrases.suggest(phrase, 50),
+                negatives=negs or phrases.suggest(phrase, 50, language=language),
+                language=language,
             )
         except FileExistsError as e:
             raise HTTPException(409, str(e)) from None
@@ -461,6 +502,8 @@ def create_app(token: str | None = None) -> FastAPI:
             p.microwakeword.steps, p.openwakeword.steps = preset["mww_steps"], preset["oww_steps"]
             p.microwakeword.candidates = preset["mww_candidates"]
         cv = body.get("commonvoice") or {}
+        if cv.get("enabled") and p.language != "en":
+            raise HTTPException(400, "Common Voice here is the English set: not for this wake word")
         for k in ("enabled", "train"):
             if k in cv:
                 setattr(p.commonvoice, k, bool(cv[k]))
@@ -1154,8 +1197,11 @@ def create_app(token: str | None = None) -> FastAPI:
             "dataset": str(ds),
             "present": commonvoice.present(ds),
             "settings": vars(p.commonvoice),
+            "language": p.language,
         }
-        if out["present"]:
+        if p.language != "en":
+            out["present"] = False  # the dataset here is the English one
+        elif out["present"]:
             out.update(commonvoice.count(ds, p.phrase))
         return out
 

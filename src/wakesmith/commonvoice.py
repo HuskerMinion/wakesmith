@@ -180,6 +180,10 @@ def prepare(p: Project, log: Callable[[str], None] = print) -> dict:
     the other speakers' cuts into real/train next to your own takes."""
     from .real import trim_to_phrase
 
+    if p.language != "en":
+        raise RuntimeError(
+            "Common Voice here is the English set: turn it off for this wake word (Real voices page)"
+        )
     cv = p.commonvoice
     ds = dataset(p)
     if not present(ds):

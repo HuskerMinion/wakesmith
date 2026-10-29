@@ -57,7 +57,7 @@ def export(p: Project, combined: bool | None = None) -> list[Path]:
             "author": "wakesmith",
             "website": WEBSITE,
             "model": f"{p.name}.tflite",
-            "trained_languages": ["en"],
+            "trained_languages": [p.language],
             "version": 2,
             "micro": {
                 "probability_cutoff": p.microwakeword.cutoff,
@@ -79,7 +79,7 @@ def export(p: Project, combined: bool | None = None) -> list[Path]:
         manifest = {
             "wake_word": p.display,
             "model": f"{p.name}.tflite",
-            "trained_languages": ["en"],
+            "trained_languages": [p.language],
             "threshold": p.openwakeword.threshold,
         }
         (d / f"{p.name}.json").write_text(json.dumps(manifest, indent=2))
@@ -130,13 +130,12 @@ def license_note(p: Project) -> str:
     line = lambda name, what: f"- {what}: {a[name].license}"
     out = [f"{p.display}: training data and licenses", ""]
     out.append("Used by every model here:")
-    out.append(line("tts-libritts-high", "synthetic speech, Piper voice en_US-libritts-high"))
-    out.append(
-        line("tts-libritts-r-medium", "synthetic speech, Piper voice en_US-libritts_r-medium")
-    )
+    for m in p.tts_models:
+        voice = Path(a[assets.TTS_MODELS[m]].path).name.split(".")[0].replace("en-us", "en_US")
+        out.append(line(assets.TTS_MODELS[m], f"synthetic speech, Piper voice {voice}"))
+    nc = any(a[assets.TTS_MODELS[m]].license.startswith("CC BY-NC") for m in p.tts_models)
     out.append(line("musan-noise", "background noise (MUSAN)"))
     out.append(line("mit-rirs", "room reverb (MIT impulse responses)"))
-    nc = False
     if p.microwakeword.enabled:
         out += [
             "",
@@ -159,7 +158,7 @@ def license_note(p: Project) -> str:
     real = []
     if p.real.positives or p.real.negatives:
         real.append("- your own recordings (not distributed with the model)")
-    if p.commonvoice.enabled:
+    if p.uses_commonvoice:
         use = "training and testing" if p.commonvoice.train else "testing only"
         real.append(
             f"- Mozilla Common Voice 17.0 English, {use}: CC0; cut with the MMS aligner "
@@ -168,11 +167,12 @@ def license_note(p: Project) -> str:
         nc = True
     if real:
         out += ["", "Real voices:"] + real
-    cmu = (
-        "Sound-alike phrases were chosen with the CMU Pronouncing Dictionary "
-        f"({a['cmudict'].license}); it is not part of the model."
-    )
-    out += ["", cmu]
+    if p.language == "en":
+        cmu = (
+            "Sound-alike phrases were chosen with the CMU Pronouncing Dictionary "
+            f"({a['cmudict'].license}); it is not part of the model."
+        )
+        out += ["", cmu]
     out += [
         "",
         "Non-commercial: some of this data allows non-commercial use only (CC BY-NC / "

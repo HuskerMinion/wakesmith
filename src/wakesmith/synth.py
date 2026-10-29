@@ -14,7 +14,7 @@ import time
 import zlib
 from pathlib import Path
 
-from . import assets
+from . import assets, languages
 from .project import Project, load
 from .tts.generate import count_clips, generate
 
@@ -62,6 +62,7 @@ def run_part(p: Project, part: str, device: str, batch_size: int) -> dict:
                 batch_size=batch_size,
                 seed=seed,
                 on_progress=report,
+                espeak=languages.get(p.language).espeak,
             )
             stats["written"] += r["written"]
             stats["failed"] += r["failed"]

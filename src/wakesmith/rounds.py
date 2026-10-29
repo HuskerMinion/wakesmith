@@ -145,7 +145,7 @@ def file(p: Project, cid: str) -> Path:
 
 
 # -- transcripts and suggestions ------------------------------------------------------------------
-_WORD = re.compile(r"[a-z']+")
+_WORD = re.compile(r"[a-zäöüß']+")
 
 
 def _words(text: str) -> list[str]:
@@ -165,8 +165,8 @@ class _Whisper:
     """Whisper turbo through faster-whisper (CPU/CUDA, Home Assistant's engine) or transformers (any torch
     device, e.g. an Intel GPU)."""
 
-    def __init__(self, device: str, model: str = "turbo"):
-        self.device = device
+    def __init__(self, device: str, model: str = "turbo", language: str = "en"):
+        self.device, self.language = device, language
         if device.split(":")[0] in ("cpu", "cuda"):
             try:
                 from faster_whisper import WhisperModel
@@ -204,7 +204,7 @@ class _Whisper:
             out = []
             for f in paths:
                 segs, _ = self.fw.transcribe(
-                    str(f), language="en", beam_size=5, condition_on_previous_text=False
+                    str(f), language=self.language, beam_size=5, condition_on_previous_text=False
                 )
                 out.append(" ".join(s.text.strip() for s in segs))
             return out
@@ -213,7 +213,7 @@ class _Whisper:
         with self.torch.inference_mode():
             ids = self.model.generate(
                 feats.to(self.device, self.dtype),
-                language="en",
+                language=self.language,
                 task="transcribe",
                 num_beams=5,
                 do_sample=False,
@@ -229,7 +229,7 @@ def transcribe(
     todo = [c for c in clips if c["text"] is None and (ids is None or c["id"] in ids)]
     if not todo:
         return {"transcribed": 0}
-    w = whisper or _Whisper(device)
+    w = whisper or _Whisper(device, language=p.language)
     for i in range(0, len(todo), batch):
         group = todo[i : i + batch]
         for c, text in zip(group, w([file(p, c["id"]) for c in group]), strict=True):

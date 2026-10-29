@@ -3,6 +3,7 @@
 For each word of the wake phrase, CMUdict words a short weighted phoneme distance away (similar
 sounds swap cheaply), stress ignored; words CMUdict lacks get spelling variants instead. Phrases are
 built by swapping one word at a time, plus partial phrases ("jarvis" alone, "hey" + a sound-alike).
+Other languages (experimental) have no dictionary here: every word gets spelling variants.
 Anything espeak-ng pronounces exactly like the wake phrase is dropped: it would teach the model to
 reject the wake word itself.
 """
@@ -101,7 +102,7 @@ def neighbors(word: str, limit: int = 40, seed: int = 0) -> list[str]:
     return [w for _, w in scored[:limit]]
 
 
-_VOWEL_LETTERS = "aeiou"
+_VOWEL_LETTERS = {"en": "aeiou", "de": "aeiouäöü"}
 _SIMILAR_LETTERS = {
     "b": "pd",
     "p": "bt",
@@ -124,13 +125,14 @@ _SIMILAR_LETTERS = {
 }
 
 
-def spelling_variants(word: str, limit: int = 12, seed: int = 0) -> list[str]:
+def spelling_variants(word: str, limit: int = 12, seed: int = 0, language: str = "en") -> list[str]:
     """Pseudo-words one letter-sound away ("nabu" -> "nebu", "mabu"), for words CMUdict lacks.
     The TTS reads them like real words, which is all a negative example needs."""
+    vowels = _VOWEL_LETTERS.get(language, _VOWEL_LETTERS["en"])
     out = set()
     for i, ch in enumerate(word):
-        if ch in _VOWEL_LETTERS:
-            out.update(word[:i] + v + word[i + 1 :] for v in _VOWEL_LETTERS if v != ch)
+        if ch in vowels:
+            out.update(word[:i] + v + word[i + 1 :] for v in vowels if v != ch)
         for alt in _SIMILAR_LETTERS.get(ch, ""):
             out.add(word[:i] + alt + word[i + 1 :])
     out.discard(word)
@@ -147,25 +149,32 @@ def homophones(word: str) -> set[str]:
     return {w for w, p in by_len[len(ph)] if p == ph}
 
 
-def _ipa_key(text: str) -> str:
+def _ipa_key(text: str, voice: str = "en-us") -> str:
     """espeak-ng pronunciation without stress marks, spaces or punctuation."""
     from .tts.phonemize import phonemes
 
-    return "".join(c for c in phonemes(text) if c not in "ˈˌ ,.!?;:")
+    return "".join(c for c in phonemes(text, voice) if c not in "ˈˌ ,.!?;:")
 
 
-def suggest(phrase: str, n: int = 60, seed: int = 0) -> list[str]:
+def suggest(phrase: str, n: int = 60, seed: int = 0, language: str = "en") -> list[str]:
     """Up to `n` sound-alike phrases for `phrase`, most useful kinds first."""
-    toks = re.findall(r"[a-z']+", phrase.lower())
+    from . import languages
+
+    english = language == "en"
+    toks = re.findall(r"[^\W\d_]+(?:'[^\W\d_]+)*", phrase.lower())
     if not toks:
         return []
     banned = {phrase.lower(), " ".join(toks)}
     rng = random.Random(seed)
     swaps: list[list[str]] = []
     for i, t in enumerate(toks):
-        cands = [c for c in neighbors(t, limit=60, seed=seed + i) if c not in homophones(t)]
+        cands = []
+        if english:
+            cands = [c for c in neighbors(t, limit=60, seed=seed + i) if c not in homophones(t)]
         if len(cands) < 8:
-            cands += spelling_variants(t, limit=12, seed=seed + i)
+            cands += spelling_variants(
+                t, limit=12 if english else 30, seed=seed + i, language=language
+            )
         swaps.append([" ".join(toks[:i] + [c] + toks[i + 1 :]) for c in cands])
     picks: list[str] = []
     if len(toks) > 1:
@@ -178,12 +187,15 @@ def suggest(phrase: str, n: int = 60, seed: int = 0) -> list[str]:
             if swaps[i]:
                 picks.append(swaps[i].pop(0))
     if len(toks) > 1:  # partials: a sound-alike of the last word on its own
-        last = neighbors(toks[-1], limit=6, seed=seed + 99) or spelling_variants(toks[-1], 4, seed)
-        picks += [w for w in last if w not in homophones(toks[-1])]
-    target = _ipa_key(phrase)
+        last = (english and neighbors(toks[-1], limit=6, seed=seed + 99)) or spelling_variants(
+            toks[-1], 4, seed, language
+        )
+        picks += [w for w in last if not english or w not in homophones(toks[-1])]
+    voice = languages.get(language).espeak
+    target = _ipa_key(phrase, voice)
     seen, out = set(), []
     for p in picks:
-        if p not in seen and p not in banned and _ipa_key(p) != target:
+        if p not in seen and p not in banned and _ipa_key(p, voice) != target:
             seen.add(p)
             out.append(p)
     head, tail = out[:4], out[4:]

@@ -19,12 +19,14 @@ import json
 import os
 import re
 import time
+import unicodedata
 import urllib.error
 import urllib.request
 import zlib
 from collections.abc import Callable
 from pathlib import Path
 
+from . import languages
 from .project import Project
 
 DEFAULT_URL = "http://127.0.0.1:8080"
@@ -89,8 +91,9 @@ def endpoint(p: Project) -> tuple[str, str, str]:
 
 
 def normalize(text: str) -> str:
-    """Lower case words only: "Hey, Jarvis!" and "hey-jarvis" both give "hey jarvis"."""
-    return " ".join(re.sub(r"[^a-z0-9]+", " ", text.lower().replace("'", "")).split())
+    """Lower case words only (umlauts kept): "Hey, Jarvis!" and "hey-jarvis" both give "hey jarvis"."""
+    text = unicodedata.normalize("NFC", text)  # "ü" as u + a combining mark is still one letter
+    return " ".join(re.sub(r"[\W_]+", " ", text.lower().replace("'", "")).split())
 
 
 def says_phrase(sentence: str, phrases: list[str]) -> bool:
@@ -127,9 +130,15 @@ def keep(candidates: list[str], phrases: list[str], seen: set[str]) -> list[str]
     return out
 
 
-def messages(phrase: str, n: int, hints: list[str], avoid: list[str]) -> list[dict]:
+IN_LANGUAGE = {"de": "German"}  # what to ask for when the wake word isn't English
+
+
+def messages(
+    phrase: str, n: int, hints: list[str], avoid: list[str], language: str = "en"
+) -> list[dict]:
+    lang = f" in {IN_LANGUAGE[language]}" if language in IN_LANGUAGE else ""
     ask = (
-        f"Write {n} different short everyday sentences, 6 to 14 words each, the kind people say at home "
+        f"Write {n} different short everyday sentences{lang}, 6 to 14 words each, the kind people say at home "
         f'or on the phone. Each must use a word or sound from the phrase "{phrase}", or a word that '
         f'sounds close to it, but must never contain the whole phrase "{phrase}" with its words in order.'
     )
@@ -180,7 +189,9 @@ def collect(
     dry = 0
     while len(have) < n and dry < 3:
         want = min(BATCH, n - len(have))
-        new = keep(parse(ask(messages(p.phrase, want, hints, have[-20:]))), phrases, seen)
+        new = keep(
+            parse(ask(messages(p.phrase, want, hints, have[-20:], p.language))), phrases, seen
+        )
         dry = 0 if new else dry + 1
         new = new[: n - len(have)]
         have += new
@@ -252,6 +263,7 @@ def run(p: Project, device: str, batch_size: int, log=print, ask=None) -> dict:
             seed=zlib.crc32(f"{p.name}/conversational/{a.name}".encode()),
             on_progress=lambda d, t: report("clips", d, n),
             in_order=True,
+            espeak=languages.get(p.language).espeak,
         )
         stats["written"] += r["written"]
         stats["failed"] += r["failed"]

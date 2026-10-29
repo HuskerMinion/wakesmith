@@ -20,6 +20,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import threading
 import urllib.error
 import urllib.request
 from pathlib import Path
@@ -62,34 +63,57 @@ def load_settings() -> dict:
 
 def save_settings(changes: dict) -> dict:
     """Merge `changes` into the saved settings. An absent api_key keeps the saved one; "" clears it."""
-    s = load_settings()
+    new = {}
     if "enabled" in changes:
-        s["enabled"] = bool(changes["enabled"])
+        new["enabled"] = bool(changes["enabled"])
     if "base_url" in changes:
         url = str(changes["base_url"] or "").strip().rstrip("/")
         if not re.match(r"^https?://[^/\s]+", url):
             raise ValueError("the server address must start with http:// or https://")
-        s["base_url"] = url
+        new["base_url"] = url
     if "model" in changes:
-        s["model"] = str(changes["model"] or "").strip()
+        new["model"] = str(changes["model"] or "").strip()
     if "api_key" in changes and changes["api_key"] is not None:
-        s["api_key"] = str(changes["api_key"]).strip()
+        new["api_key"] = str(changes["api_key"]).strip()
     if "timeout" in changes:
         try:
-            s["timeout"] = max(5, min(900, int(float(changes["timeout"]))))
+            new["timeout"] = max(5, min(900, int(float(changes["timeout"]))))
         except (TypeError, ValueError):
             raise ValueError("the timeout must be a number of seconds") from None
-    data = _read_all()
-    data["assistant"] = s
+    out = {}
+
+    def merge(data: dict) -> None:  # onto what is saved now, under the lock: no change is lost
+        old = data.get("assistant") or {}
+        out.update({**DEFAULTS, **{k: v for k, v in old.items() if k in DEFAULTS}, **new})
+        data["assistant"] = out
+
+    update_all(merge)
+    return out
+
+
+_settings_lock = threading.Lock()
+
+
+def update_all(change) -> None:
+    """Read settings.json, apply change(data) and write it back atomically, readable by its owner only
+    (it may hold the API key). One writer at a time, so the AI settings and the language switch
+    don't overwrite each other."""
+    import fcntl
+
     f = settings_path()
     f.parent.mkdir(parents=True, exist_ok=True)
-    tmp = f.with_suffix(".tmp")
-    fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
-    with os.fdopen(fd, "w") as out:
-        json.dump(data, out, indent=1)
-    os.chmod(tmp, 0o600)
-    tmp.replace(f)
-    return s
+    # the thread lock for the web server's threads, the file lock for the CLI writing at the same time
+    lock_fd = os.open(f.with_name(f.name + ".lock"), os.O_WRONLY | os.O_CREAT, 0o600)
+    with _settings_lock, os.fdopen(lock_fd, "w") as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX)
+        data = _read_all()
+        change(data)
+        tmp = f.with_suffix(".tmp")
+        tmp.unlink(missing_ok=True)  # a stale one may have looser permissions
+        fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+        with os.fdopen(fd, "w") as out:
+            json.dump(data, out, indent=1)
+        tmp.replace(f)
 
 
 def public(s: dict) -> dict:

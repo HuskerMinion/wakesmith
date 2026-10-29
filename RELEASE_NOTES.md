@@ -1,36 +1,28 @@
-## What's new in 0.3.0
+## What's new in 0.4.0
 
-**License.** From 0.3.0 wakesmith is under the [PolyForm Noncommercial License 1.0.0](LICENSE): use it,
-change it and share it for any noncommercial purpose. 0.2.0 and earlier stay Apache-2.0. Code taken from
-other projects keeps its own license ([THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)).
+**German wake words (experimental).** A wake word now has a language. German is off by default: turn it
+on with **Offer German for new wake words** on the Data & licenses page (or
+`WAKESMITH_EXPERIMENTAL_LANGUAGES=1`), then pick **Deutsch (experimental)** on the New wake word page or use
+`wakesmith new "hallo computer" --language de`. A German guide is in [docs/deutsch.md](docs/deutsch.md).
 
-**Fast on a GPU, Intel Arc included.** Synthetic speech, microWakeWord training (a PyTorch port of its
-trainer), openWakeWord features and openWakeWord training all run on the GPU: a full-size run takes about
-15 minutes where it took about an hour. See [Speed](README.md#speed) in the README.
+- Piper's eight German voices (Thorsten in three models, Kerstin, Eva K, Karlsson, Ramona, Pavoque),
+  about 0.5 GB, downloaded the first time a German word makes its clips. Each clip gets its own speed,
+  noise and pitch shift.
+- The voices run batched on the GPU: a Standard run's 55,000 clips take about 5 minutes on an RTX 5060 Ti.
+  Without a GPU they run on the CPU in parallel processes.
+- German sound-alikes (umlauts included, checked with German espeak-ng), Whisper in German for device
+  clips and recordings, and `trained_languages: ["de"]` in the exported models.
+- In our test, a model trained on the synthetic German voices alone caught a German voice it had never
+  heard 88% of the time (microWakeWord, cutoff 0.5) with 3 false triggers in 14 hours of German speech at
+  cutoff 0.9. Real recordings still help most, and more so than in English.
+- Thorsten and Kerstin are CC0; Pavoque is CC BY-NC-SA, and Eva K, Karlsson and Ramona (M-AILABS) are
+  treated as personal use only. The export's license note lists every voice a model was trained on.
 
-**Easier to follow.**
-- The wake words page is a table: one row per wake word, its versions folded underneath, and a line
-  saying what to do next.
-- A welcome screen on first run, and the training data downloads from the Data & licenses page.
-- Every round you train is a version (v1, v2, ...) with a short note; **New version** makes the next one in
-  one step from the version before and the device clips that came since.
-- After a test, the version on your devices is scored on the same recordings, and Results says in one
-  sentence whether the new one is better. A slider turns each cutoff into calls missed and false alarms a
-  day.
-- Real voices shows everything a version learns from and is tested on, and plays any clip. Takes recorded
-  in the browser always add to the folders you chose.
+**Fixes.**
+- `wakesmith setup` without uv no longer passes pip a uv-only option when it installs PyTorch.
+- Downloads no longer hang on networks where IPv6 has no route out: they fall back to IPv4, and every
+  request has a timeout.
 
-**Better models.**
-- Best of N: a Standard run trains several microWakeWord candidates and keeps the one that does best on
-  half of your test recordings; its results come from the other half.
-- Optionally, one combined model that averages the candidates.
-- Device clips: bring in what your devices saved, transcribed by Whisper; clear false alarms label
-  themselves and you listen to the rest (one at a time, with the keyboard). A daily sync can do it for you.
-- Record a room: one recording for every wake word, split into takes automatically, with the room's own
-  echoes for training.
-
-**Also:** a job queue with finished notices, archiving of idle projects to save disk, an optional local AI
-assistant (explains failed runs, advises on a cutoff), and Common Voice takes for common words.
-
-**Install:** download the `.whl` below, then `uv tool install ./wakesmith-0.3.0-py3-none-any.whl`,
-`wakesmith setup` and `wakesmith serve` (see the README's Quick start).
+**Install:** download the `.whl` below, then `uv tool install ./wakesmith-0.4.0-py3-none-any.whl`,
+`wakesmith setup` and `wakesmith serve` (see the README's Quick start). To update from 0.3.0, add `--force`
+to `uv tool install`, then run `wakesmith setup` again.

@@ -242,7 +242,7 @@ def score_combined(p: Project, log: Callable[[str], None] = print) -> dict:
     else:
         files["mww-combined"].unlink(missing_ok=True)
     cv_test = p.path("commonvoice", "test")
-    if p.commonvoice.enabled and any(cv_test.glob("*.wav")):
+    if p.uses_commonvoice and any(cv_test.glob("*.wav")):
         r = score(p, "mww", model=model, positives=cv_test, tag="combined-cv", report_half=True)
         log("combined model, Common Voice speakers: " + format_table(r))
         out["mww-combined-cv"] = r["table"]

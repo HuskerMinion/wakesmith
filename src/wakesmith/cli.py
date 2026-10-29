@@ -51,16 +51,33 @@ def doctor(cpu: bool = typer.Option(False, "--cpu", help=CPU_HELP)) -> None:
         typer.echo(f"warning: {low}")
     typer.echo(f"data in {assets.home()}:")
     for a in assets.ASSETS.values():
+        if a.optional and not a.present():
+            continue  # an experimental language's voices: listed once a project fetched them
         mark = "ok " if a.present() else "-- "
         typer.echo(f"  {mark}{a.name:28s} {a.size / 1e9:6.2f} GB  {a.license}")
 
 
+def _offered(language: str) -> None:
+    """Refuse a language new wake words can't be in (experimental ones only when turned on)."""
+    from . import languages
+
+    if language not in [lang.code for lang in languages.available()]:
+        raise typer.BadParameter(
+            f"{language!r} is not on: languages other than English are experimental; turn them on with "
+            "WAKESMITH_EXPERIMENTAL_LANGUAGES=1 or on the web page's Data page",
+            param_hint="--language",
+        )
+
+
 @app.command()
-def suggest(phrase: str, n: int = 40) -> None:
+def suggest(
+    phrase: str, n: int = 40, language: str = typer.Option("en", help="en, or de (experimental)")
+) -> None:
     """Suggest sound-alike phrases to reject for PHRASE."""
     from . import phrases
 
-    for s in phrases.suggest(phrase, n):
+    _offered(language)
+    for s in phrases.suggest(phrase, n, language=language):
         typer.echo(s)
 
 
@@ -71,11 +88,20 @@ def new(
     positives: Path = typer.Option(None, help="folder of real recordings of the phrase"),
     negatives: Path = typer.Option(None, help="folder of real not-the-phrase recordings"),
     sound_alikes: int = typer.Option(50, help="sound-alike phrases to suggest"),
+    language: str = typer.Option(
+        "en", help="en, or de (experimental: turn on with WAKESMITH_EXPERIMENTAL_LANGUAGES=1)"
+    ),
 ) -> None:
     """Create a project for PHRASE (edit its project.yaml afterwards if you like)."""
     from . import phrases, project
 
-    p = project.create(phrase, name, negatives=phrases.suggest(phrase, sound_alikes))
+    _offered(language)
+    p = project.create(
+        phrase,
+        name,
+        negatives=phrases.suggest(phrase, sound_alikes, language=language),
+        language=language,
+    )
     if positives:
         p.real.positives = str(positives.expanduser().resolve())
     if negatives:
@@ -256,7 +282,7 @@ def setup(
     typer.echo(f"microWakeWord: {se.install_microwakeword()}")
     if no_data:
         return
-    todo = [a for a in assets.ASSETS.values() if not a.present()]
+    todo = [a for a in assets.required() if not a.present()]
     gb = sum(a.size for a in todo) / 1e9
     if todo and (yes or typer.confirm(f"download {len(todo)} items, {gb:.1f} GB?")):
         for a in todo:

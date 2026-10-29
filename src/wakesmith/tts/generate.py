@@ -18,10 +18,12 @@ import importlib
 import json
 import logging
 import math
+import os
 import pickle
 import random
 import wave
 from collections.abc import Callable, Sequence
+from concurrent.futures.process import BrokenProcessPool
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -118,7 +120,9 @@ def _synthesize(
     pad = max(len(i) for i in ids)
     x = torch.tensor([i + [1] * (pad - len(i)) for i in ids], device=device)  # pad with '^' id 1
     x, m_p, logs_p, x_mask = model.enc_p(x, lens)
-    g = _slerp(model.emb_g(spk1), model.emb_g(spk2), slerp_t).unsqueeze(-1)
+    g = None  # a one-speaker voice has no speaker embedding
+    if model.n_speakers > 1:
+        g = _slerp(model.emb_g(spk1), model.emb_g(spk2), slerp_t).unsqueeze(-1)
     if model.use_sdp:
         logw = model.dp(x, x_mask, g=g, reverse=True, noise_scale=noise_w)
     else:
@@ -147,11 +151,22 @@ class VoiceSettings:
 
 
 class Generator:
+    """A batch of clips at a time on the device. Piper's ONNX voices (.onnx) are rebuilt as PyTorch
+    models (onnx_voice.py) and, having one speaker or a few styles, get a pitch shift per clip like
+    OnnxGenerator's."""
+
     def __init__(
         self, model_path: Path, device: str | torch.device = "cpu", seed: int | None = None
     ):
         self.device = torch.device(device)
-        self.model, self.config = load_model(Path(model_path), self.device)
+        if Path(model_path).suffix == ".onnx":
+            from . import onnx_voice
+
+            self.model, self.config = onnx_voice.load(Path(model_path), self.device)
+            self.pitch = OnnxGenerator.PITCH
+        else:
+            self.model, self.config = load_model(Path(model_path), self.device)
+            self.pitch = None
         self.voice = self.config["espeak"]["voice"]
         self.rate = self.config["audio"]["sample_rate"]
         self.n_speakers = self.config["num_speakers"]
@@ -162,6 +177,7 @@ class Generator:
         import torchaudio.functional as AF
 
         self._resample = lambda a: AF.resample(a, self.rate, OUT_RATE)
+        self._shifted = lambda a, rate: AF.resample(a, rate, OUT_RATE)
 
     def _pick_length_scale(self, settings: VoiceSettings) -> float:
         self.length_scale = self.rng.choice(settings.length_scales)
@@ -192,10 +208,132 @@ class Generator:
         )
         out = []
         for c in clips:
-            a = self._resample(c.float().unsqueeze(0))[0]
+            if (
+                self.pitch
+            ):  # read at rate/shift: shorter clip, higher voice (rate rounded to 100 Hz)
+                rate = round(self.rate / r.uniform(*self.pitch) / 100) * 100
+                a = self._shifted(c.float().unsqueeze(0), rate)[0]
+            else:
+                a = self._resample(c.float().unsqueeze(0))[0]
             a = a / max(float(a.abs().max()), 0.01) * 0.95  # peak-normalize like piper
             out.append(_trim(a.cpu().numpy()))
         return out
+
+
+class OnnxGenerator:
+    """A Piper voice exported to ONNX (the German voices: one speaker each, or a few styles), on the CPU
+    (with a GPU, Generator runs them batched).
+    One speaker gives little variety, so every clip draws its own speed and noise settings and a pitch
+    shift (played back 12% slower to 12% faster, which moves the voice's pitch and timbre too)."""
+
+    PITCH = (0.88, 1.12)
+
+    def __init__(
+        self,
+        model_path: Path,
+        seed: int | None = None,
+        workers: int = 1,
+        espeak: str | None = None,
+    ):
+        """workers > 1: that many processes share each batch. The voices run one clip at a time, which
+        uses a CPU core or two (a GPU is no faster at that: measured), so a pool of them is the speedup.
+        espeak: read the texts in this language instead of the voice's own (as generate's)."""
+        import onnxruntime as ort
+
+        self.device = torch.device("cpu")
+        self.pool = None
+        if workers > 1:
+            import multiprocessing as mp
+            from concurrent.futures import ProcessPoolExecutor
+
+            self.pool = ProcessPoolExecutor(
+                workers,
+                mp_context=mp.get_context("spawn"),
+                initializer=_onnx_worker_init,
+                initargs=(str(model_path), espeak),
+            )
+        opts = ort.SessionOptions()
+        opts.intra_op_num_threads = 2 if workers > 1 else 4
+        self.session = ort.InferenceSession(
+            str(model_path), opts, providers=["CPUExecutionProvider"]
+        )
+        self.config = json.loads(Path(f"{model_path}.json").read_text())
+        self.voice = espeak or self.config["espeak"]["voice"]
+        self.rate = self.config["audio"]["sample_rate"]
+        self.n_speakers = self.config["num_speakers"]
+        self.id_map = self.config["phoneme_id_map"]
+        self.has_sid = any(i.name == "sid" for i in self.session.get_inputs())
+        self.rng = random.Random(seed)
+        self.length_scale = 1.0
+
+    def batch(
+        self, texts: Sequence[str], settings: VoiceSettings | None = None
+    ) -> list[np.ndarray]:
+        from scipy.signal import resample_poly
+
+        settings = settings or VoiceSettings()
+        r = self.rng
+        if self.pool is not None and len(texts) > 1:
+            n = self.pool._max_workers
+            parts = [list(texts[i::n]) for i in range(n)]
+            seeds = [r.getrandbits(32) for _ in parts]
+            try:
+                done = list(self.pool.map(_onnx_worker_batch, parts, seeds, [settings] * n))
+            except (
+                BrokenProcessPool
+            ):  # a worker died (out of memory?): go on here, slower, and say so
+                logger.warning("a speech worker process died; going on in one process (slower)")
+                self.pool.shutdown(cancel_futures=True)
+                self.pool = None
+                return self.batch(texts, settings)
+            out = [None] * len(texts)
+            for i, clips in enumerate(done):
+                out[i::n] = clips
+            return out
+        out = []
+        for text in texts:  # an ONNX batch pads every clip to the longest: one at a time
+            ids = phonemize.phoneme_ids(text, self.id_map, self.voice)
+            self.length_scale = r.choice(settings.length_scales)
+            feed = {
+                "input": np.array([ids], np.int64),
+                "input_lengths": np.array([len(ids)], np.int64),
+                "scales": np.array(
+                    [
+                        r.choice(settings.noise_scales),
+                        self.length_scale,
+                        r.choice(settings.noise_ws),
+                    ],
+                    np.float32,
+                ),
+            }
+            if self.has_sid:
+                feed["sid"] = np.array([r.randrange(self.n_speakers)], np.int64)
+            a = self.session.run(None, feed)[0].reshape(-1).astype(np.float32)
+            shift = r.uniform(*self.PITCH)  # read at rate/shift: shorter clip, higher voice
+            # the rate rounded to 100 Hz: a ratio like 16000/19687 makes a huge filter (60x slower)
+            a = resample_poly(a, OUT_RATE, round(self.rate / shift / 100) * 100).astype(np.float32)
+            a = a / max(float(np.abs(a).max()), 0.01) * 0.95
+            out.append(_trim(a))
+        return out
+
+
+_onnx_gen: OnnxGenerator | None = None  # in a pool worker: its own copy of the voice
+
+
+def _onnx_worker_init(model_path: str, espeak: str | None = None) -> None:
+    global _onnx_gen
+    torch.set_num_threads(1)
+    _onnx_gen = OnnxGenerator(Path(model_path), espeak=espeak)
+
+
+def _onnx_worker_batch(texts: list[str], seed: int, settings: VoiceSettings) -> list[np.ndarray]:
+    _onnx_gen.rng = random.Random(seed)
+    return _onnx_gen.batch(texts, settings)
+
+
+def onnx_workers() -> int:
+    """Processes for the ONNX voices: two CPU threads each, a few cores left for everything else."""
+    return max(1, min(8, ((os.cpu_count() or 2) - 2) // 2))
 
 
 def _trim(a: np.ndarray, thr: float = 1e-3) -> np.ndarray:
@@ -295,9 +433,12 @@ def generate(
     settings: VoiceSettings | None = None,
     on_progress: Callable[[int, int], None] | None = None,
     in_order: bool = False,
+    espeak: str | None = None,
 ) -> dict:
     """Write `n` clips of `phrases` (cycled at random) to out_dir/clip_NNNNNN.wav, resuming.
     With in_order, clip i says phrases[i % len(phrases)]: each text once before any repeats.
+    espeak: the language the texts are read in, when it isn't the voice's own (English voices reading a
+    German wake word: more speakers, with an accent).
 
     Returns {"written": .., "failed": ..}. A batch that raises (e.g. the occasional XPU kernel error)
     is retried at half size down to 1 clip; only clips that fail alone are skipped."""
@@ -308,7 +449,13 @@ def generate(
     # a resumed run continues with other voices: the same seed would repeat the first clips exactly
     if seed is not None and done:
         seed += done
-    gen = Generator(model_path, device, seed)
+    if Path(model_path).suffix == ".onnx" and torch.device(device).type == "cpu":
+        # without a GPU, onnxruntime one clip at a time in a pool of processes is the faster way
+        gen = OnnxGenerator(Path(model_path), seed, workers=onnx_workers(), espeak=espeak)
+    else:
+        gen = Generator(model_path, device, seed)
+        if espeak:
+            gen.voice = espeak
     guard = _MemoryGuard(gen.device, batch_size, max((settings or VoiceSettings()).length_scales))
     rng = random.Random(seed)
     idx, failed = done, 0
@@ -338,16 +485,20 @@ def generate(
             idx += 1
 
     first = True
-    while idx < n:
-        size = min(guard.next_size(first), n - idx)
-        if in_order:
-            texts = [phrases[(idx + k) % len(phrases)] for k in range(size)]
-        else:
-            texts = [rng.choice(phrases) for _ in range(size)]
-        first = False
-        run(texts)
-        if on_progress:
-            on_progress(idx, n)
+    try:
+        while idx < n:
+            size = min(guard.next_size(first), n - idx)
+            if in_order:
+                texts = [phrases[(idx + k) % len(phrases)] for k in range(size)]
+            else:
+                texts = [rng.choice(phrases) for _ in range(size)]
+            first = False
+            run(texts)
+            if on_progress:
+                on_progress(idx, n)
+    finally:  # also when a run is stopped: no worker processes left behind
+        if getattr(gen, "pool", None) is not None:
+            gen.pool.shutdown(cancel_futures=True)
     if gen.device.type == "xpu":
         torch.xpu.empty_cache()
     return {"written": idx - done, "failed": failed}

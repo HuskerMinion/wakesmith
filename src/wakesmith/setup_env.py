@@ -93,16 +93,30 @@ def _pip(*args: str) -> None:
 
 
 def install_torch(accel: str) -> None:
-    _pip(
-        "--reinstall-package",
-        "torch",
-        "--reinstall-package",
-        "torchaudio",
-        "torch",
-        "torchaudio",
-        "--index-url",
-        TORCH_INDEX[accel],
+    # Reinstall even when a torch is there: it may be a build for another device. pip has no
+    # --reinstall-package (uv only), and its --force-reinstall would reinstall every dependency too.
+    if shutil.which("uv"):
+        _pip(
+            "--reinstall-package",
+            "torch",
+            "--reinstall-package",
+            "torchaudio",
+            "torch",
+            "torchaudio",
+            "--index-url",
+            TORCH_INDEX[accel],
+        )
+        return
+    subprocess.run(
+        [sys.executable, "-m", "pip", "uninstall", "-y", "torch", "torchaudio"], check=True
     )
+    try:  # pip can't swap builds in one step: until this succeeds there is no PyTorch at all
+        _pip("torch", "torchaudio", "--index-url", TORCH_INDEX[accel])
+    except subprocess.CalledProcessError:
+        raise RuntimeError(
+            "installing PyTorch failed after the old build was removed; run `wakesmith setup` again "
+            "(a network problem, most often) to put it back"
+        ) from None
 
 
 # A matrix product on the device, not just "is a device there": an installed build can list a

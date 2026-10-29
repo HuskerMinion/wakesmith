@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "wakesmith"
-version = "0.3.0"
+version = "0.4.0"
 description = "Forge your own wake word: train microWakeWord and openWakeWord models from synthetic speech plus your own recordings, on Intel Arc, NVIDIA or CPU"
 readme = "README.md"
 license = "PolyForm-Noncommercial-1.0.0"
@@ -22,6 +22,7 @@ dependencies = [
     "typer>=0.12",
     "tqdm",
     "onnxruntime>=1.20",
+    "onnx>=1.16",  # reads the German voices into PyTorch (tts/onnx_voice.py)
     "tensorflow>=2.18",
     "tensorboard",
     "fastapi>=0.110",

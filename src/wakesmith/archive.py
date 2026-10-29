@@ -232,7 +232,7 @@ def plan(p: Project, clips: bool = False, found: dict[str, list[str]] | None = N
 
     # prepared recordings: only when the source folders are still there to rebuild them from
     real = RealData(p)
-    cv_on = p.commonvoice.enabled
+    cv_on = p.uses_commonvoice
     cv_ok = True
     if cv_on:
         from . import commonvoice
@@ -376,23 +376,16 @@ def settings() -> dict:
 
 
 def save_settings(changes: dict) -> dict:
-    s = settings()
+    new = {}
     if "archive_after_days" in changes:
         try:
-            s["archive_after_days"] = max(0, min(3650, int(changes["archive_after_days"])))
+            new["archive_after_days"] = max(0, min(3650, int(changes["archive_after_days"])))
         except (TypeError, ValueError):
             raise ValueError("days must be a whole number (0 turns it off)") from None
-    data = assistant._read_all()
-    data["storage"] = s
-    f = assistant.settings_path()
-    f.parent.mkdir(parents=True, exist_ok=True)
-    tmp = f.with_suffix(".tmp")
-    fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)  # it may hold the AI key too
-    with os.fdopen(fd, "w") as out:
-        json.dump(data, out, indent=1)
-    os.chmod(tmp, 0o600)
-    tmp.replace(f)
-    return s
+    assistant.update_all(
+        lambda data: data.__setitem__("storage", {**(data.get("storage") or {}), **new})
+    )
+    return settings()
 
 
 def _last_activity(p: Project, newest_files: float) -> float:

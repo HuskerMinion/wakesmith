@@ -10,7 +10,10 @@ from __future__ import annotations
 import hashlib
 import os
 import shutil
+import socket
+import threading
 import zipfile
+from contextlib import contextmanager, nullcontext
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -37,6 +40,7 @@ class Asset:
     source: str = ""
     profile: str = "both"  # both | personal
     used_for: str = ""
+    optional: bool = False  # fetched when a project needs it, not by setup (experimental languages)
 
     @property
     def local(self) -> Path:
@@ -211,6 +215,62 @@ ASSETS["cmudict"] = Asset(
 
 TTS_MODELS = {"libritts-high": "tts-libritts-high", "libritts-r-medium": "tts-libritts-r-medium"}
 
+# German Piper voices (ONNX, one speaker each except thorsten_emotional's 8 styles; the 236-speaker
+# de_DE-mls-medium says nothing intelligible). voice: (onnx sha256, size, config sha256, license, profile)
+PIPER_VOICES = f"{HF}/rhasspy/piper-voices/resolve/main/de/de_DE"
+_MAILABS = "M-AILABS Speech Dataset (terms not stated; treated as personal use only)"
+GERMAN_VOICES = {
+    "thorsten-high": ("9df1c43c61149ef9b39e618e2b861fbe41e1fcea9390b2dac62e8761573ea4f1", 113_895_201,
+                      "6de734444e4c3f9e33b7ebe2746dbc19b71e85f613e79c65acf623200b99a76a", "CC0", "both"),
+    "thorsten-medium": ("7e64762d8e5118bb578f2eea6207e1a35a8e0c30595010b666f983fc87bb7819", 63_201_294,
+                        "974adee790533adb273a1ac88f49027d2a1b8f0f2cf4905954a4791e79264e85", "CC0", "both"),
+    "thorsten_emotional-medium": ("c1764e652266cd6dcebf1b95c61973df5970a5f5272e94b655ff1ddf9a99d1ff", 76_745_905,
+                                  "92895b9e99f7cfc13f4a9879da615c3d6e0baa4d660e26d7b685abdd27a6d1d3", "CC0", "both"),
+    "kerstin-low": ("d352a7641892cebf2903859af94e9ba81a141110215fe3943bcda7f7da401b7a", 63_104_526,
+                    "56e708556b7b9b7a53c4f8957e021421e69f11a600962bba554cffbe72cf2d47", "CC0", "both"),
+    "eva_k-x_low": ("e88cf290fbfb768bf111330d2e8a46e376b0d85e3423a28bfebbc863a260dad8", 20_628_813,
+                    "ef14b3dcb279ab4b18422a7a132877bee7a148821bd91152fb7ae9c4b3d79625", _MAILABS, "personal"),
+    "karlsson-low": ("f9793bf7e461a472b3916cf260774bfc9812e9eb72601b147ed649d01064e8fe", 63_104_526,
+                     "3b2095adbfeede316f22007a0a09d4bfc25514b7189850740b06800a6cfb9838", _MAILABS, "personal"),
+    "ramona-low": ("a1068592532aad8c49bf3d1a01b8749c11d7dba726689ee28ad64e7b627ae4c5", 63_104_526,
+                   "64906ab7a050ac685fa3dcea044baa798f67ed77be164f9c668a69298c6487d2", _MAILABS, "personal"),
+    "pavoque-low": ("96cd41fe2303dfe4745422a2580658bdbc5f935b7ee67640a94da7435a502a26", 63_104_526,
+                    "07d43d8946e869209a12d9b4fd780e3f277fe9afb305c21491a68bd97e01b74f", "CC BY-NC-SA 4.0", "personal"),
+}  # fmt: skip
+for _v, (_sha, _size, _csha, _lic, _prof) in GERMAN_VOICES.items():
+    _speaker, _quality = _v.rsplit("-", 1)
+    _url = f"{PIPER_VOICES}/{_speaker}/{_quality}/de_DE-{_v}.onnx"
+    ASSETS[f"tts-de-{_v}"] = Asset(
+        f"tts-de-{_v}",
+        f"tts/de_DE-{_v}.onnx",
+        url=_url,
+        sha256=_sha,
+        size=_size,
+        license=_lic,
+        source=f"{HF}/rhasspy/piper-voices",
+        profile=_prof,
+        used_for="synthetic German speech (experimental)",
+        optional=True,
+    )
+    ASSETS[f"tts-de-{_v}-config"] = Asset(
+        f"tts-de-{_v}-config",
+        f"tts/de_DE-{_v}.onnx.json",
+        url=_url + ".json",
+        sha256=_csha,
+        size=10_000,
+        license="MIT",
+        source=f"{HF}/rhasspy/piper-voices",
+        profile=_prof,
+        used_for="synthetic German speech (experimental)",
+        optional=True,
+    )
+    TTS_MODELS[f"de-{_v}"] = f"tts-de-{_v}"
+
+
+def required() -> list[Asset]:
+    """What setup downloads: everything but the optional assets."""
+    return [a for a in ASSETS.values() if not a.optional]
+
 
 def sha256_file(path: Path, chunk: int = 1 << 24) -> str:
     h = hashlib.sha256()
@@ -220,12 +280,27 @@ def sha256_file(path: Path, chunk: int = 1 << 24) -> str:
     return h.hexdigest()
 
 
-def fetch(asset: Asset, progress: bool = True) -> Path:
-    """Download (and verify / unpack) an asset unless it is already present."""
+def fetch(asset: Asset, progress: bool = True, wait: bool = True) -> Path:
+    """Download (and verify / unpack) an asset unless it is already present. One process at a time
+    per asset (a preview and a training job may both want a German voice first): the second waits,
+    then finds it there; with wait=False it raises at once instead (a web request shouldn't hang)."""
+    import fcntl
+
     if asset.present():
         return asset.local
+    asset.local.parent.mkdir(parents=True, exist_ok=True)
+    with open(asset.local.with_name(f".{asset.local.name}.lock"), "w") as lock:
+        try:
+            fcntl.flock(lock, fcntl.LOCK_EX | (0 if wait else fcntl.LOCK_NB))
+        except BlockingIOError:
+            raise RuntimeError(f"{asset.name} is being downloaded; try again in a moment") from None
+        if asset.present():
+            return asset.local
+        return _fetch_unlocked(asset, progress)
+
+
+def _fetch_unlocked(asset: Asset, progress: bool) -> Path:
     dest = asset.local
-    dest.parent.mkdir(parents=True, exist_ok=True)
     if asset.hf_repo:
         from huggingface_hub import snapshot_download
 
@@ -262,14 +337,73 @@ def fetch(asset: Asset, progress: bool = True) -> Path:
     return dest
 
 
+_ipv6_ok: bool | None = None  # can this machine reach the internet over IPv6? (tested once)
+
+
+def _ipv6_works(host: str) -> bool:
+    """Whether `host` answers over IPv6 here. Many machines (WSL especially) get IPv6 addresses from
+    DNS with no route out; urllib then waits on each one in turn before it tries IPv4."""
+    global _ipv6_ok
+    if _ipv6_ok is None:
+        try:
+            addrs = socket.getaddrinfo(host, 443, socket.AF_INET6, socket.SOCK_STREAM)
+        except OSError:
+            addrs = []
+        _ipv6_ok = not addrs  # no IPv6 address: nothing to wait on
+        for *_, sa in addrs[:2]:
+            try:
+                socket.create_connection(sa[:2], timeout=4).close()
+                _ipv6_ok = True
+                break
+            except OSError:
+                pass
+    return _ipv6_ok
+
+
+_real_getaddrinfo = socket.getaddrinfo
+_v4_lock = threading.Lock()
+_v4_users = 0  # downloads inside _ipv4_only: the last one out puts getaddrinfo back
+
+
+def _v4_getaddrinfo(host, port, family=0, type=0, proto=0, flags=0):
+    return _real_getaddrinfo(host, port, socket.AF_INET, type, proto, flags)
+
+
+@contextmanager
+def _ipv4_only():
+    """IPv4 lookups for the whole process while it lasts (urllib has no per-request switch). Only used
+    once IPv6 is known not to work here, so other threads lose nothing; counted, so overlapping
+    downloads (the page's Download all next to a preview) restore the real lookup exactly once."""
+    global _v4_users
+    with _v4_lock:
+        _v4_users += 1
+        socket.getaddrinfo = _v4_getaddrinfo
+    try:
+        yield
+    finally:
+        with _v4_lock:
+            _v4_users -= 1
+            if not _v4_users:
+                socket.getaddrinfo = _real_getaddrinfo
+
+
 def _download(url: str, out: Path, size: int, progress: bool, label: str) -> None:
+    import urllib.parse
+    import urllib.request
+
+    have = out.stat().st_size if out.exists() else 0
+    req = urllib.request.Request(url, headers={"Range": f"bytes={have}-"} if have else {})
+    v6 = _ipv6_works(urllib.parse.urlsplit(url).hostname or "")
+    with nullcontext() if v6 else _ipv4_only():  # redirects (to a CDN) stay on IPv4 too
+        _fetch(req, out, have, size, progress, label)
+
+
+def _fetch(req, out: Path, have: int, size: int, progress: bool, label: str) -> None:
     import urllib.request
 
     from tqdm import tqdm
 
-    have = out.stat().st_size if out.exists() else 0
-    req = urllib.request.Request(url, headers={"Range": f"bytes={have}-"} if have else {})
-    with urllib.request.urlopen(req) as r:
+    with urllib.request.urlopen(req, timeout=60) as r:  # no answer at all: fail instead of waiting
         if have and r.status != 206:
             have = 0  # server ignored the range: start over
         total = int(r.headers.get("Content-Length", 0)) + have or size
@@ -284,9 +418,16 @@ def _download(url: str, out: Path, size: int, progress: bool, label: str) -> Non
                 disable=not progress,
             ) as bar,
         ):
+            cap = size * 1.1 + (1 << 20) if size else None  # a wrong file can't fill the disk
+            got = have
             while chunk := r.read(1 << 20):
                 f.write(chunk)
                 bar.update(len(chunk))
+                got += len(chunk)
+                if cap and got > cap:
+                    f.close()
+                    out.unlink()  # a resumed download would only grow it again
+                    raise RuntimeError(f"{label}: the download is larger than expected; stopped")
 
 
 def link_existing(asset: Asset, existing: Path) -> None:

@@ -806,6 +806,21 @@ def test_gpu_build_choice_prefers_nvidia_then_intel_then_amd():
     assert se.torch_sees("cpu")
 
 
+def test_torch_install_without_uv_passes_pip_only_pip_flags(monkeypatch):
+    from wakesmith import setup_env as se
+
+    calls = []
+    monkeypatch.setattr(se.subprocess, "run", lambda cmd, check: calls.append(cmd))
+    monkeypatch.setattr(se.shutil, "which", lambda name: None)
+    se.install_torch("cuda")
+    assert [c[3] for c in calls] == ["uninstall", "install"]
+    assert not any("--reinstall-package" in c for c in calls)
+    monkeypatch.setattr(se.shutil, "which", lambda name: "/usr/bin/uv")
+    calls.clear()
+    se.install_torch("cuda")
+    assert calls[0][:3] == ["/usr/bin/uv", "pip", "install"] and "--reinstall-package" in calls[0]
+
+
 def test_tensorflow_kept_off_the_gpu_after_generation(monkeypatch):
     import os
 
@@ -2563,7 +2578,7 @@ def test_clip_sync_cli_and_api(proj, tmp_path, monkeypatch):
     monkeypatch.setattr(jobs, "kick", list)
     fake = _FakeSystemctl()
     monkeypatch.setattr(subprocess, "run", fake)  # no real systemctl anywhere below
-    monkeypatch.setattr(rounds, "_Whisper", lambda device: _FakeWhisper(SAID))
+    monkeypatch.setattr(rounds, "_Whisper", lambda device, **kw: _FakeWhisper(SAID))
     src = tmp_path / "incoming"
     _puller(
         src,
@@ -2693,7 +2708,7 @@ def _room_session(room, monkeypatch, texts):
     monkeypatch.setattr(
         sessions,
         "_transcriber",
-        lambda device, model="turbo": lambda paths: [next(it) for _ in paths],
+        lambda device, model="turbo", language="en": lambda paths: [next(it) for _ in paths],
     )
     return s["id"], claps, speech
 
@@ -2751,7 +2766,7 @@ def test_room_labels_by_phrase_and_spot_markers_carry_on(room, monkeypatch):
     monkeypatch.setattr(
         sessions,
         "_transcriber",
-        lambda device, model="turbo": lambda paths: [next(it) for _ in paths],
+        lambda device, model="turbo", language="en": lambda paths: [next(it) for _ in paths],
     )
     sessions.split(sid, "cpu", log=lambda m: None)
     sp = [x for x in sessions.segments(sid) if x["kind"] == "speech"]
@@ -2800,7 +2815,9 @@ def test_room_send_goes_to_the_right_projects_once(room, monkeypatch):
     monkeypatch.setattr(
         sessions,
         "_transcriber",
-        lambda device, model="turbo": lambda paths: [texts[i] for i in range(len(paths))],
+        lambda device, model="turbo", language="en": (
+            lambda paths: [texts[i] for i in range(len(paths))]
+        ),
     )
     sessions.split(sid, "cpu", log=lambda m: None)
     third = sessions.send(sid, busy=lambda p: False)
@@ -3234,3 +3251,215 @@ def test_everyday_terms_use_common_voice_takes_when_there_are_none_of_its_own(
     )
     row = next(r for r in verdict.everyday(p, "oww")["rows"] if r["cutoff"] == 0.5)
     assert (row["caught"], row["false"]) == (1, 1)
+
+
+# --- languages (German is experimental, off by default) ---------------------------------------------
+
+
+def test_german_is_off_until_turned_on(tmp_path, monkeypatch):
+    from typer.testing import CliRunner
+
+    from wakesmith import languages
+    from wakesmith.cli import app
+
+    monkeypatch.setenv("WAKESMITH_HOME", str(tmp_path / "data"))
+    monkeypatch.setenv("WAKESMITH_PROJECTS", str(tmp_path / "projects"))
+    monkeypatch.delenv("WAKESMITH_EXPERIMENTAL_LANGUAGES", raising=False)
+    assert [x.code for x in languages.available()] == ["en"]
+    r = CliRunner().invoke(app, ["new", "hallo computer", "--language", "de"])
+    assert r.exit_code != 0 and "experimental" in r.output
+    languages.set_experimental(True)
+    assert [x.code for x in languages.available()] == ["en", "de"]
+    assert json.loads((tmp_path / "data" / "settings.json").read_text())["languages"] == {
+        "experimental": True
+    }
+    languages.set_experimental(False)
+    monkeypatch.setenv("WAKESMITH_EXPERIMENTAL_LANGUAGES", "1")
+    assert "de" in [x.code for x in languages.available()]
+
+
+def test_setup_leaves_the_german_voices_for_later():
+    from wakesmith import assets
+
+    german = [a for a in assets.ASSETS.values() if a.name.startswith("tts-de-")]
+    assert german and all(a.optional for a in german)
+    assert not set(assets.required()) & set(german)
+    assert all(a.sha256 for a in german)  # pinned like every single-file download
+
+
+def test_a_german_word_uses_german_voices_and_names(tmp_path, monkeypatch):
+    monkeypatch.setenv("WAKESMITH_PROJECTS", str(tmp_path / "projects"))
+    p = project.create("Grüß Gott", language="de")
+    assert p.name == "gruess_gott__de" and p.language == "de"
+    assert p.tts_models and all(m.startswith("de-") for m in p.tts_models)
+    assert project.load(p.name).language == "de"
+    note = export.license_note(p)
+    assert "de_DE-thorsten-high: CC0" in note and "CMU" not in note
+    assert project.create("hey jarvis").language == "en"  # English stays the default
+    # the same word in two languages: two wake words, not two versions of one
+    en, de = project.create("computer"), project.create("computer", language="de")
+    assert (en.name, en.version, de.name, de.version) == ("computer", 0, "computer__de", 0)
+    assert de.family != en.family
+    assert project.create("hey de").family != project.create("hey", language="de").family
+
+
+@needs_espeak
+def test_german_sound_alikes_keep_umlauts_and_never_say_the_phrase():
+    from wakesmith import phrases
+
+    out = phrases.suggest("hallo küche", 40, language="de")
+    assert out and "hallo küche" not in out
+    assert "küche" in out  # the last word alone
+    target = phrases._ipa_key("hallo küche", "de")
+    assert all(phrases._ipa_key(s, "de") != target for s in out)
+    assert any(c in "".join(out) for c in "äöü")  # German vowels in the variants
+
+
+def test_a_german_word_gets_german_everyday_sentences_and_no_english_common_voice(
+    tmp_path, monkeypatch
+):
+    from wakesmith import commonvoice, conversational
+
+    monkeypatch.setenv("WAKESMITH_PROJECTS", str(tmp_path / "projects"))
+    assert conversational.says_phrase("Grüß Gott, wie geht's?", ["grüß gott"])
+    assert not conversational.says_phrase("Gruß an Gott", ["grüß gott"])
+    ask = conversational.messages("hallo computer", 5, [], [], "de")[-1]["content"]
+    assert "in German" in ask
+    assert "German" not in conversational.messages("hey jarvis", 5, [], [])[-1]["content"]
+    p = project.create("hallo computer", language="de")
+    with pytest.raises(RuntimeError, match="English"):
+        commonvoice.prepare(p)
+
+
+def test_german_endpoints_follow_the_switch(tmp_path, monkeypatch):
+    from fastapi.testclient import TestClient
+
+    from wakesmith.web.server import create_app
+
+    monkeypatch.setenv("WAKESMITH_HOME", str(tmp_path / "data"))
+    monkeypatch.setenv("WAKESMITH_PROJECTS", str(tmp_path / "projects"))
+    monkeypatch.delenv("WAKESMITH_EXPERIMENTAL_LANGUAGES", raising=False)
+    c = TestClient(create_app(), base_url="http://localhost")
+    # off: no German sound-alikes, and no German voices downloaded for a preview
+    assert c.get("/api/suggest", params={"phrase": "hallo", "language": "de"}).status_code == 400
+    assert c.get("/api/preview", params={"text": "hallo", "language": "de"}).status_code == 400
+    assert c.post("/api/languages", json=[True]).status_code == 400
+    assert c.post("/api/languages", content=b"not json").status_code == 400
+    assert c.post("/api/languages", json={"experimental": "yes"}).status_code == 400
+    assert c.post("/api/languages", json={"experimental": True}).json()["experimental"] is True
+    # Common Voice can't be switched on for a German word (the set here is English)
+    p = project.create("hallo computer", language="de", negatives=["hallo"])
+    p.commonvoice.enabled = True  # as if project.yaml had been edited by hand
+    assert not p.uses_commonvoice
+    r = c.put(f"/api/projects/{p.name}", json={"commonvoice": {"enabled": True}})
+    assert r.status_code == 400
+
+
+def test_switch_values_that_mean_off(monkeypatch, tmp_path):
+    from wakesmith import languages
+
+    monkeypatch.setenv("WAKESMITH_HOME", str(tmp_path))
+    for v in ("0", "false", "No", "off", ""):
+        monkeypatch.setenv("WAKESMITH_EXPERIMENTAL_LANGUAGES", v)
+        assert not languages.experimental_on(), v
+    monkeypatch.setenv("WAKESMITH_EXPERIMENTAL_LANGUAGES", "1")
+    assert languages.experimental_on()
+
+
+def test_overlapping_ipv4_downloads_put_the_real_lookup_back():
+    import socket
+
+    from wakesmith import assets
+
+    real = socket.getaddrinfo
+    with assets._ipv4_only():
+        with assets._ipv4_only():
+            assert socket.getaddrinfo is not real
+        assert socket.getaddrinfo is not real  # the other download still runs
+    assert socket.getaddrinfo is real
+
+
+def test_a_download_larger_than_announced_stops_and_leaves_nothing(tmp_path, monkeypatch):
+    import io
+    import urllib.request
+
+    from wakesmith import assets
+
+    class Reply(io.BytesIO):
+        status, headers = 200, {"Content-Length": "0"}
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+    monkeypatch.setattr(urllib.request, "urlopen", lambda *a, **k: Reply(b"x" * (3 << 20)))
+    out = tmp_path / "voice.onnx.part"
+    with pytest.raises(RuntimeError, match="larger than expected"):
+        assets._fetch(object(), out, 0, 1000, False, "voice")
+    assert not out.exists()
+
+
+def test_german_text_details(tmp_path, monkeypatch):
+    import unicodedata
+
+    from wakesmith import conversational, eta, sessions
+
+    nfd = unicodedata.normalize("NFD", "Ich putze die Küche")
+    assert conversational.says_phrase(nfd, ["küche"])
+    spots = [n for n, _ in sessions.SPOTS]
+    assert sessions.spot_of(sessions._words("jetzt an der Tür"), spots, "de") == "doorway"
+    assert sessions.spot_of(sessions._words("across the room"), spots, "de") == "across the room"
+    assert (
+        sessions.spot_of(sessions._words("nah, again"), spots) is None
+    )  # German words: German only
+    monkeypatch.setenv("WAKESMITH_HOME", str(tmp_path))
+    monkeypatch.setenv("WAKESMITH_PROJECTS", str(tmp_path / "projects"))
+    en = project.create("hey jarvis", negatives=["jarvis"])
+    de = project.create("hallo computer", language="de", negatives=["hallo"])
+    eta.record(de, "generate", 10.0, {})
+    t = eta._load()
+    assert (
+        "generate:de" in t and "generate" not in t
+    )  # German speech doesn't change English's estimate
+    assert eta.estimates(en)["generate"] != eta.estimates(de)["generate"]
+
+
+def test_a_preview_does_not_wait_for_a_download_in_another_process(tmp_path, monkeypatch):
+    import fcntl
+
+    from wakesmith import assets
+
+    monkeypatch.setenv("WAKESMITH_HOME", str(tmp_path))
+    a = assets.Asset("voice", "tts/voice.onnx", url="https://example.invalid/voice.onnx", size=10)
+    a.local.parent.mkdir(parents=True)
+    with open(a.local.with_name(".voice.onnx.lock"), "w") as held:  # as another process would
+        fcntl.flock(held, fcntl.LOCK_EX)
+        with pytest.raises(RuntimeError, match="being downloaded"):
+            assets.fetch(a, progress=False, wait=False)
+
+
+def test_a_hand_edited_language_is_refused(tmp_path, monkeypatch):
+    monkeypatch.setenv("WAKESMITH_PROJECTS", str(tmp_path / "projects"))
+    p = project.create("hallo computer", language="de", negatives=["hallo"])
+    f = p.path("project.yaml")
+    f.write_text(f.read_text().replace("language: de", "language: ../../x"))
+    with pytest.raises(ValueError, match="unknown language"):
+        project.load(p.name)
+    assert project.all_projects() == []  # left out of every listing instead of naming folders
+    from fastapi.testclient import TestClient
+
+    from wakesmith.web.server import create_app
+
+    r = TestClient(create_app(), base_url="http://localhost").get(f"/api/projects/{p.name}")
+    assert r.status_code == 409 and "unknown language" in r.json()["detail"]
+
+
+def test_a_folder_of_another_word_does_not_block_a_new_one(tmp_path, monkeypatch):
+    monkeypatch.setenv("WAKESMITH_PROJECTS", str(tmp_path / "projects"))
+    old = project.create(
+        "hallo computer", name="hallo_computer", language="de"
+    )  # an early German one
+    new = project.create("hallo computer")
+    assert old.family != new.family and new.name == "hallo_computer_2" and new.version == 0

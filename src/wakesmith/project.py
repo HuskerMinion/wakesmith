@@ -138,6 +138,7 @@ class Project:
     negatives: list[str] = field(default_factory=list)  # sound-alike phrases to reject
     positive_spellings: list[str] = field(default_factory=list)  # extra spellings of the phrase
     tts_models: list[str] = field(default_factory=lambda: ["libritts-high", "libritts-r-medium"])
+    language: str = "en"  # see languages.py; anything but English is experimental
     samples: Samples = field(default_factory=Samples)
     real: Real = field(default_factory=Real)
     commonvoice: CommonVoice = field(default_factory=CommonVoice)
@@ -160,9 +161,17 @@ class Project:
         return f"{self.display} v{self.version}" if self.version else self.display
 
     @property
+    def uses_commonvoice(self) -> bool:
+        """Common Voice is on for this word: the set wakesmith downloads is English, so never for others."""
+        return self.commonvoice.enabled and self.language == "en"
+
+    @property
     def family(self) -> str:
-        """The wake word this project is a version of: every project of the same phrase."""
-        return slug(self.phrase)
+        """The wake word this project is a version of: every project of the same phrase and language
+        (a German "computer" is not a version of the English one). English keeps the bare slug; other
+        languages add "__<code>", which no slug contains (an English "hey de" stays apart from a German
+        "hey")."""
+        return slug(self.phrase) + ("" if self.language == "en" else f"__{self.language}")
 
     def path(self, *parts: str) -> Path:
         return self.dir.joinpath(*parts)
@@ -171,7 +180,7 @@ class Project:
         self.dir.mkdir(parents=True, exist_ok=True)
         data = {k: v for k, v in asdict(self).items() if k != "dir"}
         tmp = self.dir / "project.yaml.tmp"  # replaced in one step: a reader never sees half a file
-        tmp.write_text(yaml.safe_dump(data, sort_keys=False))
+        tmp.write_text(yaml.safe_dump(data, sort_keys=False, allow_unicode=True), encoding="utf-8")
         tmp.replace(self.dir / "project.yaml")
 
     # -- stage state -----------------------------------------------------------------------
@@ -187,8 +196,17 @@ class Project:
         tmp.replace(self.path("state.json"))
 
 
+_SPELL_OUT = str.maketrans({"ä": "ae", "ö": "oe", "ü": "ue", "ß": "ss"})
+
+
 def slug(text: str) -> str:
-    return re.sub(r"[^a-z0-9]+", "_", text.lower()).strip("_") or "wake_word"
+    import unicodedata
+
+    text = unicodedata.normalize("NFKD", text.lower().translate(_SPELL_OUT))  # é -> e + accent
+    return (
+        re.sub(r"[^a-z0-9]+", "_", text.encode("ascii", "ignore").decode()).strip("_")
+        or "wake_word"
+    )
 
 
 def _build(cls, data: dict):
@@ -209,14 +227,22 @@ def load(where: str | Path) -> Project:
         p = p.parent
     if not (p / "project.yaml").exists() and not p.is_absolute():
         p = projects_home() / str(where)
-    data = yaml.safe_load((p / "project.yaml").read_text())
+    data = yaml.safe_load((p / "project.yaml").read_text(encoding="utf-8"))
     proj = _build(Project, data)
+    from . import languages
+
+    languages.get(proj.language)  # ValueError for a hand-edited code: it goes into folder names
     proj.dir = p.resolve()
     return proj
 
 
 def create(phrase: str, name: str | None = None, where: Path | None = None, **kw: Any) -> Project:
-    proj = Project(name=name or slug(phrase), phrase=phrase.strip(), **kw)
+    proj = Project(name=name or "", phrase=phrase.strip(), **kw)
+    proj.name = proj.name or proj.family
+    if "tts_models" not in kw:
+        from . import languages
+
+        proj.tts_models = list(languages.get(proj.language).tts_models)
     if (
         where is None
     ):  # a new version of a wake word that already has some: the next number, its name
@@ -234,6 +260,11 @@ def create(phrase: str, name: str | None = None, where: Path | None = None, **kw
             if m and not proj.note and " " in m.group(2):
                 proj.note = m.group(2)
             proj.label = kin[-1].label  # the name belongs to the wake word, not to one version
+    if where is None and not name and (projects_home() / proj.name).exists():
+        base, k = proj.name, 2  # a folder of another wake word has the name (an older German one)
+        while (projects_home() / f"{base}_{k}").exists():
+            k += 1
+        proj.name = f"{base}_{k}"
     proj.created = proj.created or time.time()
     proj.dir = (where or projects_home() / proj.name).resolve()
     if (proj.dir / "project.yaml").exists():

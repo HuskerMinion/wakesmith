@@ -68,6 +68,13 @@ def units(p: Project, stage: str) -> float:
     return 1
 
 
+def _key(p: Project, stage: str) -> str:
+    """Speech is made by other voices in another language, at another speed: its own timing."""
+    if stage in ("generate", "conversational") and p.language != "en":
+        return f"{stage}:{p.language}"
+    return stage
+
+
 def record(p: Project, stage: str, seconds: float, info: dict | None) -> None:
     """Fold a finished stage's rate into the machine's timings (skipped stages don't count)."""
     n = units(p, stage)
@@ -75,8 +82,9 @@ def record(p: Project, stage: str, seconds: float, info: dict | None) -> None:
         return
     t = _load()
     rate = seconds / n
-    old = t.get(stage)
-    t[stage] = rate if old is None else 0.5 * old + 0.5 * rate
+    key = _key(p, stage)
+    old = t.get(key)
+    t[key] = rate if old is None else 0.5 * old + 0.5 * rate
     try:
         _path().write_text(json.dumps(t, indent=1))
     except OSError:
@@ -87,6 +95,6 @@ def estimates(p: Project) -> dict[str, float]:
     """Expected seconds for each stage of a full run of this project."""
     t = _load()
     return {
-        stage: units(p, stage) * t.get(stage, default)
+        stage: units(p, stage) * t.get(_key(p, stage), default)
         for stage, default in DEFAULT_SECONDS_PER_UNIT.items()
     }

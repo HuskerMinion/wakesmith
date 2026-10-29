@@ -62,7 +62,7 @@ def enabled(p: Project, stage: str) -> bool:
     if stage.startswith("oww"):
         return p.openwakeword.enabled
     if stage == "commonvoice":
-        return p.commonvoice.enabled
+        return p.uses_commonvoice
     if stage == "conversational":
         return p.conversational.clips > 0
     return True
@@ -210,7 +210,7 @@ def _run_stage(p: Project, stage: str, hw: hardware.Hardware, say) -> dict | Non
         return None
     if stage == "test":
         cv_test = p.path("commonvoice", "test")
-        has_cv = p.commonvoice.enabled and any(cv_test.glob("*.wav"))
+        has_cv = p.uses_commonvoice and any(cv_test.glob("*.wav"))
         if not RealData(p) and not has_cv:
             return {"skipped": "no held-out recordings"}
         out = {}

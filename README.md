@@ -161,6 +161,35 @@ It is off until you turn it on; nothing is sent anywhere else, and audio never i
 - **Other microWakeWord engines** (see [below](#results-from-one-household)): exported models record the
   audio front end they were trained on.
 
+## Other languages (experimental)
+
+Eine Anleitung auf Deutsch: [docs/deutsch.md](docs/deutsch.md).
+
+German wake words are off by default. Turn them on with the switch on the **Data & licenses** page (or
+`WAKESMITH_EXPERIMENTAL_LANGUAGES=1`, then `wakesmith new "hallo computer" --language de`); the New wake
+word page then has a Language choice. A German word gets:
+
+- **Piper's German voices**: Thorsten (three models, one with eight speaking styles), Kerstin, Eva K,
+  Karlsson, Ramona and Pavoque, about 0.5 GB, downloaded the first time a German word makes its clips
+  (`wakesmith setup` leaves them out). Piper ships them as ONNX; wakesmith rebuilds them as PyTorch
+  models so they run batched on the GPU like the English ones (55,000 clips in about 5 minutes on an
+  RTX 5060 Ti; without a GPU, onnxruntime in parallel processes). Each is one speaker, so every clip
+  gets its own speed, noise and a pitch shift (+/-12%). In a test, a model trained on seven of them
+  caught the eighth, a voice it had never heard, 88% of the time (microWakeWord, cutoff 0.5); English
+  voices reading German made it worse on that voice, so they aren't used. Still, record real takes:
+  they matter even more here than in English. Piper's 236-speaker German voice (de_DE-mls-medium) is
+  left out: it says nothing intelligible.
+- **Sound-alikes** from one-letter-sound changes (umlauts included), checked with German espeak-ng so
+  none is pronounced like the wake word. There is no German pronouncing dictionary behind them yet.
+- **Whisper in German** for device clips and recording sessions, and `trained_languages: ["de"]` in
+  the exported model files.
+- **Everyday sentences** (if turned on) asked for in German. Common Voice isn't offered: the set
+  wakesmith downloads is the English one.
+
+Thorsten and Kerstin are CC0; Pavoque is CC BY-NC-SA 4.0; Eva K, Karlsson and Ramona come from the
+M-AILABS Speech Dataset, whose terms Piper points to without stating them, so wakesmith treats them as
+personal use only. The negative examples (other speech, noise) are the same as for English.
+
 ## Real voices
 
 Synthetic speech gets you a working model. Real voices from the rooms your devices sit in are what
@@ -414,7 +443,8 @@ isn't responding, reboot. A job that outgrows the card's memory spills into syst
 
 wakesmith trains the microWakeWord and openWakeWord models running on the Echo-style devices of one
 household. It runs on Linux (Ubuntu 26.04 with two Intel Arc cards; a CPU-only Ubuntu 24.04 virtual
-machine) and on Windows 11 through WSL2 (with an NVIDIA card). Only English voices are built in.
+machine) and on Windows 11 through WSL2 (with an NVIDIA card). English is the language; German is
+experimental ([Other languages](#other-languages-experimental)).
 Fixes and improvements are welcome: see [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## Licensing

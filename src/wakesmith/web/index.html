@@ -647,8 +647,8 @@ const SCENARIOS = {
            mww: true, oww: true, quick: true, model: "both, small", export: ".tflite files" },
 };
 const TIME = { quick: "about 8 min with a GPU, about 20 min on 6 CPU cores", standard: "about 15-30 min with a GPU, much longer on the CPU (measured on first run)" };
-const syllables = t => t.toLowerCase().split(/[^a-z']+/).filter(Boolean)
-  .reduce((n, w) => n + Math.max(1, (w.replace(/e\b/, "").match(/[aeiouy]+/g) || []).length), 0);
+const syllables = t => t.toLowerCase().split(/[^a-zäöüß']+/).filter(Boolean)
+  .reduce((n, w) => n + Math.max(1, (w.replace(/e\b/, "").match(/[aeiouyäöü]+/g) || []).length), 0);
 
 async function viewNew() {
   nav("#/new");
@@ -663,7 +663,9 @@ async function viewNew() {
       <section class="panel" aria-labelledby="h-ph"><h2 id="h-ph">The phrase</h2>
         <div class="row" style="align-items:flex-end"><label class="f grow" for="phrase">Wake phrase
           <input type="text" id="phrase" placeholder="hey jarvis" autocomplete="off"></label>
+          <label class="f" for="lang" id="langbox" hidden>Language <select id="lang"></select></label>
           <button type="button" id="hear">${icon("play", 14)}Hear it</button></div>
+        <div class="hint" id="langnote" hidden>Experimental: German voices are a handful of single speakers, so expect a weaker model than in English. Real recordings of the phrase help most.</div>
         <div class="hint" id="hearnote"></div>
         <ul class="checks" id="checks" aria-live="polite"></ul>
         <div class="row" style="justify-content:space-between"><h3>Sound-alikes it must ignore <span class="hint" id="nneg"></span></h3>
@@ -730,12 +732,23 @@ async function viewNew() {
   const play = async (text, note) => {
     if (note) $("#hearnote").textContent = "making a voice…";
     try {
-      const r = await api("/api/preview?text=" + enc(text));
+      const r = await api("/api/preview?text=" + enc(text) + "&language=" + enc(lang()));
       await new Audio(URL.createObjectURL(await r.blob())).play();
       if (note) $("#hearnote").textContent = "a random synthetic voice; press again for another";
     } catch (e) { $("#hearnote").textContent = e.message; }
   };
   drawScen(); chips(); drawChecks();
+  const lang = () => $("#lang").value || "en";
+  api("/api/languages").then(d => {  // only experimental languages make a choice; off by default
+    if (d.languages.length < 2) return;
+    $("#lang").innerHTML = d.languages.map(l => `<option value="${esc(l.code)}">${esc(l.name)}${l.experimental ? " (experimental)" : ""}</option>`).join("");
+    $("#langbox").hidden = false;
+  }).catch(() => {});
+  $("#lang").onchange = () => {
+    $("#phrase").placeholder = lang() === "de" ? "hallo computer" : "hey jarvis";
+    $("#langnote").hidden = lang() === "en";
+    if (negs.length) { negs = []; chips(); }  // sound-alikes are made for one language
+  };
   $("#scen").onclick = e => { const b = e.target.closest("button[data-sc]"); if (b) { sc = b.dataset.sc; drawScen(); } };
   v.querySelectorAll("input[name=preset], #mww, #oww").forEach(el => el.onchange = drawSum);
   $("#phrase").oninput = drawChecks;
@@ -743,7 +756,7 @@ async function viewNew() {
   $("#sugg").onclick = async () => {
     const p = $("#phrase").value.trim(); if (!p) { $("#phrase").focus(); return; }
     $("#sugg").disabled = true;
-    try { negs = await api("/api/suggest?n=50&phrase=" + enc(p)); chips(); } catch (e) { $("#err").textContent = e.message; }
+    try { negs = await api("/api/suggest?n=50&phrase=" + enc(p) + "&language=" + enc(lang())); chips(); } catch (e) { $("#err").textContent = e.message; }
     finally { $("#sugg").disabled = false; }
   };
   $("#chips").onclick = e => {
@@ -757,7 +770,7 @@ async function viewNew() {
     const phrase = $("#phrase").value.trim();
     if (!phrase) { $("#err").textContent = "Type the wake phrase first."; $("#phrase").focus(); return; }
     if (!$("#mww").checked && !$("#oww").checked) { $("#err").textContent = "Pick at least one model under Advanced."; return; }
-    const body = { phrase, negatives: negs, preset: document.querySelector("input[name=preset]:checked").value,
+    const body = { phrase, language: lang(), negatives: negs, preset: document.querySelector("input[name=preset]:checked").value,
       microwakeword: { enabled: $("#mww").checked, frontend: $("#fe").value, combine: $("#comb").checked }, openwakeword: { enabled: $("#oww").checked } };
     try {
       const p = await api("/api/projects", { method: "POST", body });
@@ -1013,6 +1026,8 @@ async function voicesTab(p, base, steps) {
   const cvPane = () => {
     if (!cv) return `<section class="panel"><h2>Mozilla Common Voice</h2><p class="hint" style="margin:0">Looking up "${esc(p.phrase)}" in Common Voice…</p></section>`;
     if (cv.error) return `<div class="callout warn">${icon("bang", 18, 2)}<span>${esc(cv.error)}</span></div>`;
+    if (cv.language && cv.language !== "en") return `<section class="panel"><h2>Mozilla Common Voice</h2>
+      <div class="callout info">${icon("info", 18, 2)}<span>Common Voice here is the English set, so it can't help a word in another language yet. Record real takes on the Your recordings tab instead.</span></div></section>`;
     if (!cv.present) return `<section class="panel"><h2>Mozilla Common Voice</h2>
       <p style="margin:0;color:var(--soft)">Real volunteer voices reading sentences aloud (CC0, free to use). For a phrase made of common words, wakesmith finds the takes that contain it and cuts it out.</p>
       <div class="callout info">${icon("info", 18, 2)}<span>Common Voice isn't on this machine yet. It is about 47 GB: on the machine wakesmith runs on, run <code class="mono">wakesmith commonvoice-download</code>, then come back here. (Looked in <code class="mono">${esc(cv.dataset)}</code>.)</span></div></section>`;
@@ -1229,7 +1244,7 @@ function archNote(p) {
 
 function trainTab(p, base, steps) {
   const v = $("#view");
-  const off = k => (k.startsWith("mww") && !p.microwakeword.enabled) || (k.startsWith("oww") && !p.openwakeword.enabled) || (k === "commonvoice" && !p.commonvoice?.enabled) || (k === "conversational" && !(p.conversational?.clips > 0));
+  const off = k => (k.startsWith("mww") && !p.microwakeword.enabled) || (k.startsWith("oww") && !p.openwakeword.enabled) || (k === "commonvoice" && !(p.uses_commonvoice ?? p.commonvoice?.enabled)) || (k === "conversational" && !(p.conversational?.clips > 0));
   v.innerHTML = `${steps("train")}<div class="head"><div><div class="kicker">${esc(p.label)}</div><h1>Training</h1></div>
       <div class="row"><button type="button" class="primary" id="go">Train</button>
         <button type="button" id="retrain" title="After changing recordings or review verdicts: reuses the synthetic clips">Retrain from recordings</button>
@@ -2125,7 +2140,15 @@ async function viewData() {
   v.innerHTML = `<div><h1>Data &amp; licenses</h1><p class="sub">Everything a model is trained on, and the terms that come with it. wakesmith itself is free for noncommercial use (PolyForm Noncommercial); the models you make carry the terms of their training data.</p></div>
     <section class="panel" aria-labelledby="h-dl" id="dlbox"><h2 id="h-dl">Training data</h2><p class="hint" style="margin:0">checking…</p></section>
     <div class="callout warn">${icon("bang", 18, 2)}<span><b>Personal profile (the default):</b> some of this data allows non-commercial use only (CC BY-NC), so the models you make are for personal use.</span></div>
-    <section class="panel" aria-labelledby="h-ds"><h2 id="h-ds">Downloaded data</h2><div class="tablebox" id="assets"><p class="hint">loading…</p></div></section>`;
+    <section class="panel" aria-labelledby="h-ds"><h2 id="h-ds">Downloaded data</h2><div class="tablebox" id="assets"><p class="hint">loading…</p></div></section>
+    <section class="panel" aria-labelledby="h-lang"><h2 id="h-lang">Languages</h2>
+      <label class="row" style="gap:8px"><input type="checkbox" id="explang"><span><b>Offer German for new wake words (experimental)</b>
+        <span class="hint" style="display:block">German uses Piper's German voices (downloaded the first time a German word makes its clips, about 0.5 GB; some are personal-use only) and Whisper in German. English stays the default.</span></span></label></section>`;
+  api("/api/languages").then(d => { $("#explang").checked = d.experimental; }).catch(() => {});
+  $("#explang").onchange = async e => {
+    try { await api("/api/languages", { method: "POST", body: { experimental: e.target.checked } }); }
+    catch (err) { e.target.checked = !e.target.checked; alert(err.message); }
+  };
   const table = async () => {
     try {
       const list = await api("/api/assets");

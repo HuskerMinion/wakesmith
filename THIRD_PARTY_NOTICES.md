@@ -4,6 +4,10 @@ wakesmith includes code derived from the projects below. Each keeps its own lice
 as a whole is licensed under the PolyForm Noncommercial License 1.0.0 (see LICENSE). The derived parts were
 changed for wakesmith: each file's header says what it was ported from and what differs.
 
+The models, voices and datasets wakesmith downloads at run time (Piper's English and German voices among them)
+are not included; their licenses are listed in the README (Licensing; Other languages) and in the
+LICENSE-NOTE.txt that comes with every exported model.
+
 ## piper-sample-generator (MIT)
 
 <https://github.com/rhasspy/piper-sample-generator>. Used in `src/wakesmith/tts/vits/` (the VITS generator

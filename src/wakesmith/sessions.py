@@ -65,9 +65,20 @@ SPOTS = [  # the script's spots and the words that mark them when said out loud
     ("quietly", ["quiet", "quietly", "softly"]),
     ("TV or music on", ["tv", "television", "music", "telly"]),
 ]
+# Whisper hears a German session in German: its spot words too (only there: "nah" is English as well)
+SPOT_WORDS = {
+    "de": {
+        "close to the device": ["nah", "nahe", "dicht"],
+        "across the room": ["gegenüber", "anderen ende"],
+        "doorway": ["tür", "türrahmen"],
+        "next room, calling out": ["nebenzimmer", "nebenraum"],
+        "quietly": ["leise"],
+        "TV or music on": ["fernseher", "fernsehen", "musik"],
+    }
+}
 FIXED_LABELS = ("spot", "other", "unclear", "room", "clap", "skip")
 _ID = re.compile(r"^[0-9]{8}-[0-9]{6}(-[a-z0-9_]+)?$")
-_WORD = re.compile(r"[a-z']+")
+_WORD = re.compile(r"[a-zäöüß']+")
 
 
 # -- where things live ----------------------------------------------------------------------------
@@ -228,8 +239,11 @@ def create(
                 "phrase": p.phrase,
                 "label": p.title,
                 "spellings": p.positive_spellings,
+                "language": p.language,
             }
         )
+    if len({x["language"] for x in phrases}) > 1:  # Whisper listens for one language per session
+        raise ValueError("pick wake words of one language: Whisper listens for one per session")
     t = time.localtime()
     base = time.strftime("%Y%m%d-%H%M%S", t) + "-" + projects.slug(room)[:30]
     sid, n = base, 1
@@ -461,9 +475,11 @@ def match(text: str, phrases: list[dict]) -> tuple[dict[str, int], list[str]]:
     return counts, [w for w in words if w]
 
 
-def spot_of(words: list[str], spots: list[str]) -> str | None:
-    """The spot a spot marker names ("across the room" -> across the room), or None."""
-    keys = dict(SPOTS)
+def spot_of(words: list[str], spots: list[str], lang: str = "en") -> str | None:
+    """The spot a spot marker names ("across the room" -> across the room), or None. English words
+    always count; a session in another language adds its own."""
+    extra = SPOT_WORDS.get(lang, {})
+    keys = {name: words_ + extra.get(name, []) for name, words_ in SPOTS}
     for name in spots:
         for k in keys.get(name, [name.lower()]):
             if _find(words, _words(k)) >= 0:
@@ -474,7 +490,7 @@ def spot_of(words: list[str], spots: list[str]) -> str | None:
 def label_text(text: str, s: dict) -> tuple[str, int, str | None, str]:
     """(label, times said, spot named, note) for a transcript."""
     counts, rest = match(text, s["phrases"])
-    spot = spot_of(rest, s.get("spots", []))
+    spot = spot_of(rest, s.get("spots", []), language(s))
     if len(counts) > 1:
         return "unclear", 0, spot, "more than one wake word in one stretch: listen and pick"
     if counts:
@@ -507,7 +523,7 @@ class _Capped:
             for f in paths:
                 segs, _ = w.fw.transcribe(
                     str(f),
-                    language="en",
+                    language=w.language,
                     beam_size=5,
                     condition_on_previous_text=False,
                     max_new_tokens=MAX_TOKENS,
@@ -519,7 +535,7 @@ class _Capped:
         with w.torch.inference_mode():
             ids = w.model.generate(
                 feats.to(w.device, w.dtype),
-                language="en",
+                language=w.language,
                 task="transcribe",
                 num_beams=5,
                 do_sample=False,
@@ -528,10 +544,10 @@ class _Capped:
         return [t.strip() for t in w.proc.batch_decode(ids, skip_special_tokens=True)]
 
 
-def _transcriber(device: str, model: str = "turbo"):
+def _transcriber(device: str, model: str = "turbo", language: str = "en"):
     from .rounds import _Whisper
 
-    return _Capped(_Whisper(device, model))
+    return _Capped(_Whisper(device, model, language))
 
 
 def auto_device() -> str:
@@ -541,6 +557,11 @@ def auto_device() -> str:
     if jobs.running_all():
         return "cpu"
     return mww.train_device(hardware.detect_safe()[0].gpus)
+
+
+def language(s: dict) -> str:
+    """The language the session's words are in (sessions from before languages: English)."""
+    return next((x.get("language", "en") for x in s.get("phrases", [])), "en")
 
 
 def _clip(a: np.ndarray, t0: float, t1: float) -> np.ndarray:
@@ -566,7 +587,7 @@ def split(sid: str, device: str = "cpu", model: str = "turbo", transcribe=None, 
     speech = [x for x in found if x["kind"] == "speech"]
     texts: list[str] = []
     if speech:
-        transcribe = transcribe or _transcriber(device, model)
+        transcribe = transcribe or _transcriber(device, model, language(s))
         tmp = d / "tmp"
         tmp.mkdir(exist_ok=True)
         paths = []
