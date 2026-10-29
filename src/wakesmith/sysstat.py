@@ -1,4 +1,5 @@
 """Live memory of a running job, for the Training page: system RAM and each GPU's memory the job holds.
+Linux only (it reads /proc); elsewhere snapshot() is None and the page shows no memory bars.
 
 GPU memory comes from the kernel, never by opening the GPU in the server: the DRM fdinfo of the job's
 processes (Intel xe/i915, AMD amdgpu: "drm-resident-vram0"; "drm-resident-gtt" is system RAM mapped for the
@@ -110,6 +111,8 @@ def gpu(pids: list[int]) -> list[dict]:
     return out
 
 
-def snapshot(job: dict) -> dict:
+def snapshot(job: dict) -> dict | None:
+    if not Path("/proc/meminfo").exists():  # macOS
+        return None
     pids = job_pids(job) if job.get("running") else []
     return {"ram": ram(), "gpus": gpu(pids)}

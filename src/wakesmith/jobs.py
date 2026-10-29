@@ -171,6 +171,29 @@ def _systemd_user() -> bool:
     return r.stdout.strip() in ("running", "degraded")
 
 
+def detach(cmd: list[str], out, env: dict | None = None) -> None:
+    """Start cmd in a session of its own, output to out. With setsid -f (Linux) it is not our child, so no
+    process tree holds it; macOS has no setsid command, so there it is a child that starts a new session."""
+    if shutil.which("setsid"):
+        subprocess.run(
+            ["setsid", "-f", *cmd],
+            stdout=out,
+            stderr=subprocess.STDOUT,
+            stdin=subprocess.DEVNULL,
+            env=env,
+            check=True,
+        )
+    else:
+        subprocess.Popen(
+            cmd,
+            stdout=out,
+            stderr=subprocess.STDOUT,
+            stdin=subprocess.DEVNULL,
+            env=env,
+            start_new_session=True,
+        )
+
+
 def start(p: Project, args: list[str], title: str) -> dict:
     with _locked():
         return _start(p, args, title)
@@ -223,17 +246,8 @@ def _start(p: Project, args: list[str], title: str) -> dict:
         )
     else:
         job_file.write_text(json.dumps(job))
-        with open(
-            log, "a"
-        ) as f:  # setsid -f: the job is not our child, so no process tree holds it
-            subprocess.run(
-                ["setsid", "-f", *cmd],
-                stdout=f,
-                stderr=subprocess.STDOUT,
-                stdin=subprocess.DEVNULL,
-                env=env,
-                check=True,
-            )
+        with open(log, "a") as f:
+            detach(cmd, f, env)
     for _ in range(100):  # the job notes its pid as it starts
         cur = json.loads(job_file.read_text())
         if cur.get("pid"):

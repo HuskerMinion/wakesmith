@@ -311,13 +311,25 @@ def test_stage_cut_off_by_a_dead_job_shows_failed(proj):
     assert st["mww-train"]["status"] == "failed" and "memory" in st["mww-train"]["error"]
 
 
-@pytest.mark.parametrize("systemd", ["0", "1"])
+def _no_setsid(monkeypatch, systemd: str) -> None:
+    """systemd "no-setsid": no user manager and no setsid command, as on macOS."""
+    import shutil
+
+    monkeypatch.setenv("WAKESMITH_JOB_SYSTEMD", "1" if systemd == "1" else "0")
+    if systemd == "no-setsid":
+        which = shutil.which
+        monkeypatch.setattr(
+            shutil, "which", lambda n, *a, **k: None if n == "setsid" else which(n, *a, **k)
+        )
+
+
+@pytest.mark.parametrize("systemd", ["0", "1", "no-setsid"])
 def test_job_runs_detached_and_notes_its_pid(proj, monkeypatch, systemd):
     import time
 
     if systemd == "1" and not jobs._systemd_user():
         pytest.skip("no systemd user manager")
-    monkeypatch.setenv("WAKESMITH_JOB_SYSTEMD", systemd)
+    _no_setsid(monkeypatch, systemd)
     job = jobs.start(proj, ["--help"], "help")
     assert job["pid"] and ("unit" in job) == (systemd == "1")
     for _ in range(100):
@@ -365,14 +377,14 @@ def test_queued_runs_start_one_after_another_without_the_server(proj, monkeypatc
     assert jobs.status(proj)["result"] == "ok" and not jobs.status(proj)["running"]
 
 
-@pytest.mark.parametrize("systemd", ["0", "1"])
+@pytest.mark.parametrize("systemd", ["0", "1", "no-setsid"])
 def test_stopping_a_run_is_noted_and_the_queue_moves_on(proj, monkeypatch, systemd):
     import socket
     import time
 
     if systemd == "1" and not jobs._systemd_user():
         pytest.skip("no systemd user manager")
-    monkeypatch.setenv("WAKESMITH_JOB_SYSTEMD", systemd)
+    _no_setsid(monkeypatch, systemd)
     other = project.create("ok husker", negatives=["husker"])
     with socket.socket() as s:  # a job that runs until stopped: the web UI on a free port
         s.bind(("127.0.0.1", 0))
@@ -391,6 +403,23 @@ def test_stopping_a_run_is_noted_and_the_queue_moves_on(proj, monkeypatch, syste
         (other.name, "ok"),
     ]
     assert jobs.queue() == []
+
+
+def test_memory_snapshot_is_none_without_proc(monkeypatch):
+    import os
+    from pathlib import Path
+
+    from wakesmith import sysstat
+
+    if Path("/proc/meminfo").exists():
+        assert sysstat.snapshot({"running": False})["ram"]["total_gb"] > 0
+    real = Path.exists
+    monkeypatch.setattr(
+        Path, "exists", lambda self: False if str(self) == "/proc/meminfo" else real(self)
+    )
+    assert (
+        sysstat.snapshot({"running": True, "pid": os.getpid()}) is None
+    )  # macOS: no bars, no crash
 
 
 def test_queue_api_add_reorder_remove(proj, monkeypatch):

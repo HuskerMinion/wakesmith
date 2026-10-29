@@ -33,7 +33,6 @@ import io
 import json
 import os
 import re
-import subprocess
 import sys
 import time
 from pathlib import Path
@@ -714,24 +713,9 @@ def start_split(sid: str, device: str = "auto") -> dict:
     with open(d / "split.log", "a") as f:
         f.write(f"\n===== {time.strftime('%Y-%m-%d %H:%M:%S')} split\n")
         f.flush()
-        subprocess.run(
-            [
-                "setsid",
-                "-f",
-                sys.executable,
-                "-m",
-                "wakesmith",
-                "room",
-                "split",
-                sid,
-                "--device",
-                device,
-            ],
-            stdout=f,
-            stderr=subprocess.STDOUT,
-            stdin=subprocess.DEVNULL,
-            check=True,
-        )
+        from .jobs import detach
+
+        detach([sys.executable, "-m", "wakesmith", "room", "split", sid, "--device", device], f)
     return split_status(sid)
 
 
