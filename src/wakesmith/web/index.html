@@ -215,6 +215,12 @@
   ul.takes li:first-child { border-top: 0; }
   button.round { width: 44px; min-height: 44px; padding: 0; border-radius: 50%; }
   button.round.flat { border: 0; border-radius: 10px; background: transparent; color: var(--muted); }
+  button.loading svg { animation: pulse 1s ease-in-out infinite; }
+  button.round.playing { color: var(--cyan); border-color: transparent;
+    background: radial-gradient(closest-side, var(--panel) calc(100% - 3px), transparent calc(100% - 2px)), conic-gradient(var(--cyan) var(--p, 0%), var(--line) 0); }
+  button.playing:not(.round) { border-color: var(--cyan); color: var(--cyan); }
+  @keyframes pulse { 50% { opacity: .35; } }
+  @media (prefers-reduced-motion: reduce) { button.loading svg { animation: none; opacity: .6; } }
   .tag { padding: 4px 12px; min-height: 32px; border-radius: 999px; font-size: 12px; font-weight: 600; background: var(--raised); color: var(--soft); border: 0; display: inline-flex; align-items: center; }
   button.tag.test { background: var(--info-bg); color: var(--info); }
 
@@ -321,7 +327,7 @@ const I = {
   chip: '<rect x="6" y="6" width="12" height="12" rx="2"/><path d="M9 2v4M15 2v4M9 18v4M15 18v4M2 9h4M2 15h4M18 9h4M18 15h4"/>',
   doc: '<path d="M6 3h9l4 4v14H6z"/><path d="M14 3v5h5M9 13h7M9 17h7"/>',
   check: '<path d="M5 12l5 5 9-10"/>', bang: '<path d="M12 7v6M12 17v.5"/>', info: '<path d="M12 11v6M12 7v.5"/>',
-  play: '<path d="M7 4l13 8-13 8z" fill="currentColor"/>', x: '<path d="M6 6l12 12M18 6L6 18"/>',
+  play: '<path d="M7 4l13 8-13 8z" fill="currentColor"/>', stop: '<rect x="6" y="6" width="12" height="12" rx="2" fill="currentColor"/>', x: '<path d="M6 6l12 12M18 6L6 18"/>',
   arrow: '<path d="M5 12h14M13 6l6 6-6 6"/>', down: '<path d="M12 4v11M7 10l5 5 5-5M5 20h14"/>',
   spin: '<path d="M12 3a9 9 0 1 0 9 9"/>', clock: '<circle cx="12" cy="12" r="8"/><path d="M12 8v4l3 2"/>',
   esp: '<circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="3"/><path d="M12 2v2M12 20v2"/>',
@@ -332,6 +338,42 @@ const I = {
   bell: '<path d="M6 16v-5a6 6 0 0 1 12 0v5l2 2H4z"/><path d="M10 21h4"/>', trash: '<path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/>', refresh: '<path d="M20 12a8 8 0 1 1-2.3-5.7M20 4v5h-5"/>',
 };
 const icon = (n, size = 20, w = 1.75) => `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="${w}" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${I[n]}</svg>`;
+
+// Play buttons: one clip at a time. The button shows it: loading until the sound starts, then a stop square with a
+// ring that fills as it plays; a second click stops it. src is a URL or an async function that returns one.
+let nowPlaying = null;
+const stopClip = () => {
+  if (!nowPlaying) return;
+  const { a, b, svg } = nowPlaying;
+  nowPlaying = null;
+  a.pause();
+  if (b) { b.classList.remove("loading", "playing"); b.style.removeProperty("--p"); b.querySelector("svg")?.replaceWith(svg); if (b.dataset.label) b.setAttribute("aria-label", b.dataset.label); }
+};
+const playClip = async (b, src) => {
+  // the same button, or the same clip on a button drawn again since (a list redraws while it plays)
+  const again = b && (nowPlaying?.b === b || (typeof src === "string" && nowPlaying?.src === src));
+  stopClip();
+  for (const el of document.querySelectorAll("audio")) el.pause();  // a recording's own player
+  if (again) return;
+  const svg = b?.querySelector("svg"), a = new Audio(), me = { a, b, svg, src };
+  nowPlaying = me;
+  if (b) {
+    b.classList.add("loading");
+    if (svg) svg.outerHTML = icon("stop", +svg.getAttribute("width") || 14);
+    if (b.hasAttribute("aria-label")) { b.dataset.label ??= b.getAttribute("aria-label"); b.setAttribute("aria-label", "Stop"); }
+  }
+  const tick = () => { if (nowPlaying !== me) return; if (a.duration) b.style.setProperty("--p", `${(a.currentTime / a.duration * 100).toFixed(1)}%`); requestAnimationFrame(tick); };
+  a.addEventListener("playing", () => { if (nowPlaying === me && b) { b.classList.replace("loading", "playing"); tick(); } });
+  a.addEventListener("ended", () => { if (nowPlaying === me) stopClip(); });
+  try {
+    a.src = typeof src === "function" ? await src() : src;
+    if (nowPlaying !== me) return;
+    await a.play();
+  } catch (e) {
+    if (nowPlaying === me) stopClip();
+    if (e.name !== "AbortError") throw e;
+  }
+};
 let es = null, HW = null, AI = null;
 // The optional AI assistant's settings (assistant.py); AI.enabled decides whether its buttons show.
 async function aiLoad() { try { AI = await api("/api/assistant"); } catch { AI = { enabled: false }; } return AI; }
@@ -405,6 +447,7 @@ function route() {
   return viewHome();
 }
 window.addEventListener("hashchange", route);
+window.addEventListener("hashchange", stopClip);  // a clip from the page you left
 
 // ---- job queue and finished-job notices --------------------------------------------------------------
 // Runs wait in a machine-wide queue and start one after another (the server and each finished job start
@@ -591,7 +634,8 @@ async function viewHome() {
     return `<details class="menu"><summary aria-label="More for ${esc(lbl)}" title="More">${icon("more", 20, 2)}</summary><div>
       <a href="${where}/train">Open</a><a href="${where}/results">Results</a><a href="${where}/voices">Real voices</a>
       ${word ? `<button type="button" data-newver="${esc(p.name)}">New version from v${p.version}</button>` : ""}
-      ${word ? `<button type="button" data-rename="${esc(p.name)}" data-cur="${esc(p.label)}">Rename wake word</button>`
+      ${word ? `<button type="button" data-rename="${esc(p.name)}" data-cur="${esc(p.label)}">Rename wake word</button>
+        <button type="button" data-written="${esc(p.name)}" data-cur="${esc((p.written_as || []).join(", "))}">Also written as…</button>`
         : `<button type="button" data-note="${esc(p.name)}" data-cur="${esc(p.note || "")}">Edit note</button>`}
       ${word ? "" : `<button type="button" class="danger" data-delete="${esc(p.name)}" data-label="${esc(p.title)}" ${p.job.running ? "disabled" : ""}>${icon("trash", 16)}Delete this version</button>`}</div></details>`;
   };
@@ -652,8 +696,9 @@ async function viewHome() {
       try { await api(`/api/projects/${enc(b.dataset.newver)}/new-version`, { method: "POST", body: {} }); list = await api("/api/projects"); draw(); watchJobs(); } catch (x) { alert(x.message); }
       return;
     }
-    const put = async body => { try { await api(`/api/projects/${enc(b.dataset.rename || b.dataset.note)}`, { method: "PUT", body }); list = await api("/api/projects"); draw(); } catch (x) { alert(x.message); } };
+    const put = async body => { try { await api(`/api/projects/${enc(b.dataset.rename || b.dataset.note || b.dataset.written)}`, { method: "PUT", body }); list = await api("/api/projects"); draw(); } catch (x) { alert(x.message); } };
     if (b.dataset.rename) { const n = prompt("Name of this wake word (every version takes it):", b.dataset.cur); if (n && n.trim()) put({ label: n.trim() }); }
+    else if (b.dataset.written) { const n = prompt("How speech recognition writes this wake word, if not the way you typed it (e.g. \"hey hanuman\" for \"hey hanoomahn\"). Room recordings and device clips then find it; the synthetic voices still say what you typed. Separate several with commas:", b.dataset.cur); if (n !== null) put({ written_as: n }); }
     else if (b.dataset.note !== undefined) { const n = prompt("What this version tried (a short note):", b.dataset.cur); if (n !== null) put({ note: n.trim() }); }
     else if (b.dataset.delete && await deleteWakeWord(b.dataset.delete, b.dataset.label)) viewHome();
   };
@@ -760,12 +805,12 @@ async function viewNew() {
       <button type="button" data-rm="${i}" aria-label="Remove ${esc(n)}">${icon("x", 14, 2.25)}</button></span>`).join("")
       || `<span class="hint">Type the phrase and press "Suggest sound-alikes". If you skip this, wakesmith picks them for you.</span>`;
   };
-  const play = async (text, note) => {
-    if (note) $("#hearnote").textContent = "making a voice…";
+  const play = async (b, text, note) => {
+    const stopping = nowPlaying?.b === b;
+    if (note && !stopping) $("#hearnote").textContent = "making a voice…";
     try {
-      const r = await api("/api/preview?text=" + enc(text) + "&language=" + enc(lang()));
-      await new Audio(URL.createObjectURL(await r.blob())).play();
-      if (note) $("#hearnote").textContent = "a random synthetic voice; press again for another";
+      await playClip(b, async () => URL.createObjectURL(await (await api("/api/preview?text=" + enc(text) + "&language=" + enc(lang()))).blob()));
+      if (note && !stopping) $("#hearnote").textContent = "a random synthetic voice; press again for another";
     } catch (e) { $("#hearnote").textContent = e.message; }
   };
   drawScen(); chips(); drawChecks();
@@ -783,7 +828,7 @@ async function viewNew() {
   $("#scen").onclick = e => { const b = e.target.closest("button[data-sc]"); if (b) { sc = b.dataset.sc; drawScen(); } };
   v.querySelectorAll("input[name=preset], #mww, #oww").forEach(el => el.onchange = drawSum);
   $("#phrase").oninput = drawChecks;
-  $("#hear").onclick = () => $("#phrase").value.trim() && play($("#phrase").value.trim(), true);
+  $("#hear").onclick = () => $("#phrase").value.trim() && play($("#hear"), $("#phrase").value.trim(), true);
   $("#sugg").onclick = async () => {
     const p = $("#phrase").value.trim(); if (!p) { $("#phrase").focus(); return; }
     $("#sugg").disabled = true;
@@ -793,7 +838,7 @@ async function viewNew() {
   $("#chips").onclick = e => {
     const rm = e.target.closest("[data-rm]"), say = e.target.closest("[data-say]");
     if (rm) { negs.splice(+rm.dataset.rm, 1); chips(); }
-    if (say) { e.preventDefault(); play(say.dataset.say); }
+    if (say) { e.preventDefault(); play(say, say.dataset.say); }
   };
   $("#add").onkeydown = e => { if (e.key === "Enter" && e.target.value.trim()) { negs.unshift(e.target.value.trim()); e.target.value = ""; chips(); } };
   const create = async train => {
@@ -926,7 +971,6 @@ let voicesOpen = null;  // a tab to open on Real voices (the cards' "clips to ch
 function learnsPanel(p, base) {
   const el = $("#learns"), body = $("#learnsbody");
   const groupName = id => { const [src, sub] = id.split("/"); return (sub ? sub.replace(/_/g, " ") : SET_NAMES[src]) || id; };
-  let audio = null;
   const show = async () => {
     let d; try { d = await api(base + "/learns"); } catch (e) { body.innerHTML = `<p class="err">${esc(e.message)}</p>`; return; }
     const side = kind => d.sources.filter(x => x.kind === kind).map(x => `<div class="lsrc"><div class="hint">${x.src.startsWith("d") ? "Device clips you labeled" : x.src.startsWith("r") ? "Takes recorded here" : "Folder"} <code class="mono">${esc(x.folder)}</code>${x.error ? ` · <span class="err">${esc(x.error)}</span>` : ""}</div>
@@ -942,7 +986,7 @@ function learnsPanel(p, base) {
   el.addEventListener("toggle", () => { if (el.open && !el.dataset.loaded) { el.dataset.loaded = 1; show(); } });
   body.onclick = async e => {
     const o = e.target.closest("[data-lopen]"), pl = e.target.closest("[data-lplay]"), more = e.target.closest("[data-lmore]");
-    if (pl) { audio?.pause(); audio = new Audio(`${base}/learns/audio?src=${enc(pl.dataset.src)}&f=${enc(pl.dataset.lplay)}`); audio.play().catch(() => {}); return; }
+    if (pl) { playClip(pl, `${base}/learns/audio?src=${enc(pl.dataset.src)}&f=${enc(pl.dataset.lplay)}`).catch(() => {}); return; }
     const id = o?.dataset.lopen || more?.dataset.lmore; if (!id) return;
     const ul = body.querySelector(`[data-lclips="${CSS.escape(id)}"]`), off = more ? +more.dataset.off : 0;
     if (o) { const open = ul.hidden; ul.hidden = !open; o.setAttribute("aria-expanded", open); o.textContent = open ? "Hide" : "Listen"; if (!open || ul.dataset.loaded) return; ul.dataset.loaded = 1; }
@@ -1146,11 +1190,10 @@ async function voicesTab(p, base, steps) {
         <button type="button" id="quickend" style="margin-left:auto">Stop</button></div>
       <div class="row" style="gap:10px">${btn("wake")}${btn("not_wake")}${btn("skip")}</div></div>`;
   };
-  let quickAudio = null;
-  const quickPlay = () => { const id = quick?.ids[quick.i]; if (!id) return; quickAudio?.pause(); quickAudio = new Audio(`${base}/devices/audio?id=${enc(id)}`); quickAudio.play().catch(() => {}); };
+  const quickPlay = () => { const id = quick?.ids[quick.i]; if (!id) return; stopClip(); playClip($("#qplay"), `${base}/devices/audio?id=${enc(id)}`).catch(() => {}); };
   const quickKey = e => {
     // only on the page this quick check started on: leaving it (another wake word, another page) ends it
-    if (!quick || location.hash !== quick.hash) { document.removeEventListener("keydown", quickKey); quick = null; quickAudio?.pause(); return; }
+    if (!quick || location.hash !== quick.hash) { document.removeEventListener("keydown", quickKey); quick = null; stopClip(); return; }
     if (!$("#quickbox") || e.target.closest("input, textarea, select")) return;
     const k = { y: "wake", n: "not_wake", l: "skip" }[e.key.toLowerCase()];
     if (k) { e.preventDefault(); quickLabel(k); }
@@ -1159,7 +1202,7 @@ async function voicesTab(p, base, steps) {
     else if (e.key === "ArrowRight") { e.preventDefault(); quick.i++; draw(); quickPlay(); }
     else if (e.key === "Escape") quickStop();
   };
-  const quickStop = () => { quick = null; quickAudio?.pause(); document.removeEventListener("keydown", quickKey); loadDev(); };
+  const quickStop = () => { quick = null; stopClip(); document.removeEventListener("keydown", quickKey); loadDev(); };
   const quickLabel = async k => {
     const id = quick.ids[quick.i];
     try { await api(base + "/devices/labels", { method: "POST", body: { labels: { [id]: k } } }); } catch (x) { err(x.message); return; }
@@ -1201,7 +1244,7 @@ async function voicesTab(p, base, steps) {
     if ($("#devaccept")) $("#devaccept").onclick = async () => { err(); try { const r = await api(base + "/devices/accept", { method: "POST" }); msg(`${r.changed} labeled`); await loadDev(); } catch (e) { err(e.message); } };
     $("#devseg").onclick = e => { const b = e.target.closest("[data-dseg]"); if (b) { if (quick) quickStop(); devShow = b.dataset.dseg; draw(); } };
     $("#quickgo").onclick = () => { quick = { ids: dev.clips.filter(devPick()).reverse().map(x => x.id), i: 0, hash: location.hash };
-      window.addEventListener("hashchange", () => { document.removeEventListener("keydown", quickKey); quickAudio?.pause(); quick = null; }, { once: true });
+      window.addEventListener("hashchange", () => { document.removeEventListener("keydown", quickKey); stopClip(); quick = null; }, { once: true });
       document.removeEventListener("keydown", quickKey); document.addEventListener("keydown", quickKey); draw(); quickPlay(); };
     if (quick) {
       $("#quickend").onclick = quickStop;
@@ -1214,7 +1257,7 @@ async function voicesTab(p, base, steps) {
       $("#devapplied").textContent = Object.entries(r).map(([k, v]) => `${k === "pos" ? "phrase" : "not the phrase"}: ${v.train} train, ${v.heldout} test`).join("; ") || "nothing labeled"; } catch (e) { err(e.message); } };
     if ($("#devlist")) $("#devlist").onclick = async e => {
       const pl = e.target.closest("[data-dplay]"), lb = e.target.closest("[data-dlabel]");
-      if (pl) new Audio(`${base}/devices/audio?id=${enc(pl.dataset.dplay)}`).play();
+      if (pl) playClip(pl, `${base}/devices/audio?id=${enc(pl.dataset.dplay)}`).catch(x => err(x.message));
       if (lb) { const cur = lb.getAttribute("aria-pressed") === "true";
         try { await api(base + "/devices/labels", { method: "POST", body: { labels: { [lb.dataset.id]: cur ? null : lb.dataset.dlabel } } });
           const c = dev.clips.find(x => x.id === lb.dataset.id); if (c) c.label = cur ? null : lb.dataset.dlabel; await loadDev(); } catch (x) { err(x.message); } }
@@ -1241,7 +1284,7 @@ async function voicesTab(p, base, steps) {
     if ($("#takes")) $("#takes").onclick = async e => {
       const pl = e.target.closest("[data-play]"), dl = e.target.closest("[data-del]"), hd = e.target.closest("[data-held]"), sp = e.target.closest("[data-spk]");
       try {
-        if (pl) new Audio(`${base}/recordings/${pl.dataset.play}`).play();
+        if (pl) playClip(pl, `${base}/recordings/${pl.dataset.play}`).catch(x => err(x.message));
         if (dl && confirm(`Delete ${dl.dataset.del.split("/")[1]}?`)) { await api(`${base}/recordings/${dl.dataset.del}`, { method: "DELETE" }); await load(); draw(); }
         if (sp) { const v = prompt(`Who is speaking in ${sp.dataset.spk}?`, sp.dataset.cur); if (v !== null) { await api(`${base}/recordings/pos/${sp.dataset.spk}/speaker`, { method: "POST", body: { speaker: v } }); await load(); draw(); } }
         if (hd) { await api(`${base}/recordings/pos/${hd.dataset.held}/heldout`, { method: "POST", body: { held: hd.getAttribute("aria-pressed") !== "true" } }); await load(); draw(); }
@@ -1292,7 +1335,8 @@ function trainTab(p, base, steps) {
           ${p.microwakeword.enabled ? `<label style="display:flex;gap:10px;align-items:flex-start"><input type="checkbox" id="hrir" ${p.microwakeword.house_rirs ? "checked" : ""} style="width:20px;height:20px;accent-color:var(--orange)">
             <span>Use this house's room echoes<span class="hint" style="display:block" id="hrirsaved">Claps from <a href="#/room">Record a room</a>, mixed in as often as the standard room echoes. Used from the next Train or Retrain from recordings.</span></span></label>` : ""}</section>
         <section class="panel" aria-labelledby="h-q" id="queue" hidden></section>
-        <details class="adv"><summary>Log</summary><pre class="log" id="log"></pre></details>
+        <details class="adv"><summary>Log</summary><pre class="log" id="log"></pre>
+          <p class="hint">This version's folder: <span class="mono" style="overflow-wrap:anywhere">${esc(p.folder)}</span>. The log is <span class="mono">logs/train.log</span> in it, the models are in <span class="mono">export</span>.</p></details>
         <p class="hint" style="margin:0">You can close this page: training keeps running, and Wake words shows when it's done.</p>
         <section class="panel danger-zone" aria-labelledby="h-del"><h2 id="h-del">${unfinished(p) ? "Not finished?" : "Delete"}</h2>
           <p class="hint" style="margin:0">${unfinished(p) ? "Nothing is trained yet. Cancelling removes the project." : "Removes this wake word, its generated voices and its models."}</p>
@@ -1944,6 +1988,7 @@ async function viewSession(sid) {
           <div class="filters row" role="group" aria-label="Show">${[["all", "All"], ["words", "Wake words"], ["check", "To check"], ["new", "Not sent yet"]].map(([k, l]) => `<button type="button" data-f="${k}" aria-pressed="${filter === k}">${l}</button>`).join("")}</div></div>
         <p class="hint" style="margin:0">"All" means every wake word in this recording. ${words}; ${count("room")} room sound, ${count("clap")} claps, ${count("other")} other speech, ${count("unclear")} unclear. ${s.speakers.length > 1 ? "More than one speaker: set who said each take." : ""}
           Changes are saved as you make them; Split again starts over from what it hears.</p>
+        ${d.segments.some(x => x.note === "part of a wake word") ? `<p class="hint" style="margin:0">Takes marked "part of a wake word" may be your wake word written another way: speech recognition writes what it knows ("hey hanuman"), not a spelling made to sound right ("hey hanoomahn"). Add how it's written with <b>Also written as…</b> in the wake word's ⋯ menu on Wake words, then Split again.</p>` : ""}
         <datalist id="sspots">${s.spots.map(x => `<option value="${esc(x)}">`).join("")}</datalist>
         <ul class="takes">${shown.map(x => `<li data-i="${x.i}"><button type="button" class="round" data-play="${x.i}" aria-label="Play ${fmtT(x.start)}">${icon("play", 14)}</button>
           <span class="mono" style="min-width:110px">${fmtT(x.start)} <span class="hint">${(x.end - x.start).toFixed(1)} s</span></span>
@@ -1958,11 +2003,10 @@ async function viewSession(sid) {
   };
   const err = m => { if ($("#err")) $("#err").textContent = m || ""; };
   const refresh = async () => { try { await load(); draw(); } catch (e) { err(e.message); } if (d?.split?.status !== "running") { clearInterval(poll); poll = null; } };
-  let player = null;
   box.onclick = async e => {
     const b = e.target.closest("button");
     if (!b) return;
-    if (b.dataset.play) { const x = d.segments.find(s => s.i === +b.dataset.play); player?.pause(); player = new Audio(`${base}/audio?start=${x.start}&end=${x.end}`); player.play().catch(x => err(x.message)); return; }
+    if (b.dataset.play) { const x = d.segments.find(s => s.i === +b.dataset.play); playClip(b, `${base}/audio?start=${x.start}&end=${x.end}`).catch(x => err(x.message)); return; }
     if (b.dataset.f) { filter = b.dataset.f; draw(); return; }
     if (b.id === "ssplit") {
       if (d.segments.some(x => x.label !== x.auto) && !await ask("Split again?", "Your changes to the labels are replaced by fresh guesses. Takes already sent are not sent twice.", "Split again")) return;

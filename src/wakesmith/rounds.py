@@ -152,13 +152,16 @@ def _words(text: str) -> list[str]:
     return _WORD.findall(text.lower())
 
 
-def suggest(phrase: str, text: str) -> str:
-    """ "wake" if the transcript says the phrase (its words in order), "not_wake" if it has none of the
-    phrase's words, else "unclear" (e.g. one "hey" of "hey jarvis")."""
-    want, got = _words(phrase), _words(text)
-    if want and any(got[i : i + len(want)] == want for i in range(len(got) - len(want) + 1)):
-        return "wake"
-    return "unclear" if set(want) & set(got) else "not_wake"
+def suggest(phrase: str | list[str], text: str) -> str:
+    """ "wake" if the transcript says the phrase (its words in order; any of its forms, see
+    Project.heard_forms), "not_wake" if it has none of their words, else "unclear" (e.g. one "hey" of
+    "hey jarvis")."""
+    forms = [_words(f) for f in ([phrase] if isinstance(phrase, str) else phrase)]
+    got = _words(text)
+    for want in forms:
+        if want and any(got[i : i + len(want)] == want for i in range(len(got) - len(want) + 1)):
+            return "wake"
+    return "unclear" if {w for want in forms for w in want} & set(got) else "not_wake"
 
 
 class _Whisper:
@@ -234,7 +237,7 @@ def transcribe(
         group = todo[i : i + batch]
         for c, text in zip(group, w([file(p, c["id"]) for c in group]), strict=True):
             c["text"] = text
-            c["suggestion"] = suggest(p.phrase, text)
+            c["suggestion"] = suggest(p.heard_forms, text)
         _save(p, clips)  # progress survives a stop
         if progress:
             progress(min(i + batch, len(todo)), len(todo))

@@ -137,6 +137,9 @@ class Project:
     created: float = 0.0  # when the project was made (seconds since the epoch); 0: older projects
     negatives: list[str] = field(default_factory=list)  # sound-alike phrases to reject
     positive_spellings: list[str] = field(default_factory=list)  # extra spellings of the phrase
+    # how speech recognition writes the phrase when it differs (a phrase spelled the way it sounds, e.g.
+    # "hey hanoomahn", is written "hey hanuman"): only to find the phrase in transcripts, never voiced
+    written_as: list[str] = field(default_factory=list)
     tts_models: list[str] = field(default_factory=lambda: ["libritts-high", "libritts-r-medium"])
     language: str = "en"  # see languages.py; anything but English is experimental
     samples: Samples = field(default_factory=Samples)
@@ -153,6 +156,11 @@ class Project:
     @property
     def display(self) -> str:
         return self.label or self.phrase.title()
+
+    @property
+    def heard_forms(self) -> list[str]:
+        """Every way a transcript can write this phrase."""
+        return [self.phrase, *self.positive_spellings, *self.written_as]
 
     @property
     def title(self) -> str:

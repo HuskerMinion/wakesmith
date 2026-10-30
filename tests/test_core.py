@@ -2793,6 +2793,71 @@ def _room_session(room, monkeypatch, texts):
     return s["id"], claps, speech
 
 
+def test_also_written_as_finds_a_phonetic_phrase_in_transcripts(room, monkeypatch):
+    from fastapi.testclient import TestClient
+
+    from wakesmith import rounds, sessions, versions
+    from wakesmith.web.server import create_app
+
+    texts = [
+        "Across the room.",
+        "Hey, Jarvus!",
+        "Okay, computer.",
+        "What's for dinner?",
+        "Hey jarvis.",
+    ]
+    sid, _, _ = _room_session(room, monkeypatch, texts)
+    sessions.split(sid, "cpu", log=lambda m: None)
+    sp = [x for x in sessions.segments(sid) if x["kind"] == "speech"]
+    assert sp[1]["label"] == "unclear" and sp[1]["note"] == "part of a wake word"
+    v2 = versions.create(project.load("hh"))
+    c = TestClient(create_app(), base_url="http://localhost")
+    r = c.put(
+        "/api/projects/hh", json={"written_as": " Hey  Jarvus, hey jarvis,, hey jarvus"}
+    ).json()
+    assert r["written_as"] == ["Hey Jarvus"]  # tidied; the phrase itself and repeats are dropped
+    assert r["folder"] == str(project.load("hh").dir)
+    assert project.load(v2.name).written_as == ["Hey Jarvus"]  # every version of the wake word
+    assert project.load("hh").heard_forms == ["hey jarvis", "Hey Jarvus"]
+    it = iter(texts)  # Split again sees the spelling added after the recording was made
+    monkeypatch.setattr(
+        sessions,
+        "_transcriber",
+        lambda device, model="turbo", language="en": lambda paths: [next(it) for _ in paths],
+    )
+    sessions.split(sid, "cpu", log=lambda m: None)
+    assert [x for x in sessions.segments(sid) if x["kind"] == "speech"][1]["label"] == "hh"
+    assert project.load("hh").written_as and "Jarvus" not in str(project.load("hh").phrase)
+    # device clips: any form of the phrase is the wake word
+    forms = project.load("hh").heard_forms
+    assert rounds.suggest(forms, "Hey Jarvus.") == "wake"
+    assert rounds.suggest(forms, "Hey there.") == "unclear"
+    assert rounds.suggest(forms, "Thank you.") == "not_wake"
+    assert c.put("/api/projects/hh", json={"written_as": 5}).status_code == 400
+    # one word of a spelling alone is part of a wake word (listen and pick), not other speech
+    s = sessions.load(sid)
+    sessions._fresh_spellings(s)  # as split does
+    assert sessions.label_text("jarvus", s)[:1] == ("unclear",)
+    # set together with other settings, it still reaches every version
+    c.put(
+        "/api/projects/hh",
+        json={"written_as": "hey jervis", "note": "x", "negatives": ["hey travis"]},
+    )
+    assert project.load(v2.name).written_as == ["hey jervis"]
+    # the list the menu is drawn from carries them (the prompt starts from what's saved)
+    row = next(x for x in c.get("/api/projects").json() if x["name"] == "hh")
+    assert row["written_as"] == ["hey jervis"]
+    # another wake word's phrase is not a spelling of this one
+    r = c.put("/api/projects/hh", json={"written_as": "Okay  Computer!"})
+    assert r.status_code == 400 and project.load("hh").written_as == ["hey jervis"]
+    # a mixed save refused for another setting changes no version
+    r = c.put(
+        "/api/projects/hh", json={"written_as": "hey jarvas", "conversational": {"clips": "lots"}}
+    )
+    assert r.status_code == 400
+    assert project.load("hh").written_as == project.load(v2.name).written_as == ["hey jervis"]
+
+
 def test_room_segments_claps_speech_and_room_sound():
     from wakesmith import sessions
 

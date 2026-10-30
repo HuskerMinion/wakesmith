@@ -237,7 +237,7 @@ def create(
                 "project": p.name,
                 "phrase": p.phrase,
                 "label": p.title,
-                "spellings": p.positive_spellings,
+                "spellings": p.heard_forms[1:],
                 "language": p.language,
             }
         )
@@ -497,7 +497,12 @@ def label_text(text: str, s: dict) -> tuple[str, int, str | None, str]:
         return proj, n, spot, ""
     if spot:
         return "spot", 0, spot, ""
-    phrase_words = {w for x in s["phrases"] for w in _words(x["phrase"])}
+    phrase_words = {
+        w
+        for x in s["phrases"]
+        for f in [x["phrase"], *(x.get("spellings") or [])]
+        for w in _words(f)
+    }
     if not rest:
         return "unclear", 0, None, "no words heard"
     if phrase_words & set(rest):
@@ -567,6 +572,16 @@ def _clip(a: np.ndarray, t0: float, t1: float) -> np.ndarray:
     return a[max(0, round(t0 * SR)) : min(len(a), round(t1 * SR))]
 
 
+def _fresh_spellings(s: dict) -> None:
+    """The wake words' spellings as they are now: one added since the recording was made (Also written
+    as) counts when it is split again."""
+    for x in s.get("phrases", []):
+        try:
+            x["spellings"] = projects.load(x["project"]).heard_forms[1:]
+        except (OSError, ValueError, TypeError):
+            pass  # a deleted or unreadable wake word keeps what the session saved
+
+
 def split(sid: str, device: str = "cpu", model: str = "turbo", transcribe=None, log=print) -> dict:
     """Find, transcribe and label the segments of a finished session (replaces segments.json; what
     was sent stays sent)."""
@@ -584,6 +599,7 @@ def split(sid: str, device: str = "cpu", model: str = "turbo", transcribe=None, 
         + ", ".join(f"{k} {sum(x['kind'] == k for x in found)}" for k in ("speech", "clap", "room"))
     )
     speech = [x for x in found if x["kind"] == "speech"]
+    _fresh_spellings(s)
     texts: list[str] = []
     if speech:
         transcribe = transcribe or _transcriber(device, model, language(s))

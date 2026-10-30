@@ -336,6 +336,8 @@ def create_app(token: str | None = None) -> FastAPI:
             "word": p.display,
             "version": p.version,
             "note": p.note,
+            "written_as": p.written_as,
+            "folder": str(p.dir),
             "negatives": p.negatives,
             "real": vars(p.real),
             "samples": vars(p.samples),
@@ -394,6 +396,7 @@ def create_app(token: str | None = None) -> FastAPI:
                     "family": p.family,
                     "version": p.version,
                     "note": p.note,
+                    "written_as": p.written_as,
                     "created": projects.created(p),
                     "last": _last_run(p, job),
                     "job": job,
@@ -642,20 +645,58 @@ def create_app(token: str | None = None) -> FastAPI:
     async def update_project(name: str, request: Request):
         p = proj(name)
         body = await request.json()
-        if set(body) <= {"label", "note"}:  # names can change while it trains
+        if "written_as" in body:
+            forms = body["written_as"]
+            if isinstance(forms, str):
+                forms = forms.split(",")
+            if not isinstance(forms, list):
+                raise HTTPException(400, "written_as: a list of spellings")
+
+            def words(f: str) -> str:  # as transcripts are matched: lower case, no punctuation
+                return " ".join(sessions._words(f))
+
+            seen = {words(p.phrase)}  # the phrase itself, repeats and blanks are dropped
+            others = {  # another wake word's own forms would make a take ambiguous
+                words(f): q.display
+                for q in projects.all_projects()
+                if q.family != p.family
+                for f in q.heard_forms
+            }
+            p.written_as = []
+            for f in (" ".join(str(f).split())[:120] for f in forms):
+                if words(f) in others:
+                    raise HTTPException(400, f'"{f}" is how {others[words(f)]} is written')
+                if words(f) and words(f) not in seen and len(p.written_as) < 10:
+                    seen.add(words(f))
+                    p.written_as.append(f)
+        # none of these changes training: fine while it runs
+        if set(body) <= {"label", "note", "written_as"}:
             for key in ("label", "note"):
                 if key in body:
                     setattr(p, key, " ".join(str(body[key] or "").split())[:120])
-            p.save()
-            if "label" in body:  # the name belongs to the wake word: every version takes it
-                for kin in projects.all_projects():
-                    if kin.family == p.family and kin.name != p.name and kin.label != p.label:
-                        kin.label = p.label
+            # the name and the spellings belong to the wake word: every version takes them. Only a
+            # version that changes is saved, and this one last: Record a room picks the version
+            # saved most recently
+            for kin in projects.all_projects() if {"label", "written_as"} & set(body) else []:
+                if kin.family == p.family and kin.name != p.name:
+                    new = {"label": p.label} if "label" in body else {}
+                    if "written_as" in body:
+                        new["written_as"] = list(p.written_as)
+                    if any(getattr(kin, k) != v for k, v in new.items()):
+                        for k, v in new.items():
+                            setattr(kin, k, v)
                         kin.save()
+            p.save()
             return summary(p)
         if jobs.status(p)["running"]:
             raise HTTPException(409, "a job is running; stop it before changing settings")
-        _apply(p, body)
+        _apply(p, body)  # first: settings it refuses leave every version as it was
+        if "written_as" in body:
+            for kin in projects.all_projects():
+                if kin.family == p.family and kin.name != p.name and kin.written_as != p.written_as:
+                    kin.written_as = list(p.written_as)
+                    kin.save()
+            p.save()  # this version saved last (Record a room picks the newest)
         return summary(p)
 
     # -- takes recorded in the browser --------------------------------------------------------
