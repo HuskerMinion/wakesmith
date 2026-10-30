@@ -145,7 +145,7 @@
   .fold:disabled { visibility: hidden; }
   details.menu { position: relative; } details.menu > summary { list-style: none; width: 38px; height: 38px; display: inline-flex; align-items: center; justify-content: center; border-radius: 10px; cursor: pointer; color: var(--soft); }
   details.menu > summary::-webkit-details-marker { display: none; } details.menu > summary:hover { background: var(--raised); }
-  details.menu > div { position: absolute; right: 0; top: 42px; z-index: 5; min-width: 200px; padding: 6px; border-radius: 12px; background: var(--raised); border: 1px solid var(--field); box-shadow: 0 8px 24px #0008; display: flex; flex-direction: column; }
+  details.menu > div { position: absolute; right: 0; top: 42px; z-index: 5; visibility: hidden; overflow-y: auto; min-width: 200px; padding: 6px; border-radius: 12px; background: var(--raised); border: 1px solid var(--field); box-shadow: 0 8px 24px #0008; display: flex; flex-direction: column; }
   details.menu > div a, details.menu > div button { display: flex; align-items: center; gap: 8px; min-height: 40px; padding: 0 12px; border-radius: 8px; background: transparent; border: 0; color: var(--text); text-decoration: none; font: inherit; text-align: left; }
   details.menu > div a:hover, details.menu > div button:hover { background: var(--panel); }
   details.menu > div .danger { color: var(--warn); }
@@ -438,6 +438,37 @@ async function watchJobs() {
 }
 setInterval(watchJobs, 10000);
 document.addEventListener("visibilitychange", () => { if (!document.hidden) watchJobs(); });
+
+// Row menus: one open at a time, closed by a click elsewhere, Escape, or its button scrolling out of view. Each is
+// drawn over the page (fixed, below its button, or above it near the bottom; hidden until placed) because the table
+// box scrolls sideways and would clip it.
+const hideMenu = d => { d.open = false; d.lastElementChild.style.visibility = ""; };  // hidden until placed again on its next open
+const closeMenus = keep => { for (const d of document.querySelectorAll("details.menu[open]")) if (d !== keep) hideMenu(d); };
+const placeMenu = d => {
+  const r = d.firstElementChild.getBoundingClientRect(), clip = d.closest(".wwbox")?.getBoundingClientRect();
+  const cx = (r.left + r.right) / 2, cy = (r.top + r.bottom) / 2;
+  if (cy < 0 || cy > innerHeight || (clip && (cx < clip.left || cx > clip.right))) { hideMenu(d); return; }
+  const box = d.lastElementChild, below = innerHeight - r.bottom - 8, above = r.top - 8;
+  Object.assign(box.style, { position: "fixed", right: `${document.documentElement.clientWidth - r.right}px`, top: `${r.bottom + 4}px`,
+    bottom: "auto", maxHeight: `${Math.max(below, above) - 4}px`, visibility: "visible" });
+  if (box.scrollHeight > below && above > below) Object.assign(box.style, { top: "auto", bottom: `${innerHeight - r.top + 4}px` });
+};
+document.addEventListener("toggle", e => {
+  const d = e.target;
+  if (!d.matches?.("details.menu")) return;
+  if (d.open) { closeMenus(d); placeMenu(d); } else d.lastElementChild.style.visibility = "";
+}, true);
+document.addEventListener("click", e => {
+  if (!e.target.closest?.("details.menu") || e.target.closest("details.menu > div a, details.menu > div button")) closeMenus();
+});
+document.addEventListener("keydown", e => {
+  const d = document.querySelector("details.menu[open]");
+  if (e.key !== "Escape" || !d) return;
+  const inside = d.contains(document.activeElement);
+  closeMenus();
+  if (inside) d.firstElementChild.focus();
+});
+for (const ev of ["scroll", "resize"]) addEventListener(ev, () => { const d = document.querySelector("details.menu[open]"); if (d) placeMenu(d); }, true);
 // The queue panel: what runs now, what waits (reorder, remove), and the last runs that ended.
 function drawQueue(el, J, always) {
   if (!el || !J) return;
