@@ -799,7 +799,7 @@ function timeLeft(d, s, pct) {
   const keys = Object.keys(STAGE_NAMES), later = keys.slice(keys.indexOf(s) + 1, keys.indexOf(to) + 1);
   const rest = later.filter(k => !d.off?.[k]).reduce((a, k) => a + (est[k] || 0), 0);
   const total = left + rest, end = new Date(Date.now() + total * 1000);
-  return { stage: `about ${dur(left)} left in this step`, total: dur(total),
+  return { stage: left < 60 ? "under a minute left in this step" : `about ${dur(left)} left in this step`, total: dur(total),
            end: end.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }) };
 }
 // Is stage s still to come in the running job? Stages run in order: those after the running one,

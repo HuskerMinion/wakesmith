@@ -15,6 +15,8 @@ import random
 import runpy
 import sys
 
+from wakesmith.hardware import worker_start
+
 AHEAD = 4  # batches kept ready (~4 MB each)
 
 
@@ -33,7 +35,8 @@ def _install() -> None:
     orig = data.FeatureHandler.get_data
 
     def get_data(self, mode, *args, **kwargs):
-        if mode != "training":
+        # no forked producer where workers must spawn (macOS, see hardware.worker_start): built in place
+        if mode != "training" or worker_start() == "spawn":
             return orig(self, mode, *args, **kwargs)
         key = repr((args, sorted(kwargs.items())))
         st = self.__dict__.setdefault("_ahead", {})

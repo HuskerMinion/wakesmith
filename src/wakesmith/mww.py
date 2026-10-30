@@ -243,7 +243,9 @@ def build_features(p: Project, workers: int, log=print) -> None:
         log(f"mww features {set_name}/{split}: {len(files)} clips x{repeat}, {n} shards")
     from tqdm import tqdm
 
-    with get_context("fork").Pool(
+    from .hardware import worker_start
+
+    with get_context(worker_start()).Pool(
         workers, initializer=_init_worker, initargs=(noise, rirs)
     ) as pool:
         for _ in tqdm(pool.imap_unordered(_shard, tasks), total=len(tasks), desc="mww features"):
@@ -366,8 +368,15 @@ def more_open_files() -> None:
 
     soft, hard = resource.getrlimit(resource.RLIMIT_NOFILE)
     want = 65536 if hard == resource.RLIM_INFINITY else min(65536, hard)
-    if soft < want:
-        resource.setrlimit(resource.RLIMIT_NOFILE, (want, hard))
+    # macOS refuses more than OPEN_MAX (10240) when the hard limit is unlimited
+    for n in (want, 10240):
+        if soft >= n:
+            return
+        try:
+            resource.setrlimit(resource.RLIMIT_NOFILE, (n, hard))
+            return
+        except (ValueError, OSError):
+            continue
 
 
 def train(

@@ -422,6 +422,57 @@ def test_memory_snapshot_is_none_without_proc(monkeypatch):
     )  # macOS: no bars, no crash
 
 
+def test_macos_ram_and_worker_start(monkeypatch):
+    import subprocess
+    import sys
+
+    from wakesmith import hardware
+
+    vm_stat = (
+        "Mach Virtual Memory Statistics: (page size of 16384 bytes)\n"
+        "Pages free:                               100000.\n"
+        "Pages active:                             900000.\n"
+        "Pages inactive:                           300000.\n"
+        "Pages speculative:                         50000.\n"
+        "Pages purgeable:                           10000.\n"
+        "Pages wired down:                         400000.\n"
+    )
+    monkeypatch.setattr(
+        subprocess, "run", lambda *a, **k: subprocess.CompletedProcess(a, 0, stdout=vm_stat)
+    )
+    monkeypatch.setattr(
+        hardware.os, "sysconf", {"SC_PAGE_SIZE": 16384, "SC_PHYS_PAGES": 4194304}.__getitem__
+    )
+    assert hardware._mac_ram(False) == 64 * 2**30  # a 64 GB Mac
+    assert hardware._mac_ram(True) == 450000 * 16384  # free + inactive + speculative
+    monkeypatch.setattr(sys, "platform", "darwin")
+    monkeypatch.delenv("WAKESMITH_WORKER_START", raising=False)
+    assert hardware.worker_start() == "spawn"
+    monkeypatch.setattr(sys, "platform", "linux")
+    assert hardware.worker_start() == "fork"
+    monkeypatch.setenv("WAKESMITH_WORKER_START", "spawn")
+    assert hardware.worker_start() == "spawn"
+
+
+def test_more_open_files_falls_back_to_open_max(monkeypatch):
+    import resource
+
+    from wakesmith import mww
+
+    tried = []
+
+    def setrlimit(kind, limits):
+        tried.append(limits[0])
+        if limits[0] > 10240:
+            # as macOS does with an unlimited hard limit
+            raise ValueError("current limit exceeds maximum limit")
+
+    monkeypatch.setattr(resource, "getrlimit", lambda kind: (256, resource.RLIM_INFINITY))
+    monkeypatch.setattr(resource, "setrlimit", setrlimit)
+    mww.more_open_files()
+    assert tried == [65536, 10240]
+
+
 def test_queue_api_add_reorder_remove(proj, monkeypatch):
     from fastapi.testclient import TestClient
 

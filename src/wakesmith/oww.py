@@ -314,7 +314,7 @@ def build_features(p: Project, workers: int, log=print, device: str = "cpu") -> 
     """Augmented features of every set. device "cpu": each worker runs openWakeWord's ONNX frontend
     on its own clips. A GPU (e.g. "xpu:0"): the workers only augment and this process runs the
     frontend in PyTorch on the GPU (the embedding model is ~80% of the CPU path's time), same features
-    within float32 rounding. The workers are forked before the GPU is touched in this process.
+    within float32 rounding. The workers start before the GPU is touched in this process.
 
     Skipped when oww/features/stamp.json matches the inputs (_stamp): a rerun after a failed training
     doesn't redo them. Deleting stamp.json forces a rebuild."""
@@ -330,9 +330,9 @@ def build_features(p: Project, workers: int, log=print, device: str = "cpu") -> 
     on_gpu = device != "cpu"
     noise_dir = str(assets.fetch(assets.ASSETS["musan-noise"]))
     rirs = str(assets.fetch(assets.ASSETS["mit-rirs"]))
-    # one pool for every set, forked before this process opens the GPU (forking after it isn't safe)
+    # one pool for every set, started before this process opens the GPU (forking after it isn't safe)
     nproc = max(1, workers - 1) if on_gpu else workers  # on a GPU, this process feeds it
-    with get_context("fork").Pool(
+    with get_context(hardware.worker_start()).Pool(
         nproc, initializer=_init_worker, initargs=(noise_dir, rirs, not on_gpu)
     ) as pool:
         gpu = _gpu_frontend(device, log) if on_gpu else None

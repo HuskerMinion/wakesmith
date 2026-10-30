@@ -3,7 +3,10 @@
 from __future__ import annotations
 
 import os
+import re
 import shutil
+import subprocess
+import sys
 from dataclasses import asdict, dataclass, field
 
 LOW_DISK_GB = 40  # a full run (clips, augmented features, models) needs about this much
@@ -15,6 +18,16 @@ LOW_RAM_GB = (
 def forced_cpu() -> bool:
     """WAKESMITH_CPU=1 (set by --cpu): behave as if there were no GPU."""
     return os.environ.get("WAKESMITH_CPU", "") not in ("", "0")
+
+
+def worker_start() -> str:
+    """How worker processes start: "fork" on Linux (they share the parent's memory-mapped data), "spawn" on
+    macOS, where a child forked after torch, MPS or Accelerate has started can hang. WAKESMITH_WORKER_START
+    ("fork" or "spawn") overrides it."""
+    forced = os.environ.get("WAKESMITH_WORKER_START", "")
+    if forced in ("fork", "spawn"):
+        return forced
+    return "spawn" if sys.platform == "darwin" else "fork"
 
 
 def tensorflow_on_cpu():
@@ -125,7 +138,28 @@ def _ram_gb(key: str) -> float:
             kb = int(next(line for line in f if line.startswith(key)).split()[1])
         return round(kb / 2**20, 1)
     except (OSError, StopIteration):
-        return 8.0
+        pass
+    if sys.platform == "darwin":
+        try:
+            return round(_mac_ram(key == "MemAvailable") / 2**30, 1)
+        except (OSError, ValueError, AttributeError, subprocess.SubprocessError):
+            pass
+    return 8.0
+
+
+def _mac_ram(available: bool) -> int:
+    """Bytes of RAM on macOS: the total, or what is free for a new process (free, inactive and speculative
+    pages, as vm_stat counts them; purgeable pages are already among the active and inactive ones)."""
+    total = os.sysconf("SC_PAGE_SIZE") * os.sysconf("SC_PHYS_PAGES")
+    if not available:
+        return total
+    out = subprocess.run(
+        ["/usr/bin/vm_stat"], capture_output=True, text=True, timeout=5, check=True
+    ).stdout
+    page = int(re.search(r"page size of (\d+) bytes", out).group(1))
+    pages = dict(re.findall(r"^Pages ([^:]+):\s+(\d+)\.?$", out, re.MULTILINE))
+    free = sum(int(pages.get(k, 0)) for k in ("free", "inactive", "speculative"))
+    return min(total, free * page)
 
 
 def _openvino_gpu() -> bool:

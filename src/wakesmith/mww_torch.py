@@ -224,7 +224,10 @@ class _Batches(torch.utils.data.IterableDataset):
 
 
 def batch_stream(config: dict, size: int, workers: int, seed: int):
-    """Endless training batches from `workers` processes (forked: they share the memory-mapped features)."""
+    """Endless training batches from `workers` processes (forked on Linux: they share the memory-mapped
+    features; on macOS each opens them itself)."""
+    from .hardware import worker_start
+
     return iter(
         torch.utils.data.DataLoader(
             _Batches(config, size, seed),
@@ -232,7 +235,7 @@ def batch_stream(config: dict, size: int, workers: int, seed: int):
             num_workers=workers,
             prefetch_factor=4,
             persistent_workers=True,
-            multiprocessing_context="fork",
+            multiprocessing_context=worker_start(),
         )
     )
 
