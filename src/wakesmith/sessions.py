@@ -822,10 +822,10 @@ def send(sid: str, busy=None) -> dict:
 
     def put(n: str, kind: str, audio: np.ndarray, seg: dict, condition: str) -> bool:
         p = loaded[n]
-        held = False
-        if kind == "pos":
-            held = (len(recordings.listing(p, "pos")["takes"]) + 1) % HELD_EVERY == 0
-        try:
+        try:  # a wake word whose labels.csv can't be read is reported, the others still get theirs
+            held = (
+                kind == "pos" and (len(recordings.listing(p, "pos")["takes"]) + 1) % HELD_EVERY == 0
+            )
             r = recordings.add(
                 p,
                 kind,
@@ -835,7 +835,11 @@ def send(sid: str, busy=None) -> dict:
                 seg.get("speaker", "") if kind == "pos" else "",
                 keep_unused=True,
             )
-        except (PermissionError, ValueError) as e:
+        except (
+            PermissionError,
+            ValueError,
+            RuntimeError,
+        ) as e:  # RuntimeError: soundfile on a broken take
             errors.setdefault(n, str(e))
             return False
         log.append(
@@ -852,46 +856,54 @@ def send(sid: str, busy=None) -> dict:
         return True
 
     claps = 0
-    for seg in segs:
-        where = ", ".join(x for x in (room, seg.get("spot", "")) if x)
-        lab = seg["label"]
-        if lab in loaded:
-            if not _is_sent(log, seg, lab):
-                put(lab, "pos", _clip(a, seg["start"], seg["end"]), seg, where)
-        elif lab == "room":
-            for n in loaded:
-                if _is_sent(log, seg, n):
-                    continue
-                for t0, t1 in room_pieces(seg["start"], seg["end"]):
-                    put(
-                        n,
-                        "neg",
-                        _clip(a, t0, t1),
-                        {**seg, "start": t0, "end": t1},
-                        f"{room}, room sound",
-                    )
-        elif lab == "other":
-            for n in loaded:
-                if not _is_sent(log, seg, n):
-                    put(n, "neg", _clip(a, seg["start"], seg["end"]), seg, f"{where}, other speech")
-        elif lab == "clap" and not _is_sent(log, seg, "claps"):
-            onset = seg.get("onset", seg["start"] + PAD_S)
-            out = rooms_home() / projects.slug(room) / "claps"
-            out.mkdir(parents=True, exist_ok=True)
-            f = out / f"{sid}_{seg['i']:03d}.wav"
-            sf.write(f, clap_rir(a, onset), SR, subtype="FLOAT")
-            log.append(
-                {
-                    "target": "claps",
-                    "kind": "rir",
-                    "start": seg["start"],
-                    "end": seg["end"],
-                    "file": str(f),
-                    "at": time.time(),
-                }
-            )
-            claps += 1
-    _write(d / "sent.json", log)
+    try:  # what went out is logged even if a send stops part-way, so sending again adds no twins
+        for seg in segs:
+            where = ", ".join(x for x in (room, seg.get("spot", "")) if x)
+            lab = seg["label"]
+            if lab in loaded:
+                if not _is_sent(log, seg, lab):
+                    put(lab, "pos", _clip(a, seg["start"], seg["end"]), seg, where)
+            elif lab == "room":
+                for n in loaded:
+                    if _is_sent(log, seg, n):
+                        continue
+                    for t0, t1 in room_pieces(seg["start"], seg["end"]):
+                        put(
+                            n,
+                            "neg",
+                            _clip(a, t0, t1),
+                            {**seg, "start": t0, "end": t1},
+                            f"{room}, room sound",
+                        )
+            elif lab == "other":
+                for n in loaded:
+                    if not _is_sent(log, seg, n):
+                        put(
+                            n,
+                            "neg",
+                            _clip(a, seg["start"], seg["end"]),
+                            seg,
+                            f"{where}, other speech",
+                        )
+            elif lab == "clap" and not _is_sent(log, seg, "claps"):
+                onset = seg.get("onset", seg["start"] + PAD_S)
+                out = rooms_home() / projects.slug(room) / "claps"
+                out.mkdir(parents=True, exist_ok=True)
+                f = out / f"{sid}_{seg['i']:03d}.wav"
+                sf.write(f, clap_rir(a, onset), SR, subtype="FLOAT")
+                log.append(
+                    {
+                        "target": "claps",
+                        "kind": "rir",
+                        "start": seg["start"],
+                        "end": seg["end"],
+                        "file": str(f),
+                        "at": time.time(),
+                    }
+                )
+                claps += 1
+    finally:
+        _write(d / "sent.json", log)
     return {"added": added, "claps": claps, "errors": errors, "notes": notes}
 
 

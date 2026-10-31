@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import sys
 from pathlib import Path
 
 import typer
@@ -274,6 +275,8 @@ def setup(
     except ImportError:
         current = ""
     tag = {"xpu": "+xpu", "cuda": "+cu", "rocm": "+rocm", "cpu": "+cpu"}[accel]
+    if accel == "cpu" and sys.platform == "darwin":
+        tag = ""  # macOS wheels carry no build tag (and use the Apple GPU when there is one)
     if accel == "rocm":
         typer.echo("AMD GPU support (ROCm) is experimental and untested: reports welcome")
     if tag in current and se.torch_sees(accel):
@@ -305,7 +308,10 @@ def review(
     from . import project
     from . import review as rv
 
-    out = rv.build(project.load(project_), model, threshold)
+    try:
+        out = rv.build(project.load(project_), model, threshold)
+    except ValueError as e:  # no recordings, a bad labels.csv or HELDOUT.txt
+        raise typer.Exit(f"error: {e}") from None
     pos = sum(c["label"] == "wake" for c in out["clips"])
     typer.echo(
         f"{len(out['clips'])} disputed clips at {out['threshold']}: {pos} labeled as the "

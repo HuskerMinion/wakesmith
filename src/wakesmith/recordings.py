@@ -19,6 +19,7 @@ import numpy as np
 import soundfile as sf
 
 from .project import Project
+from .real import filled_row
 
 SR = 16000
 KINDS = ("pos", "neg")
@@ -55,27 +56,43 @@ def use(p: Project, kind: str) -> None:
     p.save()
 
 
+class LabelsError(ValueError):
+    """The recordings folder's labels.csv can't be read (edited by hand)."""
+
+
 def _rows(d: Path) -> list[dict]:
     f = d / "labels.csv"
     if not f.exists():
         return []
-    with open(f, newline="") as fh:
-        return list(csv.DictReader(fh))
+    try:  # wakesmith writes it; a hand edit can still break it (utf-8-sig: a spreadsheet's BOM)
+        with open(f, newline="", encoding="utf-8-sig") as fh:
+            rows = [r for r in csv.DictReader(fh) if filled_row(r)]  # not a spreadsheet's ",,," row
+    except (csv.Error, UnicodeDecodeError) as e:
+        raise LabelsError(f"{f}: {e}") from None
+    if any(None in r for r in rows):  # DictReader's key for cells past the header
+        raise LabelsError(f"{f}: a row has more cells than the header has columns")
+    if any(not (r.get("file") or "").strip() for r in rows):
+        raise LabelsError(f'{f}: every row needs a "file" (a take\'s name)')
+    return rows
 
 
 def _held(d: Path) -> set[str]:
     f = d / "HELDOUT.txt"
     if not f.exists():
         return set()
+    try:
+        text = f.read_text(encoding="utf-8-sig")
+    except UnicodeDecodeError as e:
+        raise LabelsError(f"{f}: {e}") from None
     return {
-        ln.strip() for ln in f.read_text().splitlines() if ln.strip() and not ln.startswith("#")
+        ln.strip() for ln in text.splitlines() if ln.strip() and not ln.lstrip().startswith("#")
     }
 
 
 def _write(d: Path, rows: list[dict], held: set[str]) -> None:
     # each file is written new and moved over the old one, never edited in place: a version made by
     # versions.create may share the old file through a hard link, and must not change it
-    with open(d / "labels.csv.tmp", "w", newline="") as fh:
+    with open(d / "labels.csv.tmp", "w", newline="", encoding="utf-8") as fh:
         extra = [
             k for r in rows for k in r if k not in FIELDS
         ]  # columns someone added by hand stay
@@ -86,26 +103,65 @@ def _write(d: Path, rows: list[dict], held: set[str]) -> None:
     names = {r["file"] for r in rows}
     (d / "HELDOUT.txt.tmp").write_text(
         "# kept aside for testing, never trained on (wakesmith recorder)\n"
-        + "".join(f"{n}\n" for n in sorted(held & names))
+        + "".join(f"{n}\n" for n in sorted(held & names)),
+        encoding="utf-8",
     )
     (d / "HELDOUT.txt.tmp").replace(d / "HELDOUT.txt")
 
 
-def listing(p: Project, kind: str) -> dict:
+def chosen(p: Project, kind: str) -> dict | None:
+    """The chosen folder's clips when it isn't the recordings folder, as training reads them (labels.csv,
+    HELDOUT.txt): how many, how many kept aside to test, and the names in a labels.csv "speaker" column."""
+    if not _setting(p, kind) or active(p, kind):
+        return None
+    if (
+        not Path(_setting(p, kind)).expanduser().is_dir()
+    ):  # a drive or share gone since it was chosen
+        return {"error": f"{_setting(p, kind)} is not a folder (anymore)"}
+    from .real import RealData
+
+    try:
+        files, held, rows = RealData(p).listing(kind)
+    except (OSError, ValueError) as e:
+        return {"error": str(e)}
+    speakers = {(rows[f].get("speaker") or "").strip() for f in files}
+    return {"clips": len(files), "held": len(held), "speakers": sorted(speakers - {""})}
+
+
+def listing_or_error(p: Project, kind: str, with_folder: bool = False) -> dict:
+    """listing for the page: a labels.csv that can't be read is said in "error", with no takes, so the
+    page still shows the folder settings and the rest."""
+    try:
+        return listing(p, kind, with_folder)
+    except (OSError, ValueError, RuntimeError) as e:  # RuntimeError: soundfile on a broken take
+        out = {
+            "folder": str(folder(p, kind)),
+            "active": active(p, kind),
+            "setting": _setting(p, kind),
+        }
+        out |= {"chosen": chosen(p, kind)} if with_folder else {}  # its own scan: unaffected
+        return {**out, "takes": [], "error": str(e)}
+
+
+def listing(p: Project, kind: str, with_folder: bool = False) -> dict:
+    """The takes recorded here; with_folder adds the chosen folder's summary (see chosen) as "chosen"."""
     d = folder(p, kind)
     held = _held(d)
     takes = []
     for r in _rows(d):
         path = d / r["file"]
         if path.exists():
-            takes.append(
-                {**r, "held": r["file"] in held, "seconds": round(sf.info(str(path)).duration, 2)}
-            )
+            try:
+                seconds, broken = round(sf.info(str(path)).duration, 2), ""
+            except RuntimeError as e:  # a take cut short by a copy: listed, so it can be deleted
+                seconds, broken = None, str(e)
+            takes.append({**r, "held": r["file"] in held, "seconds": seconds, "broken": broken})
     return {
         "folder": str(d),
         "active": active(p, kind),
         "setting": _setting(p, kind),
         "takes": takes,
+        **({"chosen": chosen(p, kind)} if with_folder else {}),
     }
 
 
@@ -172,8 +228,9 @@ def path(p: Project, kind: str, name: str) -> Path:
 
 def delete(p: Project, kind: str, name: str) -> None:
     d = folder(p, kind)
+    rows, held = _rows(d), _held(d)  # read first: a labels.csv that can't be read leaves the take
     path(p, kind, name).unlink()
-    _write(d, [r for r in _rows(d) if r["file"] != name], _held(d) - {name})
+    _write(d, [r for r in rows if r["file"] != name], held - {name})
 
 
 def set_speaker(p: Project, kind: str, name: str, speaker: str) -> None:

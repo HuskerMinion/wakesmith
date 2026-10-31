@@ -10,9 +10,9 @@ Seite heißen.
 
 ## Was du brauchst
 
-- **System:** Linux (z. B. Ubuntu) oder Windows 11 mit WSL2. macOS ist noch nicht getestet und
-  rechnet dort nur auf dem Prozessor.
-- **Grafikkarte:** NVIDIA, Intel Arc oder AMD (experimentell). Ohne GPU geht es auch, nur langsamer.
+- **System:** Linux (z. B. Ubuntu), Windows 11 mit WSL2 oder macOS mit Apple-Silicon (dort rechnet
+  die Apple-GPU).
+- **Grafikkarte:** NVIDIA, Intel Arc, Apple-Silicon oder AMD (experimentell). Ohne GPU geht es auch, nur langsamer.
 - **Speicher:** etwa 25 GB freier Plattenplatz, 16 GB RAM oder mehr
 - **Mikrofon** für echte Aufnahmen im Browser. Deine Stimme und die deiner Familie machen das Modell
   viel besser.

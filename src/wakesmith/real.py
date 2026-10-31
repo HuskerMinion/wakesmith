@@ -40,6 +40,14 @@ KIND = {
 VERDICTS = ("wake", "not_wake", "unsure", "bad_audio")
 
 
+def filled_row(row: dict) -> bool:
+    """Not a blank row: a spreadsheet saves formatted empty rows below the data as ",,,"."""
+    return any(
+        any(c.strip() for c in v) if k is None else (v or "").strip()  # None: cells past the header
+        for k, v in row.items()
+    )
+
+
 class RealData:
     def __init__(self, project: Project):
         self.p = project
@@ -77,15 +85,31 @@ class RealData:
         if d is None:
             return [], set(), {}
         if (d / "labels.csv").exists():
-            with open(d / "labels.csv", newline="") as f:
-                rows = {r["file"]: r for r in csv.DictReader(f)}
+            # utf-8-sig: a spreadsheet's "file" header often comes with a byte-order mark
+            with open(d / "labels.csv", newline="", encoding="utf-8-sig") as f:
+                reader = csv.DictReader(f)
+                try:
+                    has_file = "file" in (reader.fieldnames or [])  # reads the header row
+                    rows = {r["file"]: r for r in reader if filled_row(r)} if has_file else {}
+                    if any(not (f or "").strip() for f in rows):  # a short row or an empty cell
+                        raise ValueError(f"{d}/labels.csv has a row without a file name")
+                except (csv.Error, UnicodeDecodeError) as e:  # e.g. saved as Windows-1252
+                    raise ValueError(f"{d}/labels.csv: {e}") from None
+                if not has_file:
+                    raise ValueError(
+                        f'{d}/labels.csv needs a "file" column (paths relative to the folder)'
+                    )
         else:
             rows = {str(p.relative_to(d)): {} for p in sorted(d.rglob("*.wav"))}
         held: set[str] = set()
         if (d / "HELDOUT.txt").exists():
+            try:
+                text = (d / "HELDOUT.txt").read_text(encoding="utf-8-sig")
+            except UnicodeDecodeError as e:
+                raise ValueError(f"{d}/HELDOUT.txt: {e}") from None
             held = {
                 line.strip()
-                for line in (d / "HELDOUT.txt").read_text().splitlines()
+                for line in text.splitlines()
                 if line.strip() and not line.lstrip().startswith("#")
             }
             missing = held - rows.keys()

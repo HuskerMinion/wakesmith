@@ -550,7 +550,17 @@ def create_app(token: str | None = None) -> FastAPI:
     @app.get("/api/projects/{name}/size")
     def project_size(name: str):
         p = proj(name)
-        rec = {k: len(recordings.listing(p, k)["takes"]) for k in recordings.KINDS}
+        try:
+            rec = {k: len(recordings.listing(p, k)["takes"]) for k in recordings.KINDS}
+        except (
+            OSError,
+            ValueError,
+            RuntimeError,
+        ):  # a hand-broken labels.csv or take: count files,
+            rec = {  # so the delete dialog still says they go too
+                k: sum(1 for _ in recordings.folder(p, k).glob("take_*.wav"))
+                for k in recordings.KINDS
+            }
         return {"bytes": projects.size_bytes(p), "recorded_takes": rec, "dir": str(p.dir)}
 
     @app.delete("/api/projects/{name}")
@@ -705,9 +715,10 @@ def create_app(token: str | None = None) -> FastAPI:
             raise HTTPException(409, "a job is running; recordings can change after it ends")
 
     @app.get("/api/projects/{name}/recordings")
-    def rec_list(name: str):
+    def rec_list(name: str, folders: bool = False):
+        # folders: also sum up the chosen folders (a scan of each, so only when asked)
         p = proj(name)
-        return {k: recordings.listing(p, k) for k in recordings.KINDS}
+        return {k: recordings.listing_or_error(p, k, with_folder=folders) for k in recordings.KINDS}
 
     @app.post("/api/projects/{name}/recordings/{kind}")
     async def rec_add(
@@ -738,9 +749,9 @@ def create_app(token: str | None = None) -> FastAPI:
         _idle(p)
         try:
             recordings.use(p, kind)
+            return recordings.listing_or_error(p, kind)
         except ValueError as e:
             raise HTTPException(400, str(e)) from None
-        return recordings.listing(p, kind)
 
     @app.get("/api/projects/{name}/recordings/{kind}/{file}")
     def rec_audio(name: str, kind: str, file: str):
@@ -755,6 +766,8 @@ def create_app(token: str | None = None) -> FastAPI:
         _idle(p)
         try:
             recordings.delete(p, kind, file)
+        except recordings.LabelsError as e:
+            raise HTTPException(409, str(e)) from None
         except (ValueError, FileNotFoundError):
             raise HTTPException(404, "no such take") from None
         return {"deleted": file}
@@ -765,6 +778,8 @@ def create_app(token: str | None = None) -> FastAPI:
         _idle(p)
         try:
             recordings.set_speaker(p, kind, file, str((await request.json()).get("speaker", "")))
+        except recordings.LabelsError as e:
+            raise HTTPException(409, str(e)) from None
         except (ValueError, FileNotFoundError):
             raise HTTPException(404, "no such take") from None
         return {"file": file}
@@ -775,6 +790,8 @@ def create_app(token: str | None = None) -> FastAPI:
         _idle(p)
         try:
             recordings.set_heldout(p, kind, file, bool((await request.json()).get("held")))
+        except recordings.LabelsError as e:
+            raise HTTPException(409, str(e)) from None
         except (ValueError, FileNotFoundError):
             raise HTTPException(404, "no such take") from None
         return {"file": file}
@@ -898,7 +915,13 @@ def create_app(token: str | None = None) -> FastAPI:
         src = group.split("/")[0]
         if src not in real.sources:
             raise HTTPException(404, "no such source")
-        files, held, rows = real.listing(src)
+        try:
+            files, held, rows = real.listing(src)
+        except (
+            OSError,
+            ValueError,
+        ) as e:  # a bad labels.csv or HELDOUT.txt, said as the panel says it
+            raise HTTPException(409, str(e)) from None
         mine = [f for f in files if evaluate.set_id(src, f) == group]
         page = mine[offset : offset + max(1, min(limit, 200))]
         return {
@@ -919,7 +942,11 @@ def create_app(token: str | None = None) -> FastAPI:
     def learns_audio(name: str, src: str, f: str):
         p = proj(name)
         real = RealData(p)
-        if src not in real.sources or f not in set(real.listing(src)[0]):
+        try:
+            known = src in real.sources and f in set(real.listing(src)[0])
+        except (OSError, ValueError) as e:
+            raise HTTPException(409, str(e)) from None
+        if not known:
             raise HTTPException(404, "no such clip")
         return FileResponse(real.file(src, f), media_type="audio/wav")
 

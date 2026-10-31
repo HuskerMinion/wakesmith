@@ -108,6 +108,7 @@ def feature_jobs(p: Project) -> list[tuple[str, str, list[str], int, int]]:
 
 
 _AUG = None
+_LIMITS = None
 
 
 def impulse_paths(p: Project, rir_dir: str) -> list[str]:
@@ -130,11 +131,16 @@ def impulse_paths(p: Project, rir_dir: str) -> list[str]:
 
 
 def _init_worker(noise_dir: str, rir_paths: list[str]) -> None:
-    global _AUG
+    global _AUG, _LIMITS
     import warnings
 
     warnings.filterwarnings("ignore")
     from microwakeword.audio.augmentation import Augmentation
+    from threadpoolctl import threadpool_limits
+
+    # one BLAS thread per worker: N workers x N threads fought over the cores. Set after the imports, as
+    # it only limits libraries already loaded (scipy brings its own OpenBLAS)
+    _LIMITS = threadpool_limits(1)
 
     seed = int.from_bytes(os.urandom(4), "little")
     random.seed(seed)

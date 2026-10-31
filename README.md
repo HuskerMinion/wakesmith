@@ -5,9 +5,9 @@
 Train your own wake word ("hey jarvis", "computer", anything) for **ESPHome / Home Assistant Voice
 devices (microWakeWord)** and **openWakeWord**, from synthetic speech plus real voices: your own
 takes, recorded right in the browser, clips your devices saved, and volunteers from Mozilla Common
-Voice. It detects your hardware and sets itself up for Intel Arc, NVIDIA, AMD (experimental) or a
-plain CPU, and runs every heavy stage on the GPU when there is one. Everything runs locally, from a
-web page or the command line.
+Voice. It detects your hardware and sets itself up for Intel Arc, NVIDIA, Apple silicon, AMD
+(experimental) or a plain CPU, and runs every heavy stage on the GPU when there is one. Everything
+runs locally, from a web page or the command line.
 
 wakesmith is free for noncommercial use under the [PolyForm Noncommercial License](#licensing): use
 it, change it and share it, as long as no one makes money from it.
@@ -43,8 +43,8 @@ wakesmith serve                         # then open http://localhost:8765/
 
 wakesmith needs Python 3.10 to 3.12 (TensorFlow and microWakeWord's dependencies have no packages for
 newer ones); `--python 3.12` makes uv fetch it if needed. On macOS, install the tools with
-`brew install espeak-ng git` instead of apt. macOS hasn't been tested yet, and setup doesn't use Apple
-GPUs: everything runs on the CPU (see [Status](#status)).
+`brew install espeak-ng git` instead of apt. On a Mac with Apple silicon, training runs on its GPU
+(see [Status](#status)).
 
 To update, run `uv tool install --python 3.12` on the newer wheel with `--force`, then `wakesmith setup` again: the
 reinstall starts a fresh environment without PyTorch, and setup puts the right build back (the data
@@ -391,15 +391,17 @@ are under Hardware below.
 ## Hardware
 
 `wakesmith setup` looks at your PCI devices (on Linux and WSL2) before installing anything, picks the
-matching PyTorch build, then checks the GPU really works and falls back to the CPU if not. `wakesmith doctor` (and
-the Hardware page) shows what it found and the settings that follow: TTS batch size from GPU memory,
-one generation process per GPU, and worker counts from free RAM. `--cpu` on `doctor`, `train` and
+matching PyTorch build, then checks the GPU really works and falls back to the CPU if not. On a Mac it
+installs the standard build, and training uses the Apple GPU (MPS) when it finds one. `wakesmith doctor`
+(and the Hardware page) shows what it found and the settings that follow: TTS batch size from GPU
+memory, one generation process per GPU, and worker counts from free RAM. `--cpu` on `doctor`, `train` and
 `serve` ignores the GPU.
 
 | | Synthetic speech | microWakeWord training | Runs on |
 |---|---|---|---|
 | Intel Arc (XPU) | GPU, ~50-130 clips/s per card | GPU, ~3 min for 20k steps | 2 × Arc Pro B70, Ubuntu 26.04 |
 | NVIDIA (CUDA) | GPU, ~80 clips/s on an RTX 5060 Ti | GPU, ~3 min for 20k steps | RTX 5060 Ti + i9-13900K, Windows 11 via WSL2 |
+| Apple silicon (MPS) | GPU, ~60 clips/s | GPU, ~4.3 min for 20k steps | M1, 64 GB, macOS (a user's run) |
 | AMD (ROCm) | GPU: supported Radeon cards on Linux | GPU | experimental |
 | CPU only | ~3-30 clips/s | CPU, ~7 min for 20k steps (12 threads) | Ubuntu 24.04, 6 cores, 16 GB |
 
@@ -449,8 +451,8 @@ isn't responding, reboot. A job that outgrows the card's memory spills into syst
 
 wakesmith trains the microWakeWord and openWakeWord models running on the Echo-style devices of one
 household. It runs on Linux (Ubuntu 26.04 with two Intel Arc cards; a CPU-only Ubuntu 24.04 virtual
-machine) and on Windows 11 through WSL2 (with an NVIDIA card). macOS is untested: setup installs the
-CPU build of PyTorch there (no Apple GPU), and reports from Mac users are welcome. English is the
+machine), on Windows 11 through WSL2 (with an NVIDIA card) and on macOS with Apple silicon (a user's
+M1, every heavy stage on the Apple GPU). Reports from more Macs are welcome. English is the
 language; German is experimental ([Other languages](#other-languages-experimental)).
 Fixes and improvements are welcome: see [CONTRIBUTING.md](CONTRIBUTING.md).
 

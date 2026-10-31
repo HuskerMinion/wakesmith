@@ -333,14 +333,15 @@ def apply(p: Project, holdout_from: str) -> dict:
             rows.append(c)
             if c["at"] >= holdout_from:
                 held.append(rel)
-        with open(d / "labels.csv", "w", newline="") as f:
+        with open(d / "labels.csv", "w", newline="", encoding="utf-8") as f:
             w = csv.writer(f)
             w.writerow(["file", "device", "at", "model", "score", "said"])
             for c in rows:
                 w.writerow([c["id"], c["device"], c["at"], c["model"], c["score"], c["text"] or ""])
         (d / "HELDOUT.txt").write_text(
             f"# device clips at or after {holdout_from} (rounds.apply)\n"
-            + "".join(f"{h}\n" for h in held)
+            + "".join(f"{h}\n" for h in held),
+            encoding="utf-8",
         )
         stats[sub] = {"train": len(rows) - len(held), "heldout": len(held)}
     meta = p.path("devices", "round.json")

@@ -134,7 +134,8 @@
   .wwr .num { font-family: var(--mono); } .wwr .num small { font-family: var(--body); color: var(--muted); font-size: 12px; }
   .wwr .cut { color: var(--muted); }
   details.learns > summary { cursor: pointer; list-style: none; display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 12px; }
-  details.learns > summary::-webkit-details-marker { display: none; } details.learns > summary::before { content: "▸"; color: var(--muted); } details.learns[open] > summary::before { content: "▾"; }
+  details.learns > summary::-webkit-details-marker { display: none; }
+  details.learns > summary > h2 > svg { color: var(--soft); vertical-align: -3px; margin-right: 6px; transition: transform .15s; } details.learns[open] > summary > h2 > svg { transform: rotate(90deg); }
   details.learns > div { display: flex; flex-direction: column; gap: 10px; margin-top: 12px; }
   .lsrc { display: flex; flex-direction: column; gap: 6px; } .lgroup { padding: 8px 12px; border-radius: 10px; background: var(--inset); }
   .lgroup .takes { margin-top: 8px; }
@@ -220,7 +221,7 @@
     background: radial-gradient(closest-side, var(--panel) calc(100% - 3px), transparent calc(100% - 2px)), conic-gradient(var(--cyan) var(--p, 0%), var(--line) 0); }
   button.playing:not(.round) { border-color: var(--cyan); color: var(--cyan); }
   @keyframes pulse { 50% { opacity: .35; } }
-  @media (prefers-reduced-motion: reduce) { button.loading svg { animation: none; opacity: .6; } }
+  @media (prefers-reduced-motion: reduce) { button.loading svg { animation: none; opacity: .6; } .fold svg, details.learns > summary > h2 > svg { transition: none; } }
   .tag { padding: 4px 12px; min-height: 32px; border-radius: 999px; font-size: 12px; font-weight: 600; background: var(--raised); color: var(--soft); border: 0; display: inline-flex; align-items: center; }
   button.tag.test { background: var(--info-bg); color: var(--info); }
 
@@ -1003,7 +1004,7 @@ async function voicesTab(p, base, steps) {
   let tab = voicesOpen || "rec", rec = null, levels = Array(32).fill(0), busy = false;
   v.innerHTML = `${steps("voices")}<div><div class="kicker">${esc(p.label)}</div><h1>Real voices</h1>
       <p class="sub">Synthetic voices train the model; real ones tell you whether it works. Some takes are kept aside for testing and never trained on, so the test is honest.</p></div>
-    <details class="panel learns" id="learns"><summary><h2 style="display:inline">What ${esc(p.label)} learns from</h2> <span class="hint">every source, how much of it trains and how much is kept aside to test, and its clips to play</span></summary><div id="learnsbody"><p class="hint">Loading…</p></div></details>
+    <details class="panel learns" id="learns"><summary><h2 style="display:inline">${icon("chev", 22, 2.5)}What ${esc(p.label)} learns from</h2> <span class="hint">every source, how much of it trains and how much is kept aside to test, and its clips to play</span></summary><div id="learnsbody"><p class="hint">Loading…</p></div></details>
     <div role="tablist" aria-label="Where the voices come from" class="seg" id="tabs"></div>
     <div class="cols"><div class="wide" id="pane"></div>
     <aside class="narrow"><div class="summary"><h2>So far</h2><dl class="kv" id="sofar"></dl><div id="sofarnote"></div>
@@ -1019,19 +1020,37 @@ async function voicesTab(p, base, steps) {
     `<button type="button" role="tab" aria-selected="${tab === k}" data-tab="${k}">${l}</button>`).join("");
   $("#tabs").onclick = e => { const b = e.target.closest("[data-tab]"); if (b && !busy) { tab = b.dataset.tab; draw(); } };
 
-  const load = async () => { rec = await api(base + "/recordings"); };
+  // the chosen folders are read (scanned) only on opening and after a Folders save, not after every take
+  const load = async (folders = false) => {
+    const r = await api(base + "/recordings" + (folders ? "?folders=1" : ""));
+    if (!folders) for (const k of ["pos", "neg"]) r[k].chosen = rec?.[k]?.chosen;
+    rec = r;
+  };
   const sofar = () => {
     const pos = rec.pos.takes, neg = rec.neg.takes, held = pos.filter(t => t.held).length;
-    $("#sofar").innerHTML = `<dt>Takes recorded here</dt><dd class="mono">${pos.length}</dd><dt>for training</dt><dd class="mono">${pos.length - held}</dd>
+    const fp = rec.pos.chosen, fn = rec.neg.chosen;  // the chosen folders, when not the takes recorded here
+    const unread = [...pos, ...neg].filter(t => t.broken).length;  // stop training: delete them first
+    $("#sofar").innerHTML = `<dt>Takes recorded here</dt><dd class="mono">${pos.length}</dd><dt>for training</dt><dd class="mono">${pos.length - held - pos.filter(t => t.broken && !t.held).length}</dd>
       <dt>kept aside to test</dt><dd class="mono">${held}</dd><dt>Room sound clips</dt><dd class="mono">${neg.length}</dd>
       <dt>Phrase from</dt><dd style="word-break:break-all">${rec.pos.active ? "takes recorded here" : `${esc(rec.pos.setting || "no folder")}${rec.pos.takes.length ? ` + ${rec.pos.takes.length} take${rec.pos.takes.length > 1 ? "s" : ""} recorded here` : ""}`}</dd>`;
-    const voices = new Set(pos.map(t => (t.speaker || "").trim().toLowerCase()).filter(Boolean));
+    if (fp?.error) $("#sofar").innerHTML += `<dt>Folder</dt><dd class="err">${esc(fp.error)}</dd>`;
+    else if (fp) $("#sofar").innerHTML += `<dt>Phrase clips in the folder</dt><dd class="mono">${fp.clips}</dd><dt>for training</dt><dd class="mono">${fp.clips - fp.held}</dd>
+      <dt>kept aside to test</dt><dd class="mono">${fp.held}</dd>`;
+    if (fn?.error) $("#sofar").innerHTML += `<dt>"Not the phrase" folder</dt><dd class="err">${esc(fn.error)}</dd>`;
+    else if (fn) $("#sofar").innerHTML += `<dt>"Not the phrase" clips in the folder</dt><dd class="mono">${fn.clips}</dd>`;
+    const voices = new Set([...pos.map(t => t.speaker || ""), ...(fp?.speakers || [])].map(v => v.trim().toLowerCase()).filter(Boolean));
     $("#sofar").innerHTML += `<dt>Speakers named</dt><dd class="mono">${voices.size || "none"}</dd>`;
     if (dev?.summary?.total) $("#sofar").innerHTML += `<dt>Device clips</dt><dd class="mono">${dev.summary.total}</dd>
       <dt>labeled phrase / not</dt><dd class="mono">${dev.summary.labels.wake} / ${dev.summary.labels.not_wake}</dd>
       <dt>in training</dt><dd>${dev.applied ? esc(new Date(dev.applied.applied * 1000).toLocaleDateString()) : "not yet"}</dd>`;
-    $("#sofarnote").innerHTML = pos.length >= 8 && voices.size <= 1 ? `<div class="callout warn">${icon("bang", 18, 2)}<span>${voices.size ? "All takes are one voice" : "If these are all one voice"}: ask someone else to record five or so too. The test is far more trustworthy with a second voice.</span></div>`
-      : pos.length && !held ? `<div class="callout warn">${icon("bang", 18, 2)}<span>No take is kept aside yet, so there is no honest test. Mark a few as "test".</span></div>` : "";
+    const all = pos.length + (fp?.clips || 0), aside = held + (fp?.held || 0);
+    const how = fp?.clips ? `mark a few takes as "test", or list folder clips in HELDOUT.txt in the folder` : `mark a few as "test"`;
+    const broken = [rec.pos.error, rec.neg.error].filter(Boolean);  // a hand-broken labels.csv of the takes
+    const where = window.isSecureContext ? "marked in the list" : "listed when wakesmith is opened over HTTPS or on its own computer";
+    if (unread) broken.push(`${unread} take${unread > 1 ? "s" : ""} can't be read (${where}): delete ${unread > 1 ? "them" : "it"} before training.`);
+    $("#sofarnote").innerHTML = broken.length ? broken.map(m => `<div class="callout warn">${icon("bang", 18, 2)}<span>${esc(m)}</span></div>`).join("")
+      : all && !aside ? `<div class="callout warn">${icon("bang", 18, 2)}<span>Nothing is kept aside yet, so there is no honest test: ${how}.</span></div>`
+      : all >= 8 && voices.size <= 1 ? `<div class="callout warn">${icon("bang", 18, 2)}<span>${voices.size ? "All takes are one voice" : "If these are all one voice"}: ask someone else to record five or so too. The test is far more trustworthy with a second voice.${fp?.clips && !fp.speakers.length ? ` A "speaker" column in the folder's labels.csv names its voices.` : ""}</span></div>` : "";
   };
 
   const recPane = () => {
@@ -1061,7 +1080,7 @@ async function voicesTab(p, base, steps) {
       ${t.kind === "pos" ? `<button type="button" class="tag" data-spk="${t.file}" data-cur="${esc(t.speaker || "")}" title="who is speaking: click to change">${esc(t.speaker || "who?")}</button>` : ""}
       <span style="flex:1 1 160px">${esc(t.condition || (t.kind === "neg" ? "room sound" : ""))}</span>
       ${t.kind === "pos" ? `<button type="button" class="tag ${t.held ? "test" : ""}" data-held="${t.file}" aria-pressed="${t.held}" title="kept aside to test, or used for training">${t.held ? "test" : "train"}</button>` : `<span class="tag">not the phrase</span>`}
-      <span class="mono hint">${t.seconds.toFixed(1)} s</span>
+      <span class="mono hint"${t.broken ? ` title="${esc(t.broken)}"` : ""}>${t.seconds == null ? "can't be read" : `${t.seconds.toFixed(1)} s`}</span>
       <button type="button" class="round flat" data-del="${t.kind}/${t.file}" aria-label="Delete ${t.file}">${icon("x", 16, 2)}</button></li>`).join("")
       || `<li class="hint">No takes yet. Twenty or so, in different spots and voices, make a good start.</li>`;
   };
@@ -1294,7 +1313,7 @@ async function voicesTab(p, base, steps) {
   };
   const save = async () => {
     err();
-    try { await api(base, { method: "PUT", body: { positives: $("#pos").value.trim(), negatives_dir: $("#neg").value.trim() } }); $("#saved").textContent = "saved"; await load(); sofar(); return true; }
+    try { await api(base, { method: "PUT", body: { positives: $("#pos").value.trim(), negatives_dir: $("#neg").value.trim() } }); $("#saved").textContent = "saved"; await load(true); sofar(); return true; }
     catch (e) { err(e.message); return false; }
   };
   const train = async from => {
@@ -1303,7 +1322,7 @@ async function voicesTab(p, base, steps) {
     catch (e) { err(e.message); }
   };
   $("#go").onclick = () => train(); if (hasVoices) $("#retrain").onclick = () => train("real");
-  try { await load(); draw(); } catch (e) { err(e.message); }
+  try { await load(true); draw(); } catch (e) { err(e.message); }
 }
 
 // The Training page's note on an archived project: when, how much it freed, and what Train rebuilds first.

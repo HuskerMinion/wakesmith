@@ -58,7 +58,7 @@ def units(p: Project, stage: str) -> float:
         real = RealData(p)
         try:
             listed = [real.listing(src) for src in real.sources]
-        except ValueError:
+        except (OSError, ValueError):
             return 0
         if stage == "real":
             return sum(len(files) for files, _, _ in listed)

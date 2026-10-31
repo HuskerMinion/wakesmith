@@ -233,6 +233,30 @@ def test_restricted_unpickler_refuses_foreign_code():
         _Unpickler(io.BytesIO(pickle.dumps(Evil()))).load()
 
 
+def test_feature_workers_run_one_blas_thread(tmp_path):
+    """In a fresh worker process, every BLAS loaded, scipy's own OpenBLAS too (it comes with the
+    augmentation import), is held to one thread: N workers each running N threads fought over the cores."""
+    import subprocess
+    import sys
+
+    pytest.importorskip("microwakeword.audio.augmentation")
+    pytest.importorskip("threadpoolctl")
+    sf.write(tmp_path / "noise.wav", np.zeros(16000, np.float32), 16000)
+    code = (
+        "import json, sys; from wakesmith import mww; from threadpoolctl import threadpool_info; "
+        "mww._init_worker(sys.argv[1], [sys.argv[2]]); "
+        "print(json.dumps([i['num_threads'] for i in threadpool_info() if i['user_api'] == 'blas']))"
+    )
+    out = subprocess.run(
+        [sys.executable, "-c", code, str(tmp_path), str(tmp_path / "noise.wav")],
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout
+    threads = json.loads(out.strip().splitlines()[-1])
+    assert threads and set(threads) == {1}
+
+
 def test_device_frontend_matches_zserge_go():
     """Checksum of the Go engine's int8 features (zserge/microwakeword bfaf384) on this signal."""
     import hashlib
@@ -602,6 +626,109 @@ def test_recorded_takes_keep_speaker_and_extra_columns(proj):
         rows["take_001.wav"]["speaker"] == "voiceB" and rows["take_002.wav"]["speaker"] == "voiceA"
     )
     assert "note" in (d / "labels.csv").read_text().splitlines()[0]
+
+
+def test_listing_sums_up_a_chosen_folder(proj, tmp_path):
+    """The page's summary counts a folder you bring as training reads it: labels.csv picks the clips
+    and names speakers, HELDOUT.txt keeps some aside; a bad HELDOUT.txt is reported, not raised."""
+    from wakesmith import recordings
+
+    assert "chosen" not in recordings.listing(proj, "pos")
+    d = tmp_path / "mine"
+    d.mkdir()
+    for n in ("a.wav", "b.wav", "c.wav", "unused.wav"):
+        (d / n).write_bytes(_wav(1.0))
+    proj.real.positives = str(d)
+    assert recordings.listing(proj, "pos", with_folder=True)["chosen"] == {
+        "clips": 4,
+        "held": 0,
+        "speakers": [],
+    }
+    (d / "labels.csv").write_text("file,speaker\na.wav,Alex\nb.wav,Sam\nc.wav,\n")
+    (d / "HELDOUT.txt").write_text("# Sam's takes\nb.wav\n")
+    assert recordings.chosen(proj, "pos") == {"clips": 3, "held": 1, "speakers": ["Alex", "Sam"]}
+    (d / "HELDOUT.txt").write_text("gone.wav\n")
+    assert "gone.wav" in recordings.chosen(proj, "pos")["error"]
+    (d / "HELDOUT.txt").write_bytes(b"a.wav \xff\n")  # not UTF-8: named
+    assert "HELDOUT.txt" in recordings.chosen(proj, "pos")["error"]
+    (d / "HELDOUT.txt").unlink()
+    (d / "labels.csv").write_text("name,speaker\na.wav,Alex\n")  # no "file" column: said, not a 500
+    assert '"file" column' in recordings.chosen(proj, "pos")["error"]
+    (d / "labels.csv").write_bytes(
+        b"\xef\xbb\xbffile,speaker\na.wav,Alex\n"
+    )  # saved by a spreadsheet
+    assert recordings.chosen(proj, "pos") == {"clips": 1, "held": 0, "speakers": ["Alex"]}
+    (d / "labels.csv").write_text("x" * 200_000 + "\n")  # a header past csv's field limit
+    assert "labels.csv" in recordings.chosen(proj, "pos")["error"]
+    (d / "labels.csv").write_bytes("file,speaker\na.wav,Zoë\n".encode("cp1252"))  # not UTF-8
+    assert "labels.csv" in recordings.chosen(proj, "pos")["error"]
+    (d / "labels.csv").write_text("speaker,file\nAlex,a.wav\nSam\n")  # a short row
+    assert "without a file name" in recordings.chosen(proj, "pos")["error"]
+    (d / "labels.csv").write_text("file,speaker\na.wav,\n,,a note past the header\n")
+    assert "without a file name" in recordings.chosen(proj, "pos")["error"]  # not dropped
+    (d / "labels.csv").write_text(
+        "file,speaker\na.wav,\nb.wav,\n,\n  ,  \n"
+    )  # blank rows at the end
+    (d / "HELDOUT.txt").write_bytes(b"\xef\xbb\xbfb.wav\n  # indented note\n")  # with a BOM
+    assert recordings.chosen(proj, "pos") == {"clips": 2, "held": 1, "speakers": []}
+    (d / "HELDOUT.txt").unlink()
+    (d / "labels.csv").unlink()
+    proj.real.positives = str(tmp_path / "unplugged")  # a drive gone since it was chosen
+    assert "not a folder" in recordings.chosen(proj, "pos")["error"]
+    proj.real.positives = str(d)
+    recordings.add(proj, "pos", _wav(1.0))  # takes recorded here sit next to the folder
+    assert recordings.chosen(proj, "neg") is None
+    recordings.use(proj, "pos")  # the recordings folder chosen: nothing more to sum up
+    assert recordings.chosen(proj, "pos") is None
+
+
+def test_a_bad_labels_csv_is_said_not_a_server_error(proj, tmp_path):
+    from fastapi.testclient import TestClient
+
+    from wakesmith.web.server import create_app
+
+    d = tmp_path / "mine"
+    d.mkdir()
+    (d / "a.wav").write_bytes(_wav(1.0))
+    (d / "labels.csv").write_text("name\na.wav\n")
+    proj.real.positives = str(d)
+    proj.save()
+    c = TestClient(create_app(), base_url="http://localhost")
+    base = f"/api/projects/{proj.name}"
+    r = c.get(f"{base}/recordings?folders=1")
+    assert r.status_code == 200 and '"file" column' in r.json()["pos"]["chosen"]["error"]
+    assert "chosen" not in c.get(f"{base}/recordings").json()["pos"]  # scanned only when asked
+    for url in (f"{base}/learns/clips?group=pos", f"{base}/learns/audio?src=pos&f=a.wav"):
+        r = c.get(url)
+        assert r.status_code == 409 and '"file" column' in r.json()["detail"]
+    from wakesmith import recordings
+
+    recordings.add(proj, "pos", _wav(1.0))
+    own = recordings.folder(proj, "pos") / "labels.csv"
+    own.write_bytes("file,speaker\ntake_001.wav,Zoë\n".encode("cp1252"))  # edited by hand
+    r = c.get(f"{base}/recordings").json()  # said for that kind; the page still gets the rest
+    assert "labels.csv" in r["pos"]["error"] and r["pos"]["takes"] == [] and "error" not in r["neg"]
+    assert r["pos"]["setting"] == proj.real.positives
+    folders = c.get(f"{base}/recordings?folders=1").json()["pos"]
+    assert "error" in folders and "chosen" in folders  # the folder's summary still comes
+    takes = c.get(f"{base}/size").json()["recorded_takes"]
+    assert takes == {"pos": 1, "neg": 0}  # counted by file, so the delete dialog still says so
+    r = c.post(f"{base}/recordings/pos/take_001.wav/heldout", json={"held": True})
+    assert r.status_code == 409 and "labels.csv" in r.json()["detail"]  # not "no such take"
+    assert c.delete(f"{base}/recordings/pos/take_001.wav").status_code == 409
+    assert (recordings.folder(proj, "pos") / "take_001.wav").exists()  # nothing half-deleted
+    own.write_text("speaker,file\nZoe\n")
+    assert "needs a" in c.get(f"{base}/recordings").json()["pos"]["error"]
+    own.write_text("file\ntake_001.wav\n")
+    (own.parent / "HELDOUT.txt").write_bytes(b"take_001.wav \xff\n")  # not UTF-8: named too
+    assert "HELDOUT.txt" in c.get(f"{base}/recordings").json()["pos"]["error"]
+    (own.parent / "HELDOUT.txt").unlink()
+    (own.parent / "take_001.wav").write_bytes(b"not a wav")  # cut short by a copy
+    take = c.get(f"{base}/recordings").json()["pos"]["takes"][0]  # listed, so it can be deleted
+    assert take["seconds"] is None and take["broken"]
+    assert (
+        c.get(f"{base}/size").json()["recorded_takes"]["pos"] == 1
+    )  # the delete dialog still counts
 
 
 def test_runs_are_kept_labelled_and_listed(proj):
@@ -2978,6 +3105,32 @@ def test_room_send_goes_to_the_right_projects_once(room, monkeypatch):
         "job" in r["errors"]["ha"] and r["added"]["ha"]["pos"] == 0 and r["added"]["hh"]["pos"] == 4
     )
     assert sessions.send(sid2, busy=lambda p: False)["added"]["ha"]["pos"] == 1
+
+
+def test_a_send_past_a_broken_labels_csv_reports_it_and_adds_no_twins(room, monkeypatch):
+    """One wake word's hand-broken labels.csv is reported; the others get their takes, and once it's
+    fixed, sending again adds only what that one missed."""
+    from wakesmith import recordings, sessions
+
+    _, ha = room
+    texts = [
+        "Across the room.",
+        "Hey, Jarvis!",
+        "Okay, computer.",
+        "What's for dinner?",
+        "Hey jarvis. Hey jarvis. Hey jarvis.",
+    ]
+    sid, _, _ = _room_session(room, monkeypatch, texts)
+    sessions.split(sid, "cpu", log=lambda m: None)
+    recordings.add(ha, "pos", _wav(1.0))
+    labels = recordings.folder(ha, "pos") / "labels.csv"
+    good = labels.read_bytes()
+    labels.write_text("file,speaker\ntake_001.wav,Sam,extra\n")  # a cell past the header
+    r = sessions.send(sid, busy=lambda p: False)
+    assert "more cells" in r["errors"]["ha"] and r["added"]["hh"]["pos"] == 4
+    labels.write_bytes(good)
+    again = sessions.send(sid, busy=lambda p: False)
+    assert again["added"]["hh"] == {"pos": 0, "neg": 0} and again["added"]["ha"]["pos"] == 1
 
 
 def test_room_label_changes_and_choices(room, monkeypatch):
