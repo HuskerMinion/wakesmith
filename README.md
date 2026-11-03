@@ -42,9 +42,8 @@ wakesmith serve                         # then open http://localhost:8765/
 ```
 
 wakesmith needs Python 3.10 to 3.12 (TensorFlow and microWakeWord's dependencies have no packages for
-newer ones); `--python 3.12` makes uv fetch it if needed. On macOS, install the tools with
-`brew install espeak-ng git` instead of apt. On a Mac with Apple silicon, training runs on its GPU
-(see [Status](#status)).
+newer ones); `--python 3.12` makes uv fetch it if needed. On a Mac with Apple silicon, training runs
+on its GPU (see [Status](#status)).
 
 To update, run `uv tool install --python 3.12` on the newer wheel with `--force`, then `wakesmith setup` again: the
 reinstall starts a fresh environment without PyTorch, and setup puts the right build back (the data

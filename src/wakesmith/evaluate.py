@@ -158,11 +158,12 @@ def score(
     positives: Path | None = None,
     tag: str = "",
     report_half: bool = False,
+    out: Path | None = None,
 ) -> dict:
     """positives: a folder of positive clips instead of the held-out recordings (e.g. Common Voice
     speakers), saved as results/<kind>-<tag>.json. report_half: when the project's kept model was
     picked on half of the held-out recordings (pick_split), the result is that model on the other half,
-    with the whole set under "full"."""
+    with the whole set under "full". out: save there instead (a model file that isn't the project's)."""
     project_frontend = p.microwakeword.frontend
     frontend = (frontend or project_frontend) if kind == "mww" else None
     if kind == "mww":
@@ -203,10 +204,11 @@ def score(
         result["positives_split"] = positives is None  # Common Voice takes: all of them
         result["split"] = halves
         result["full"] = full
-    suffix = f"-{frontend}" if frontend and frontend != project_frontend else ""
-    suffix += f"-{tag}" if tag else ""
-    out = p.path("results", f"{kind}{suffix}.json")
-    out.parent.mkdir(exist_ok=True)
+    if out is None:
+        suffix = f"-{frontend}" if frontend and frontend != project_frontend else ""
+        suffix += f"-{tag}" if tag else ""
+        out = p.path("results", f"{kind}{suffix}.json")
+    out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(json.dumps(result, indent=1))
     return result
 

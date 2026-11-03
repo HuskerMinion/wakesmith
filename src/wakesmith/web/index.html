@@ -161,6 +161,7 @@
     .wwr .c-act { grid-row: 1; grid-column: 2; } .wwr .c-status { grid-column: 1 / -1; }
     .wwr.ver .name { padding-left: 12px; }
     .tools .find { margin-left: 0; width: 100%; }
+    .sgrid > .smith { width: 220px; }  /* above the stages */
   }
 
   /* new wake word */
@@ -221,7 +222,8 @@
     background: radial-gradient(closest-side, var(--panel) calc(100% - 3px), transparent calc(100% - 2px)), conic-gradient(var(--cyan) var(--p, 0%), var(--line) 0); }
   button.playing:not(.round) { border-color: var(--cyan); color: var(--cyan); }
   @keyframes pulse { 50% { opacity: .35; } }
-  @media (prefers-reduced-motion: reduce) { button.loading svg { animation: none; opacity: .6; } .fold svg, details.learns > summary > h2 > svg { transition: none; } }
+  @media (prefers-reduced-motion: reduce) { button.loading svg { animation: none; opacity: .6; } .fold svg, details.learns > summary > h2 > svg { transition: none; }
+    .smith * { animation: none !important; transition: none !important; } }
   .tag { padding: 4px 12px; min-height: 32px; border-radius: 999px; font-size: 12px; font-weight: 600; background: var(--raised); color: var(--soft); border: 0; display: inline-flex; align-items: center; }
   button.tag.test { background: var(--info-bg); color: var(--info); }
 
@@ -243,6 +245,99 @@
   .failed .sline span { color: var(--warn); } .off { opacity: .55; }
   pre.log { background: var(--side); border: 1px solid var(--line2); border-radius: 9px; padding: 12px; font: 12px/1.6 var(--mono);
             max-height: 320px; overflow: auto; white-space: pre-wrap; margin: 0; color: #d0d8e4; }
+  /* the smith beside the stages: one pose per kind of stage (data-act), animated while it runs (data-run); idle breathes and blinks */
+  .sgrid { display: flex; flex-direction: row-reverse; flex-wrap: wrap; justify-content: center; gap: 14px 24px; }  /* wrapped: smith on top */
+  .sgrid > ol.stages { flex: 1 1 300px; min-width: 0; }
+  .smith { flex: none; width: 280px; display: flex; flex-direction: column; gap: 10px; padding-top: 6px; }
+  .sm-art { width: 100%; height: auto; stroke: #1a100a; stroke-width: 2.2px; stroke-linejoin: round; stroke-linecap: round; }
+  .sm-art .n { stroke: none; } .sm-art .ol { stroke: #1a100a; fill: none; } .sm-art .lt { font-family: var(--head); font-weight: 800; stroke: none; }
+  .sm-art .sm-word { fill: #ffd86b; stroke: none; font-family: var(--head); font-weight: 700; letter-spacing: .08em; }
+  .sm-art .sm-wglow { fill: none; stroke: #ff7a1a; stroke-width: 2.6px; opacity: .55; font-family: var(--head); font-weight: 700; letter-spacing: .08em; }
+  .sm-po, .sm-e2, .sm-e3, .sm-shut { display: none; } .sm-lid { opacity: 0; }
+  .smith[data-act=idle] .s-idle, .smith[data-act=voices] .s-voices, .smith[data-act=ore] .s-ore, .smith[data-act=heat] .s-heat, .smith[data-act=hammer] .s-hammer,
+  .smith[data-act=inspect] .s-inspect, .smith[data-act=quench] .s-quench, .smith[data-act=done] .s-done, .smith[data-act=failed] .s-failed { display: inline; }
+  /* faces: set brows at the anvil and forge, proud when done, eyes shut when stopped */
+  .smith:is([data-act=hammer], [data-act=heat]) .sm-e1, .smith[data-act=done] .sm-e1, .smith[data-act=failed] .sm-eyes { display: none; }
+  .smith:is([data-act=hammer], [data-act=heat]) .sm-e2, .smith[data-act=done] .sm-e3, .smith[data-act=failed] .sm-shut { display: inline; }
+  /* the upper body leans about the hips, toward the work */
+  .sm-up { transform-origin: 82px 176px; } .smith[data-act=hammer] .sm-up { transform: rotate(6.5deg); } .smith[data-act=heat] .sm-up { transform: rotate(6deg); }
+  .smith[data-act=quench] .sm-up { transform: rotate(5deg); } .smith[data-act=ore] .sm-up { transform: rotate(4deg); } .smith[data-act=voices] .sm-up { transform: rotate(3deg); }
+  .smith[data-act=inspect] .sm-up { transform: rotate(-2deg); } .smith[data-act=failed] .sm-up { transform: rotate(2deg); }
+  .smith[data-act=failed] .sm-head { transform: rotate(7deg); transform-origin: 88px 96px; }
+  .sm-fl, .sm-bar, .sm-pleat, .sm-steam, .sm-flare { transform-box: fill-box; transform-origin: 50% 100%; }
+  /* turned toward the work: the apron and belt slide toward it and the far side shows more tunic */
+  .sm-turn { display: none; } .smith:is([data-act=hammer], [data-act=heat], [data-act=quench], [data-act=ore], [data-act=voices]) .sm-turn { display: inline; }
+  .smith:is([data-act=hammer], [data-act=heat], [data-act=quench], [data-act=ore], [data-act=voices]) .sm-front { transform: translateX(4.5px); }
+  .smith:not([data-act=failed]) .sm-lid { animation: sm-blink 5.2s infinite; }
+  .smith[data-act=idle] .sm-up { animation: sm-breathe 3.6s ease-in-out infinite alternate; }
+  /* the strike: wind-up, a fast down-swing with the body leaning in, impact (white flash, sparks, the bar squashes), rebound; beard, braids and mantle follow through */
+  .smith[data-act=hammer][data-run] .sm-up { animation: sm-lean 1.4s infinite; }
+  .smith[data-run] .sm-swing { animation: sm-swing 1.4s infinite; transform-origin: 112px 110px; }
+  .smith[data-run] .sm-sparks { animation: sm-spark 1.4s linear infinite; transform-origin: 186px 143px; }
+  .smith[data-run] .sm-flash { animation: sm-flash 1.4s linear infinite; } .smith[data-run] .sm-bar { animation: sm-squash 1.4s linear infinite; }
+  .smith[data-act=hammer][data-run] .sm-beard { animation: sm-beard 1.4s ease-in-out infinite; transform-origin: 88px 88px; }
+  .smith[data-act=hammer][data-run] .sm-braid { animation: sm-braid 1.4s ease-in-out infinite; transform-origin: 88px 116px; }
+  .smith[data-act=hammer][data-run] .sm-mantle { animation: sm-bob 1.4s ease-in-out infinite; }
+  .smith[data-run] .sm-fl { animation: sm-flick .55s ease-in-out infinite alternate; } .smith[data-run] .sm-fl:nth-child(2n) { animation-duration: .7s; animation-delay: -.3s; }
+  .smith[data-run] .sm-fl:nth-child(3n) { animation-duration: .62s; animation-delay: -.5s; }
+  .smith[data-run] .sm-halo { animation: sm-halo .9s ease-in-out infinite alternate; } .smith[data-run] .sm-lit { animation: sm-lit .45s ease-in-out infinite alternate; }
+  .smith[data-run] .sm-ember { animation: sm-rise 2.2s ease-out infinite; } .sm-ember:nth-child(2) { animation-delay: -.7s !important; } .sm-ember:nth-child(3) { animation-delay: -1.5s !important; }
+  .smith[data-run] .sm-push { animation: sm-push 2.4s ease-in-out infinite alternate; transform-origin: 112px 110px; }
+  .smith[data-run] .sm-bel { animation: sm-bel 1.2s ease-in-out infinite; transform-origin: 248px 198px; } .smith[data-run] .sm-pleat { animation: sm-pleat 1.2s ease-in-out infinite; }
+  .smith[data-run] .sm-raven { animation: sm-hop 1.2s ease-in-out infinite; } .smith[data-run] .sm-flare { animation: sm-flare 1.2s ease-out infinite; }
+  .smith[data-act=hammer][data-run] .sm-top { animation: sm-shrug 1.4s ease-in-out infinite; }
+  .smith[data-run] .sm-stir { animation: sm-stir 1.6s ease-in-out infinite alternate; transform-origin: 112px 110px; }
+  .smith[data-run] .sm-wave { animation: sm-pour 2.4s ease-in infinite; } .sm-wave:nth-child(2) { animation-delay: -.8s !important; } .sm-wave:nth-child(3) { animation-delay: -1.6s !important; }
+  .smith[data-run] .sm-reach { animation: sm-reach 2.2s ease-in-out infinite; transform-origin: 112px 110px; }
+  .smith[data-run] .sm-toss { animation: sm-toss 2.2s ease-in-out infinite; } .smith[data-run] .sm-tumble { animation: sm-tumble 2.2s ease-in-out infinite; }
+  .smith[data-run] .sm-tumble + .sm-tumble { animation-delay: -.3s; }
+  .smith[data-run] .sm-tilt { animation: sm-tilt 2.8s ease-in-out infinite alternate; }
+  .smith[data-run] .sm-glint { animation: sm-glint 2.8s ease-in-out infinite; }
+  .smith[data-run] .sm-dip { animation: sm-dip 3.2s ease-in-out infinite; transform-origin: 112px 110px; }
+  .smith[data-run] .sm-hotb { animation: sm-cool 3.2s ease-in-out infinite; }
+  .smith[data-run] .sm-steam { animation: sm-steam 2.4s ease-out infinite; } .sm-steam:nth-child(2) { animation-delay: -.8s !important; } .sm-steam:nth-child(3) { animation-delay: -1.6s !important; }
+  .smith[data-act=done] .sm-glint { animation: sm-twinkle 2.4s ease-in-out infinite; } .smith[data-act=done] :is(.sm-wglow, .sm-halo) { animation: sm-halo 1.6s ease-in-out infinite alternate; }
+  @keyframes sm-blink { 0%, 95.5%, 99%, 100% { opacity: 0; } 96.5%, 98% { opacity: 1; } }
+  @keyframes sm-breathe { from { transform: none; } to { transform: scale(1, 1.012); } }
+  @keyframes sm-lean { 0% { transform: rotate(5deg); animation-timing-function: ease-in-out; } 42% { transform: rotate(3.5deg); animation-timing-function: cubic-bezier(.7, 0, 1, .9); }
+    56% { transform: rotate(6.5deg); animation-timing-function: ease-out; } 66% { transform: rotate(6deg); } 100% { transform: rotate(5deg); } }
+  @keyframes sm-swing { 0% { transform: rotate(-56deg); animation-timing-function: ease-in-out; } 42% { transform: rotate(-76deg); animation-timing-function: cubic-bezier(.7, 0, 1, .9); }
+    56% { transform: rotate(0); animation-timing-function: ease-out; } 61% { transform: rotate(-7deg); animation-timing-function: ease-in; } 65% { transform: rotate(-1deg); animation-timing-function: ease-in-out; }
+    74% { transform: rotate(-3deg); animation-timing-function: ease-in-out; } 100% { transform: rotate(-56deg); } }
+  @keyframes sm-spark { 0%, 55% { opacity: 0; transform: scale(.3); } 56.5% { opacity: 1; transform: scale(.55); } 76%, 100% { opacity: 0; transform: scale(1.45); } }
+  @keyframes sm-flash { 0%, 55% { opacity: 0; } 56.5% { opacity: 1; } 66%, 100% { opacity: 0; } }
+  @keyframes sm-squash { 0%, 55% { transform: none; } 57.5% { transform: scale(1.06, .72); } 64%, 100% { transform: none; } }
+  @keyframes sm-beard { 0%, 56% { transform: none; } 61% { transform: rotate(3deg); } 69% { transform: rotate(-2deg); } 80%, 100% { transform: none; } }
+  @keyframes sm-braid { 0%, 57% { transform: none; } 64% { transform: rotate(6deg); } 74% { transform: rotate(-4deg); } 84% { transform: rotate(2deg); } 94%, 100% { transform: none; } }
+  @keyframes sm-bob { 0%, 55% { transform: none; } 60% { transform: translateY(1.4px); } 72%, 100% { transform: none; } }
+  @keyframes sm-flick { from { transform: scale(1, .82); opacity: .85; } to { transform: scale(.94, 1.1); opacity: 1; } }
+  @keyframes sm-halo { from { opacity: .4; } to { opacity: .7; } }
+  @keyframes sm-lit { from { opacity: .75; } to { opacity: 1; } }
+  @keyframes sm-rise { 0% { transform: translate(0, 6px); opacity: 0; } 20% { opacity: 1; } 100% { transform: translate(-6px, -42px); opacity: 0; } }
+  @keyframes sm-push { from { transform: rotate(-2deg); } to { transform: rotate(2.5deg); } }
+  @keyframes sm-bel { 0%, 40% { transform: rotate(-8deg); } 58%, 68% { transform: none; } 100% { transform: rotate(-8deg); } }
+  @keyframes sm-hop { 0%, 16% { transform: none; } 32% { transform: translateY(-7px); } 46% { transform: none; } 56% { transform: translateY(.8px) scale(1.06, .92); } 66%, 100% { transform: none; } }
+  @keyframes sm-flare { 0%, 50% { transform: none; } 62% { transform: scale(1.08, 1.25); } 80% { transform: scale(1.02, 1.06); } 100% { transform: none; } }
+  @keyframes sm-shrug { 0% { transform: none; } 42% { transform: translateY(-2.6px); } 56% { transform: translateY(.8px); } 70%, 100% { transform: none; } }
+  @keyframes sm-pleat { 0%, 40% { transform: scale(1, 1.15); } 58%, 68% { transform: scale(1, .72); } 100% { transform: scale(1, 1.15); } }
+  @keyframes sm-stir { from { transform: rotate(-5deg); } to { transform: rotate(5deg); } }
+  @keyframes sm-pour { 0% { transform: translate(0, 0); opacity: 0; } 25% { opacity: 1; } 85%, 100% { transform: translate(-16px, 58px); opacity: 0; } }
+  @keyframes sm-reach { 0%, 8% { transform: rotate(0); } 40%, 58% { transform: rotate(-20deg); } 92%, 100% { transform: rotate(0); } }
+  @keyframes sm-toss { 0%, 8% { transform: translate(0, 0); opacity: 1; } 40% { transform: translate(4px, -14px); } 52% { transform: translate(40px, -36px); } 62% { transform: translate(70px, 4px); opacity: 1; }
+    67%, 94% { transform: translate(70px, 14px); opacity: 0; } 100% { transform: translate(0, 0); opacity: 0; } }
+  @keyframes sm-tumble { 0%, 6%, 100% { translate: 0 0; rotate: 0deg; } 12% { translate: 1.5px 2px; rotate: 9deg; } 18% { translate: 1px 1.4px; rotate: 6deg; } 40%, 90% { translate: 0 0; rotate: 0deg; } }
+  @keyframes sm-tilt { from { transform: rotate(-6deg); } to { transform: rotate(6deg); } }
+  @keyframes sm-glint { 0%, 20% { transform: translateY(0); opacity: 0; } 50% { opacity: 1; } 80%, 100% { transform: translateY(-46px); opacity: 0; } }
+  @keyframes sm-dip { 0%, 12% { transform: rotate(-3deg); } 42%, 78% { transform: rotate(3deg); } 100% { transform: rotate(-3deg); } }
+  @keyframes sm-cool { 0%, 35% { opacity: 1; } 68%, 88% { opacity: 0; } 100% { opacity: 1; } }
+  @keyframes sm-steam { 0% { transform: translate(0, 8px) scale(.8); opacity: 0; } 30% { opacity: 1; } 100% { transform: translate(5px, -30px) scale(1.15); opacity: 0; } }
+  @keyframes sm-twinkle { 0%, 100% { opacity: .25; } 50% { opacity: 1; } }
+  .sm-cap { display: flex; gap: 10px; align-items: center; min-height: 40px; font-size: 14px; line-height: 1.35; }
+  .sm-cap b { display: block; } .smith[data-act=failed] .sm-cap b { color: var(--warn); } .smith[data-act=done] .sm-cap b { color: var(--ok); }
+  .sm-g { flex: none; } .sm-trk { stroke: var(--line); } .sm-arc { stroke: var(--cyan); transition: stroke-dashoffset .4s; } .sm-g text { fill: var(--text); font: 500 12px var(--mono); }
+  .sm-g.ind .sm-arc { stroke-dasharray: 30 89.4; animation: sm-spin 1.4s linear infinite; transform-origin: 24px 24px; } .sm-g.ind text { display: none; }
+  @keyframes sm-spin { to { transform: rotate(360deg); } }
+  .vh { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 
   /* results */
   .tablebox { overflow-x: auto; }
@@ -1325,6 +1420,270 @@ async function voicesTab(p, base, steps) {
   try { await load(true); draw(); } catch (e) { err(e.message); }
 }
 
+// ---- the smith beside the Training stages: his pose follows the running stage (CSS animations only) --------
+const SMITH_ACT = { generate: "voices", real: "ore", commonvoice: "ore", conversational: "ore", "mww-features": "heat", "oww-features": "heat",
+  "mww-train": "hammer", "oww-train": "hammer", test: "inspect", export: "quench" };
+let smithN = 0;  // gradient and pattern ids per drawing
+const smithHtml = word => {
+  const u = ++smithN, U = k => `url(#${k}${u})`, n = [...String(word)].length, fs = Math.max(6.5, Math.min(11, 200 / Math.max(n, 1)));
+  const f1 = v => +v.toFixed(1);
+  const C = { ol: "#1a100a", sk: "#e6a57c", sk2: "#c47f5a", skl: "#f6c7a2", skd: "#a45f45", bd: "#c4602a", bd2: "#8e3f18", bd3: "#e88d4a", bdl: "#f7b678", bdd: "#6e2e10",
+    tu: "#2e63a0", tu2: "#1d406b", tul: "#6a9bd2", le: "#6a4123", le2: "#4a2c16", lel: "#a0703f", be: "#3d2616", bel: "#6a4429", br: "#dca843", br2: "#a8771f", brl: "#ffe08a",
+    fu: "#8a7259", fu2: "#5f4c3b", fu3: "#a98f70", ful: "#cbb18e", ir: "#55606c", ir2: "#353d46", ir3: "#8e9aa6", irl: "#d3dbe2", wd: "#8b5a2b", wd2: "#6a4220", wd3: "#b07c48",
+    wdl: "#4e2f14", st: "#6d717a", st2: "#4f535b", st3: "#868b94", stl: "#b3b8c0", rim: "#ffb062", wk: "#b8863b", wk2: "#8a611f", wk3: "#d6a65a", cl: "#9a5634", cl2: "#6e3820" };
+  // F: filled and outlined, N: filled, no outline, K: a plain stroke, ln: an outlined stroke (limbs, handles, tongs)
+  const F = (c, d, x = "") => `<path fill="${c}" d="${d}"${x}/>`, N = (c, d, x = "") => `<path class="n" fill="${c}" d="${d}"${x}/>`;
+  const K = (d, w, c, x = "") => `<path stroke="${c}" stroke-width="${w}" d="${d}"${x}/>`;
+  const ln = (d, w, c) => `<path class="ol" stroke-width="${w + 5}" d="${d}"/><path stroke="${c}" stroke-width="${w}" d="${d}"/>`;
+  const op = v => ` opacity="${v}"`, ell = (c, cx, cy, rx, ry, x = "") => `<ellipse fill="${c}" cx="${cx}" cy="${cy}" rx="${rx}" ry="${ry}"${x}/>`;
+  // the upper body leans about the hips per pose (CSS); a pose's arms are drawn in the body's frame, so world targets turn back by the lean
+  const inv = (x, y, a) => { const r = -a * Math.PI / 180, dx = x - 82, dy = y - 176; return [f1(82 + dx * Math.cos(r) - dy * Math.sin(r)), f1(176 + dx * Math.sin(r) + dy * Math.cos(r))]; };
+  const side = (ax, ay, bx, by) => { const l = Math.hypot(bx - ax, by - ay) || 1; let nx = -(by - ay) / l, ny = (bx - ax) / l; if (ny < 0) { nx = -nx; ny = -ny; } return [nx, ny]; };
+  const fist = (x, y) => `<circle fill="${C.sk}" cx="${x}" cy="${y}" r="8.5"/>${N(C.sk2, `M${x - 7.6} ${y + 2.5}A8.2 8.2 0 0 0 ${x + 7.6} ${y + 2.5}Q${x} ${y + 6} ${x - 7.6} ${y + 2.5}Z`)}
+    ${K(`M${x - 4.5} ${y - 2}h5.5M${x - 4.5} ${y + 1.5}h5.5`, 1.2, C.skd)}<circle class="n" fill="${C.skl}" cx="${x - 3}" cy="${y - 4.2}" r="2"/>`;
+  // a hand closed round a handle that runs along its x axis: fingers and knuckle row, the thumb over the top
+  const grip = (x, y, r) => `<g transform="translate(${x} ${y}) rotate(${f1(r)})">${F(C.sk, "M-6.5-8.5Q0-10.5 6.5-8.5Q8.6-2 7.4 7.4Q0 10.2-7.4 7.4Q-8.6-2-6.5-8.5Z")}${N(C.sk2, "M-7.4 2.6Q0 4.6 7.6 2.6L7.4 7.4Q0 10.2-7.4 7.4Z")}
+    ${K("M-3.6-6.4v13.4M0-6.8v14.6M3.6-6.4v13.4", 1, C.skd)}${K("M-6-7.8q1.5-1.5 3 0t3.6 0t3.6 0t2.6 0", 1.1, C.skl)}${F(C.sk, "M-8.4-4.4Q-1-8 5.6-3.6Q7.6-1.6 5.6 0Q-.6-3-7.6-.2Z", ' stroke-width="1.5"')}<path class="n" fill="#f6cdb8" d="M3-3.4q2.2-.6 2.6 1q-1.3.6-2.6-1z"/></g>`;
+  const ang = (p, q) => f1(Math.atan2(q[1] - p[1], q[0] - p[0]) * 180 / Math.PI);
+  // shoulder, elbow, wrist: mail cap and wool sleeve, bare forearm with shading, strapped leather bracer, fist or a grip at angle g
+  const arm = ([sx, sy], [ex, ey], [wx, wy], g = null) => {
+    const [nx, ny] = side(ex, ey, wx, wy), [mx, my] = side(sx, sy, ex, ey);
+    const at = (t, o = 0) => `${f1(wx + (ex - wx) * t + nx * o)} ${f1(wy + (ey - wy) * t + ny * o)}`, seg = (a, b, o) => `M${at(a, o)}L${at(b, o)}`;
+    const up = (t, o = 0) => `${f1(sx + (ex - sx) * t + mx * o)} ${f1(sy + (ey - sy) * t + my * o)}`;
+    return ln(`M${ex} ${ey}L${wx} ${wy}`, 14, C.sk) + K(seg(.25, .95, 3.8), 4.5, C.sk2) + K(seg(.3, .9, -4.2), 1.8, C.skl)
+      + ln(seg(.12, .56), 16.5, C.le) + K(seg(.14, .54, 4.4), 4, C.le2) + K(seg(.16, .52, -5.4), 1.6, C.lel)
+      + K(`M${at(.24, -8.6)}L${at(.24, 8.6)}M${at(.44, -8.6)}L${at(.44, 8.6)}`, 2.2, C.ol) + `<circle class="n" fill="${C.brl}" cx="${at(.24).split(" ")[0]}" cy="${at(.24).split(" ")[1]}" r="1.4"/>`
+      + ln(`M${sx} ${sy}L${ex} ${ey}`, 18, C.tu) + K(`M${up(.12, 4.8)}L${up(.92, 4.8)}`, 6, C.tu2) + K(`M${up(.2, -5.6)}L${up(.88, -5.6)}`, 2, C.tul)
+      + ln(`M${sx} ${sy}L${up(.4)}`, 19, U("cm")) + (g == null ? fist(wx, wy) : grip(wx, wy, g));
+  };
+  // fur: a tufted lower edge with strands
+  const fur = (x0, y0, step, D, top, sh, tex) => {
+    let d = `M${x0} ${y0}`, x = x0;
+    for (const k of D) { d += `L${f1(x - step / 2)} ${y0 + k}L${f1(x - step)} ${y0 + (k % 3)}`; x -= step; }
+    return F(C.fu, d + top) + sh + tex;
+  };
+  const strands = (pts, c, w) => K(pts.map(([x, y, s]) => `M${x} ${y}q${s} 4 ${s / 3} 9`).join(""), w, c);
+  const mantle = fur(124, 118, 5.25, [5, 8, 4, 9, 6, 3, 8, 5, 7, 4, 9, 5, 6, 8, 4, 7], "Q38 100 60 95Q84 88 106 95Q124 101 124 118Z",
+    N(C.fu2, "M40 121Q38 100 60 95Q51 106 51 122Z") + N(C.fu3, "M60 96Q84 89 106 96Q95 93.5 84 94Q70 95 60 99Z"),
+    strands([[46, 106, -1.5], [52, 101, -1.5], [58, 108, 1.5], [64, 99, -1.5], [70, 106, 1.5], [104, 100, 1.5], [110, 106, -1.5], [116, 104, 1.5], [120, 110, 1.5]], C.fu2, 1.3)
+    + strands([[49, 112, 1.5], [61, 104, -1.5], [67, 112, 1.5], [107, 112, 1.5], [113, 98, -1.5], [119, 115, -1.5]], C.ful, 1.1) + K("M110 97Q123 102 124 116", 2, C.rim, op(.75)));
+  const hip = [arm([60, 112], [38, 138], [52, 157]), fist(52, 157)];
+  const lock = (x, y, l, w, r, c) => `<path fill="${c}" stroke-width="1.6" transform="translate(${x} ${y}) rotate(${r})" d="M0 0C${w} ${f1(l * .35)} ${f1(w * .7)} ${f1(l * .75)} 0 ${l}C${f1(-w * .7)} ${f1(l * .75)} ${-w} ${f1(l * .35)} 0 0Z"/>`;
+  const braid = (x, y0, ring) => {
+    let s = "";
+    for (let i = 0; i < 5; i++) {
+      const y = y0 + i * 5.2;
+      s += `<ellipse fill="${C.bd}" stroke-width="1.3" cx="${x - 2}" cy="${y}" rx="3.9" ry="2.8" transform="rotate(-28 ${x - 2} ${y})"/><ellipse fill="${C.bd3}" stroke-width="1.3" cx="${x + 2}" cy="${f1(y + 2.6)}" rx="3.9" ry="2.8" transform="rotate(28 ${x + 2} ${f1(y + 2.6)})"/>`;
+    }
+    const y = y0 + 26;
+    return s + lock(x - 2, y + 5, 10, 2.8, 16, C.bd2) + lock(x + 2, y + 5, 10, 2.8, -16, C.bd) + lock(x, y + 5, 12, 3.2, 0, C.bd3)
+      + `<rect fill="${ring[0]}" stroke-width="1.5" x="${x - 5.5}" y="${y}" width="11" height="6.5" rx="2.2"/>${N(ring[1], `M${x - 4.7} ${y + 4}h9.4v1.6h-9.4z`)}${K(`M${x - 3.6} ${y + 1.7}h5.5`, 1.2, ring[2])}`;
+  };
+  // eyes: white, iris, pupil, catchlight; a heavy upper lid line and a crease under
+  const eye = (x, y, rx, ry, ir) => ell("#f3ece2", x, y, rx, ry, ' stroke-width=".9"') + `<circle class="n" fill="#35536e" cx="${f1(x + rx * .3)}" cy="${f1(y + .2)}" r="${ir}"/><circle class="n" fill="#5d86aa" cx="${f1(x + rx * .3)}" cy="${f1(y + ir * .5)}" r="${f1(ir * .55)}"/>
+    <circle class="n" fill="#0d0a08" cx="${f1(x + rx * .32)}" cy="${f1(y + .1)}" r="${f1(ir * .5)}"/><circle class="n" fill="#fff" cx="${f1(x + rx * .32 + ir * .45)}" cy="${f1(y - ir * .45)}" r="${f1(ir * .3)}"/>`
+    + K(`M${f1(x - rx - .8)} ${f1(y + .2)}Q${f1(x - rx * .2)} ${f1(y - ry * 1.6)} ${f1(x + rx + .7)} ${f1(y - .7)}`, 1.8, C.ol) + K(`M${f1(x - rx * .8)} ${f1(y + ry + 1.3)}q${f1(rx * .8)} ${f1(ry * .55)} ${f1(rx * 1.6)} 0`, .9, C.skd);
+  const eyes = () => eye(89, 73.8, 3.8, 2.8, 2.1) + eye(105.8, 72.8, 2.5, 2.5, 1.6);
+  // brows: tapered hairs from the inner end outward over a dark root, in three tones
+  const brow = (x1, y1, x2, y2) => {
+    const g = Math.atan2(y2 - y1, x2 - x1) * 180 / Math.PI, k = Math.round(Math.hypot(x2 - x1, y2 - y1) / 2.4);
+    let o = F(C.bd2, `M${x1} ${y1 - 2.6}Q${f1((x1 + x2) / 2)} ${f1((y1 + y2) / 2 - 3.6)} ${x2} ${y2 - 1.2}L${x2} ${y2 + .8}Q${f1((x1 + x2) / 2)} ${f1((y1 + y2) / 2 + .6)} ${x1} ${y1 + 2.4}Z`, ' stroke-width="1.3"');
+    for (let i = 0; i <= k; i++) {
+      const t = i / k * .8;
+      o += lock(f1(x1 + (x2 - x1) * t), f1(y1 + (y2 - y1) * t - Math.sin(t * Math.PI) * 1.8 + (i % 2 ? -.8 : .6)), 8.5 + i % 3, 3, f1(g - 90 + (i % 2 ? -11 : 6)), [C.bd2, C.bd, C.bd3, C.bd][i % 4]).replace('stroke-width="1.6"', 'stroke-width=".9"');
+    }
+    return o + K(`M${f1(x1 + (x2 - x1) * .25)} ${f1(y1 + (y2 - y1) * .25 - .7)}L${f1(x1 + (x2 - x1) * .75)} ${f1(y1 + (y2 - y1) * .75 - .9)}`, .7, C.bdl);
+  };
+  const head = `<g class="sm-head">${F(C.bd2, "M64 60Q59 73 62 88L71 85Q66 72 69 61Z")}${ell(C.sk, 66.4, 75, 5.6, 8)}${N(C.sk2, "M64.2 69.8q-2.4 5.2.2 10.4q1.9-1 1.5-5.2q-.4-3 1.3-4.8z")}${K("M65.4 69.4q-2.8 5.6 0 11", 1, C.skd)}${N("#e0786a", "M62 72q1.6-2.4 3-.4l-.6 6q-2.2-2-2.4-5.6z", op(.35))}
+    ${F(C.sk, "M67 62Q67 50 88 48Q106 49.5 109 60Q112.2 64.6 109.6 68.8Q108.8 70.6 110.8 73.4Q112.4 77.4 110.4 82Q104 98 88 98Q73 96 67 81Z")}${N(C.sk2, "M109 60Q112.2 64.6 109.6 68.8Q108.8 70.6 110.8 73.4Q112.4 77.4 110.4 81.4L108.4 83Q109.8 77 108 73.6Q106.6 70.6 108.2 67.6Q109.6 64.6 107.6 61Z", op(.7))}${N(C.sk2, "M67.5 64Q66 82 76 91Q71 80 72.5 66Z")}${N(C.skl, "M78 79q6-3 10 1q-5 2.4-10-1z", op(.6))}
+    <ellipse class="n" fill="#e0786a" opacity=".4" cx="92" cy="83" rx="6.8" ry="3.8"/><ellipse class="n" fill="#e0786a" opacity=".35" cx="109" cy="80" rx="2.4" ry="2.8"/>${N(C.skl, "M104.4 76.6q3-1.4 4.6.6q-2.4 1.4-4.6-.6z", op(.7))}
+    ${N("#8a4630", "M67 62Q88 57 110 62L110 68Q88 62 67 68Z", op(.42))}${N(C.sk2, "M79.6 70Q89 66.6 99 70.4L98.6 72.8Q89 69.6 80.2 72.6Z", op(.6))}${N(C.sk2, "M102 71Q106 69 110 69.2L110 71.6Q106 71 102.6 73Z", op(.6))}${K("M76.5 79q1.6 1.2 3.4 1.2M95 63.6q2.4-.8 4.6-.2", .8, C.skd, op(.8))}${K("M82 71l-3.6-1.2M82 73.6l-3.7.8M82.6 76.2l-2.9 2", 1, C.skd)}${K("M84.6 63.5l5 15", 1.9, "#cf7f6e")}${K("M85.3 63.8l5 15", .6, "#f6c9ad")}
+    <g class="sm-eyes">${eyes()}</g><g class="sm-lid">${ell(C.sk, 89, 73.7, 4.3, 3.4, ' stroke-width="1.2"')}${ell(C.sk, 105.8, 72.7, 3, 3, ' stroke-width="1.1"')}${K("M84.4 74.6q4.6 2 9.2 0M103 73.6q2.8 1.4 5.6 0", 1.3, C.ol)}</g>
+    ${K("M84.6 74.4q4.4 2.2 8.8 0M102.8 73.4q2.8 1.6 5.6 0", 1.5, C.ol, ' class="sm-shut"')}
+    <g class="sm-e1">${brow(98.8, 69.6, 79.8, 66.6)}${brow(101.6, 70.6, 110.6, 66.2)}</g>
+    <g class="sm-e2">${brow(99.2, 72, 79.8, 65.4)}${brow(101.8, 73.2, 110.6, 65.6)}${K("M99.6 63.6q.8 2.4 0 4.6M93 61.4q3-1 6 0", 1.1, C.skd)}</g>
+    <g class="sm-e3">${brow(98.6, 66.6, 79.8, 64)}${brow(101.6, 67.2, 110.6, 63.4)}${K("M85.2 77.4q3.8 1.8 7.6 0M103.2 76q2.2 1 4.4 0", 1.1, C.skd)}</g>
+    ${F(C.sk, "M99.6 69.4Q101.4 69 101.8 70.6Q103.4 76.6 107.6 82Q109.6 84.6 107.2 85.8Q104.4 87 101.6 85.8Q99.2 85 99 82.6Q98.6 76.4 99.6 69.4Z", ' stroke-width="1.6"')}
+    ${N(C.sk2, "M99.6 71Q98.8 77 99.3 82.4Q99.8 84.6 101.8 85.6Q100.4 80 100.7 71Z", op(.85))}${K("M101.4 72.4Q103 77.6 106 81.6", 1, "#fbe0c8", op(.9))}${N("#d98a70", "M104 83q2.6-1.6 4.2.6q-.4 2-2.8 2.2q-1.4-1-1.4-2.8z", op(.3))}
+    ${K("M100.6 82.6q1.2 2.6 3.6 2.4", .9, C.skd)}${F("#7e3a28", "M103.6 85.2q1.8-1 3.2.2q-1.6 1-3.2-.2z", ' stroke-width=".6"')}
+    <g class="sm-beard">${N("#000", "M70 110Q88 130 106 110L104 120Q88 136 72 120Z", op(.25))}${F(C.bd, "M68 79Q63 101 73 115Q80 123 88 125Q98 123 105 113Q115 99 110.6 81Q104 94 88 96Q75 94 68 79Z")}
+      ${N(C.bd2, "M68.5 80Q64 100 73 114Q77 118 80 120Q72 104 72 86Z")}
+      ${lock(72, 104, 16, 4, 14, C.bd2)}${lock(102, 106, 15, 4, -16, C.bd2)}${lock(78, 110, 18, 4.6, 6, C.bd)}${lock(95, 112, 17, 4.6, -6, C.bd)}${lock(86, 113, 17, 4.6, 0, C.bd)}${lock(82, 107, 15, 3.4, 4, C.bd3)}${lock(99, 108, 14, 3.4, -8, C.bd3)}
+      ${K("M74 92q2 10 6 18M80 96q1 10 4 18M90 98v18M97 97q-1 10-3 17M104 92q-2 9-5 15", 1, C.bdd, op(.6))}${K("M77 90q2 8 5 13M93 97q0 7-1 12M101 93q-1 6-3 10M87 115q0 5-1 9", 1.3, C.bdl, op(.85))}
+      <g class="sm-braid">${braid(80, 117, [C.br, C.br2, C.brl])}${braid(95, 116, [C.ir3, C.ir, C.irl])}</g>
+      ${F(C.bd, "M102 85.6Q95 85.6 89 89.4Q83.6 93 81 100.6Q85.4 96.4 90.4 95.2Q97 94 102.4 90.8Q107.4 93.6 110.8 97Q112.8 99.4 113 102.6Q115 95 111.6 90.4Q107.6 85.6 102 85.6Z")}
+      ${lock(101, 87, 18, 4.6, 62, C.bd2)}${lock(100.6, 88.2, 17, 4.2, 48, C.bd)}${lock(100.2, 89.4, 13.5, 3.6, 34, C.bd3)}${lock(103.2, 87.2, 12.5, 4, -56, C.bd2)}${lock(103.6, 88.4, 11, 3.4, -36, C.bd)}
+      ${K("M99.6 88.4q-7 1-12 6.8M100.4 90q-6 2-9.4 6.2M104.4 88.6q4.6 1.4 7.2 5.6", .9, C.bdd, op(.65))}${K("M98.6 87.4q-5 .6-8.6 3.6M105 87.6q3 .6 5 2.6", 1.1, C.bdl, op(.9))}</g>
+    <g class="sm-e1">${F("#5a1d12", "M95.8 96.4q4.8 1.4 9.6-.4q-4.6 2.8-9.6.4z", ' stroke-width="1.2"')}${F("#c8775a", "M97 98.4q3.8 1.2 7.4-.2q-.6 2.2-3.8 2.2t-3.6-2z", ' stroke-width="1"')}</g>
+    <g class="sm-e2">${F("#5a1d12", "M95 94.8h11.6q-.6 4.2-5.8 4.2t-5.8-4.2z", ' stroke-width="1.3"')}${N("#f3ece2", "M96 95.4h9.6v1.9h-9.6z")}${K("M98.4 95.4v1.9M100.8 95.4v1.9M103.2 95.4v1.9", .6, "#a89f92")}</g>
+    <g class="sm-e3">${F("#5a1d12", "M91.6 93.6q9 9.6 17.8-1.6q-8.8 3.6-17.8 1.6z", ' stroke-width="1.4"')}${N("#f6f0e6", "M93.2 94.6q7.6 2.4 14.4-1l-.8 2.2q-6.6 2.8-13 1z")}${K("M96.4 95.4v1.7M99.6 95.8v1.7M102.8 95.5v1.7M105.6 94.8v1.6", .5, "#b8ad9e")}${N("#c0503e", "M97 99.6q3.6 1.6 7.2-.4q-3.6-1.4-7.2.4z")}</g>
+    ${F(U("hm"), "M65 60Q64 30 88 28Q112 30 111 60Z")}${N("#2b323b", "M65 60Q64 38 76 31Q70 42 71 60Z", op(.55))}${N("#eef3f7", "M78 35Q84 30.6 90 31Q83 34 80 42Z", op(.6))}
+    ${ln("M96 29.5Q100 42 100 55", 3, C.br)}${ln("M73 36Q70 46 70.5 56", 3, C.br2)}${K("M104 33Q109 40 110 50", 1.6, C.rim, op(.8))}
+    ${N(C.ir2, "M104 41q3 1 2.2 4.4q-3 0-2.2-4.4z")}${K("M103 40.3q3-1.2 4.2 2", 1, C.irl)}${K("M80 46l5-3M83 49l4-2", .8, C.irl, op(.7))}
+    ${F(C.ir2, "M63 53Q88 46 113 53L113 62Q88 55 63 62Z")}${K("M64 55Q88 48.5 112 55", 1.2, C.ir3)}
+    <g class="n" fill="${C.ir3}">${[68, 76, 84, 92, 100, 108].map(x => `<circle cx="${x}" cy="${f1(58.6 - Math.sin((x - 63) / 50 * Math.PI) * 3.4)}" r="1.5"/>`).join("")}</g>
+    ${F(C.ir, "M97.8 56h4.6l-.4 13q-1.9 1.6-3.8 0z")}${K("M99.6 58.4v9.6", 1, C.irl)}<circle class="n" fill="${C.irl}" cx="100.1" cy="59" r=".9"/></g>`;
+  const body = `${F(U("T"), "M46 108Q80 96 116 108L126 178Q84 188 38 178Z")}${N(C.tu2, "M46 108Q41 140 38 178Q46 181 55 182Q50 140 57 105Z")}${K("M117 112L125.5 175", 2.2, C.rim, op(.8))}
+    ${F(U("zz"), "M39 170Q84 180 125 170L126 178Q84 188 38 178Z")}
+    ${N(C.tu2, "M46 110Q40 145 40 178L58 183Q54 145 62 110Z", ' class="n sm-turn"')}<g class="sm-front">${F(U("A"), "M62 112H106Q117 150 112 196H58Q50 152 62 112Z")}${N(C.le2, "M62 112H69Q60 152 64 196H58Q50 152 62 112Z", op(.8))}${K("M106.5 114Q116.5 150 111.5 195", 2, C.rim, op(.7))}
+    ${K("M65 117Q58 152 62 192M103 117Q112 150 108.5 192M61 191.5H109.5", 1.1, "#d6ab78", ' stroke-dasharray="3 2.4"')}
+    ${N("#2a160b", "M84 176q6-5 11 0q-1 6-7 6q-6 0-4-6zM68 187q4-3 7 0q-1 4-5 4q-3-1-2-4zM99 128q4-2 6 1q-2 3-6 2z", op(.5))}
+    ${N("#000", "M45 157Q84 167 121 157L120 162Q84 172 46 162Z", op(.22))}${F(C.be, "M42 148Q84 158 122 148L123 157Q84 167 41 157Z")}${K("M44 150.5Q84 160.5 120 150.5", 1.5, C.bel)}
+    <g class="n" fill="#120a05"><circle cx="108" cy="155.4" r="1.1"/><circle cx="114" cy="153.8" r="1.1"/></g>
+    <rect fill="${C.br}" x="79.5" y="149.5" width="18" height="14" rx="3.5"/>${N(C.br2, "M80.6 157h15.8v3.4a3 3 0 0 1-3 3h-9.8a3 3 0 0 1-3-3z")}
+    ${K("M83 156.5q5.5-6 11 0q-5.5 6-11 0zM88.5 151.5q6 5 0 10q-6-5 0-10z", 1.3, "#6e4a10")}${K("M82 152h5", 1.2, C.brl)}
+    ${ln("M90 159L92 172", 3.4, C.wd)}${ln("M100 157l1.4 14M104 157l-1 14", 1.6, C.ir)}${F(C.le2, "M86 168h20l-1.5 17h-17z")}${K("M88 170.6h16", 1, "#d6ab78", ' stroke-dasharray="2.4 2"')}</g>
+    ${F(U("cm"), "M62 100Q84 92 106 100L104 110Q84 104 64 110Z")}
+    `, top = `<g class="sm-top"><g class="sm-mantle">${mantle}</g>${head}</g>`;
+  const legs = (b, f) => `${F("#cdb68a", b[0])}${K(b[1], 2.2, "#8c7650")}${F("#5a361e", b[2])}${N("#3a2212", b[3])}${K(b[4], 1.4, "#24160b")}${K(b[5], 1.4, "#8a5a34")}
+    ${F("#cdb68a", f[0])}${K(f[1], 2.2, "#8c7650")}${F("#5a361e", f[2])}${N("#3a2212", f[3])}${K(f[4], 1.4, "#24160b")}${K(f[5], 1.4, "#8a5a34")}`;
+  const legS = legs(["M56 160H78L74 202H52Z", "M55 170l21 6M54 178l21-6M54 186l21 6M53 194l21-6", "M50 198H76L77 207Q90 209 93 219H48Z", "M49 214H93V219H48Z", "M57 201l7 5M64 201l-7 5", "M81 209q7 1 10 6"],
+    ["M88 160H108L116 202H94Z", "M90 170l20 6M91 178l20-6M92 186l21 6M93 194l21-6", "M92 198H118L119 207Q132 209 135 219H90Z", "M91 214H135V219H90Z", "M99 201l7 5M106 201l-7 5", "M123 209q7 1 10 6"]);
+  const legB = legs(["M60 160H80L54 203H32Z", "M60 170l18 4M55 178l18-4M50 186l18 4M45 194l17-4", "M28 199H54L55 208Q66 210 69 219H26Z", "M27 214H69V219H26Z", "M35 202l7 5M42 202l-7 5", "M58 210q6 1 9 5"],
+    ["M88 160H108L124 201H102Z", "M91 170l20 5M93 178l21-5M96 186l21 5M99 194l21-5", "M100 198H126L127 207Q140 209 143 219H98Z", "M99 214H143V219H98Z", "M107 201l7 5M114 201l-7 5", "M131 209q7 1 10 6"]);
+  const hammer = (x, y, a) => `<g transform="translate(${x} ${y}) rotate(${a})">${ln("M-10 0H34", 5, C.wd)}${K("M-8-1H30", 1.2, C.wd3)}
+    ${F(C.ir, "M30-13h16v26H30z")}${N(C.ir3, "M31.5-11.5h4v23h-4z")}${N(C.ir2, "M41-11.5h3.5v23H41z")}${K("M46-12.5v25", 1.6, C.irl)}</g>`;
+  const tongs = (x1, y1, x2, y2) => ln(`M${x1} ${y1 - 2}L${x2} ${y2 - 1.5}M${x1} ${y1 + 2}L${x2} ${y2 + 1.5}`, 2.6, C.ir) + K(`M${x1} ${y1 - 2.6}L${x2} ${y2 - 2.1}`, .9, C.irl)
+    + `<circle fill="${C.ir2}" stroke-width="1.4" cx="${f1(x1 + (x2 - x1) * .72)}" cy="${f1(y1 + (y2 - y1) * .72)}" r="2.4"/>`;
+  const flame = (x, y, h, c) => `<path class="n sm-fl" fill="${c}" d="M${x - 9} ${y}Q${x - 11} ${f1(y - h * .5)} ${x} ${f1(y - h)}Q${x + 11} ${f1(y - h * .5)} ${x + 9} ${y}Z"/>`;
+  const fire = (x, y, h) => `<g>${flame(x - 16, y, h * .8, U("L"))}${flame(x, y, h, U("L"))}${flame(x + 16, y, h * .75, U("L"))}</g>
+    <g>${flame(x - 8, y, h * .45, "#fff0a8")}${flame(x + 7, y, h * .55, "#fff0a8")}</g>`;
+  const ember = (x, y, r) => `<g class="sm-ember"><circle class="n" fill="${U("G")}" cx="${x}" cy="${y}" r="${r * 3}"/><circle class="n" fill="#ffd45a" cx="${x}" cy="${y}" r="${r}"/></g>`;
+  const steam = (x, y) => { const d = `M${x} ${y}c-8-8 8-14 0-22s8-14 0-22`; return `<g class="sm-steam">${K(d, 10, "#c9d3de", op(.14))}${K(d, 5.5, "#d9e1ea", op(.3))}${K(d, 2.4, "#eef3f8", op(.55))}</g>`; };
+  // the ore heap: ingots stamped with letters of the phrase, in copper, bronze, iron, silver, gold and verdigris
+  const M = [["#c8703c", "#9c4f24", "#f2a675", "#e48a52"], ["#b08a3e", "#86652a", "#e6c574", "#c9a352"], ["#7c8792", "#535c66", "#c0c9d2", "#98a3ae"],
+    ["#c4ccd4", "#8e98a2", "#fbfcfd", "#dde3e8"], ["#e6b422", "#a8780a", "#fff0a0", "#f5cc4a"], ["#4fa38a", "#2f705d", "#a2e3cf", "#6dbfa5"]];
+  const L = [...String(word).toUpperCase()].filter(c => /\p{L}/u.test(c)), ch = i => esc(L.length ? L[i % L.length] : "WAKE"[i % 4]);
+  const ingot = (x, y, r, m, t, w = 16, h = 14, x2 = "") => {
+    const a = w / 2, b = h / 2, c = M[m], z = f1(h * .64), ty = f1(-1.9 + z * .36);
+    return `<g transform="translate(${x} ${y}) rotate(${r})"${x2}>${F(c[1], `M${-a} ${b - 4}L${-a + 2} ${-b}H${a - 2}L${a} ${b - 4}L${a - 1} ${b}H${-a + 1}Z`, ' stroke-width="1.6"')}
+      ${N(c[0], `M${-a + 2.3} ${-b + .9}H${a - 2.3}L${a - 3.3} ${b - 4.6}H${-a + 3.3}Z`)}${N(c[3], `M${-a + 2.3} ${-b + .9}H${a - 2.3}L${a - 2.8} ${-b + 2.5}H${-a + 2.8}Z`)}
+      ${N(c[2], `M${a - 2.3} ${-b + .9}L${a - .2} ${b - 4.2}H${a - 1.6}L${a - 3.2} ${-b + 2.4}Z`, op(.45))}${K(`M${-a + 4} ${-b + 1.7}h${f1(w * .28)}`, 1, c[2])}<circle class="n" fill="#fff" opacity=".8" cx="${f1(a - 4)}" cy="${f1(-b + 2.6)}" r=".7"/>
+      <text class="lt" x="-.5" y="${f1(ty - .5)}" text-anchor="middle" fill="#000" opacity=".4" style="font-size:${z}px">${t}</text><text class="lt" x=".5" y="${f1(ty + .5)}" text-anchor="middle" fill="${c[2]}" opacity=".85" style="font-size:${z}px">${t}</text>
+      <text class="lt" y="${ty}" text-anchor="middle" fill="${c[1]}" style="font-size:${z}px">${t}</text></g>`;
+  };
+  const lump = (x, y, m, s = 1) => { const c = M[m]; return `<g transform="translate(${x} ${y}) scale(${s})">${F(c[0], "M-10 6L-8-3L-2-8L6-6L10 1L6 7Z", ' stroke-width="1.6"')}
+    ${N(c[3], "M-8-3L-2-8L0-1L-6 2Z")}${N(c[2], "M-2-8L6-6L3-1L0-1Z")}${N(c[1], "M3-1L6-6L10 1L6 7L2 4Z")}${N("#000", "M-10 6L-6 2L2 4L6 7Z", op(.3))}${K("M0-1H3M-6 2L0-1M2 4L3-1", .7, c[1])}
+    <g class="n" fill="#fff6c8"><circle cx="-4" cy="-2" r=".7"/><circle cx="2.5" cy="-4.5" r=".6"/><circle cx="6" cy="2" r=".6"/><circle cx="-6" cy="4" r=".5"/></g></g>`; };
+  const frag = L.slice(0, 3).map(c => esc(c)).join("") || "WAK";
+  const heap = lump(150, 154, 2) + lump(216, 155, 0, 1.1) + ingot(162, 153, -10, 2, ch(3)) + ingot(180, 154, 4, 0, ch(4), 18) + ingot(199, 153, -5, 1, ch(5))
+    + ingot(156, 141, 8, 5, ch(7), 14, 12) + ingot(172, 141, -12, 3, ch(6)) + ingot(193, 140, 6, 5, frag, 30) + ingot(211, 144, -14, 4, ch(8), 13, 12, ' class="sm-tumble"')
+    + ingot(165, 128, -6, 1, ch(9), 15, 13, ' class="sm-tumble"') + ingot(183, 127, 10, 2, ch(10)) + lump(201, 131, 3, .8) + ingot(178, 114, -4, 0, ch(11), 14, 12);
+  const anvil = `${F(U("B"), "M150 180H234L238 219H146Z")}${K("M156 186v30M166 184l1 33M222 186v30M230 185l1 32", 1.6, C.wdl, op(.8))}${K("M160 190v8M226 196v9", 1.2, C.wd3)}
+    ${ell("#b88550", 192, 180, 42, 6)}<g stroke="${C.wd}" stroke-width="1"><ellipse cx="192" cy="180" rx="34" ry="4.6"/><ellipse cx="192" cy="180" rx="26" ry="3.4"/></g>
+    ${F(U("I"), "M148 150H222Q238 150 250 157Q236 161 222 161L214 165L212 171Q214 176 222 178H156Q164 176 166 171L164 165L156 161Q148 159 148 150Z")}
+    ${N("#2a323c", "M166 165H214L212 171Q214 175 220 177H158Q164 175 166 171Z")}${N("#000", "M222 161.5L246 158.5Q236 163.5 224 164.5Z", op(.3))}
+    ${N("#8a95a1", "M150 150.6H222Q235 150.6 246 156L236 157Q228 155 222 155H151Z")}${K("M154 151.6H220", 1.6, "#e2e8ee")}${K("M224 152Q236 153 244 156", 1.2, "#c9d2db")}
+    <rect class="n" fill="#14181d" x="155" y="151.3" width="5" height="3"/><circle class="n" fill="#14181d" cx="166" cy="152.8" r="1.4"/>${K("M158 172h6M216 172h4", 1.2, C.ir3, op(.7))}`;
+  const stones = [[152, 20, [158, 184, 212, 230]], [174, 22, [158, 172, 200, 226]], [198, 20, [158, 186, 214, 234]]].map(([y, h, xs], r) => xs.map((x, i) => {
+    const w = (xs[i + 1] ?? 246) - x - 2, c = [C.st, C.st3, C.st2][(i + r) % 3];
+    return `<rect fill="${c}" stroke-width="1.5" x="${x + 1}" y="${y}" width="${w}" height="${h}" rx="4"/>${K(`M${x + 4} ${y + 2.2}h${w - 6}`, 1.2, C.stl, op(.6))}`;
+  }).join("")).join("");
+  const sword = `${ln("M0 12V-8", 5, C.le)}${K("M-2.5 9l5-3M-2.5 3l5-3M-2.5-3l5-3", 1, C.le2)}<circle fill="${C.br}" cy="15" r="4"/>${ln("M-12-10H12", 4, C.br)}${K("M-11-11H6", 1, C.brl)}
+    ${F(U("S"), "M-5-12V-74L0-86L5-74V-12Z")}${N(C.ir3, "M1.5-12V-80L5-74V-12Z")}${K("M-.6-16V-72", 1.2, "#7d8894")}`;
+  // a raven perched on the bellows board pumps it with its weight
+  const raven = `${F("#141820", "M5-6L17-2.5L15 1L4-2Z", ' stroke-width="1.4"')}${F("#1d2230", "M-6-6Q-4-14 4-13Q10-11 9-5Q6 0-2 0Q-7-1-6-6Z", ' stroke-width="1.4"')}${F("#2a3248", "M-2-11Q6-12.5 10-6Q5-3.6-1-6Z", ' stroke-width="1.2"')}
+    ${K("M0-10q4-1.2 7 .8", .9, "#5a6c98")}<circle fill="#1d2230" stroke-width="1.4" cx="-6" cy="-14" r="4.6"/>${F("#4a4f5a", "M-10-15.2L-17.5-13L-10-11.6Z", ' stroke-width="1.2"')}
+    <circle class="n" fill="#e8b04a" cx="-7.2" cy="-15" r="1.2"/><circle class="n" fill="#0a0a0a" cx="-7.4" cy="-15" r=".6"/><circle class="n" fill="#fff" cx="-7.7" cy="-15.4" r=".3"/>${K("M-1 0v2.4M2 0v2.4", 1.1, "#4a4f5a")}${K("M-5-17q2-1.6 4-.4", .8, "#5a6c98")}`;
+  const lit = (x, y, r) => `<circle class="n sm-lit" fill="${U("Lt")}" cx="${x}" cy="${y}" r="${r}"/>`;
+  const sparks = `<g class="sm-sparks">${K("M178 139l-12-9M183 136l-4-14M190 136l5-14M195 139l13-8M197 143h14M175 143h-14", 1.4, "#ff9a2a", op(.55))}
+    <g class="n" fill="#fff3b0">${[[166, 130], [179, 122], [195, 122], [208, 131], [211, 143], [161, 143]].map(([x, y]) => `<circle cx="${x}" cy="${y}" r="1.7"/>`).join("")}</g></g>`;
+  const P = {};  // per pose: behind the torso, arms over the torso (under the mantle and beard), in front of everything
+  // hammer: the strike's impact pose; the body leans 6.5 degrees
+  let a = 6.5, fw = inv(152, 121, a), bh = inv(126, 146, a), bt = inv(165, 147, a);
+  P.hammer = ["", `${tongs(...bh, ...bt)}${arm([60, 112], [70, 146], bh, ang(bh, bt))}<g class="sm-swing">${hammer(...fw, 15 - a)}${arm([112, 110], inv(132, 136, a), fw, 15 - a)}</g>`, ""];
+  a = 6; fw = inv(150, 139, a); bh = inv(128, 140, a); bt = inv(198, 138, a);
+  P.heat = ["", `<g class="sm-push">${tongs(...bh, ...bt)}${arm([60, 112], [66, 142], bh, ang(bh, bt))}${arm([112, 110], inv(130, 140, a), fw, ang(bh, bt))}</g>`, ""];
+  a = 3; fw = inv(150, 128, a); bt = inv(204, 151, a);
+  P.voices = [hip[0], `${hip[1]}<g class="sm-stir">${ln(`M${fw[0] - 8} ${f1(fw[1] - 3.4)}L${bt.join(" ")}`, 3.5, C.ir)}${arm([112, 110], inv(132, 140, a), fw, ang(fw, bt))}</g>`, ""];
+  a = 4;
+  P.ore = [hip[0], `${hip[1]}<g class="sm-reach">${arm([112, 110], inv(140, 140, a), inv(168, 122, a))}</g>`, ""];
+  a = -2; fw = inv(134, 94, a);
+  P.inspect = [hip[0], `${hip[1]}<g transform="translate(${fw[0]} ${fw[1] - 2})"><g class="sm-tilt">${sword}<path class="sm-glint n" fill="#ffe680" d="M0-34l2 5 5 2-5 2-2 5-2-5-5-2 5-2Z"/></g></g>${arm([112, 110], inv(140, 128, a), fw, -90)}`, ""];
+  a = 5; fw = inv(150, 130, a); bh = inv(128, 138, a);
+  const tip = inv(206, 118, a);
+  P.quench = ["", `<g class="sm-dip">${tongs(...bh, ...tip)}<g transform="translate(${tip[0]} ${tip[1]}) rotate(${-a})">${F(U("S"), "M-4 0h8v54l-4 8-4-8z")}${N(U("H"), "M-2.7 1.3h5.4v52.4l-2.7 5.4-2.7-5.4z", ' class="n sm-hotb"')}</g>
+    ${arm([60, 112], [66, 142], bh, ang(bh, tip))}${arm([112, 110], inv(130, 136, a), fw, ang(bh, tip))}</g>`, ""];
+  P.done = ["", `${arm([60, 112], [44, 66], [62, 21], 0)}${arm([112, 110], [130, 66], [116, 21], 0)}`, `${N(U("G"), "M50 6a100 30 0 1 0 200 0a100 30 0 1 0-200 0Z", ' class="n sm-halo"')}
+    <circle fill="${C.br}" cx="24" cy="6" r="6"/>${K("M21 3.5a3.5 3.5 0 0 1 4-1.5", 1.2, C.brl)}${ln("M30 6H52", 7, C.le)}${K("M33 3l3 6M39 3l3 6M45 3l3 6", 1.1, C.le2)}${ln("M55-10V22", 6, C.br)}${K("M53.6-8V19", 1.2, C.brl)}
+    ${F(U("S"), "M58-4H238L258 6L238 16H58Z")}${N(C.ir3, "M58 11H238L258 6L238 16H58Z")}<rect fill="${C.ir2}" x="66" y="-.6" width="164" height="13.2" rx="6.6"/>
+    ${K("M70 6l3-3 3 3-3 3zM226 6l-3-3-3 3 3 3z", 1.2, "#ffcf5a")}${["sm-wglow", "sm-word"].map(c => `<text class="${c}" x="148" y="10.4" text-anchor="middle" style="font-size:${fs.toFixed(1)}px"${n > 22 ? ' textLength="140" lengthAdjust="spacingAndGlyphs"' : ""}>${esc(String(word).toUpperCase())}</text>`).join("")}
+    ${K("M62-2.4H236", 1, "#ffffff", op(.6))}<path class="sm-glint n" fill="#fff3b0" d="M262-10l2 5 5 2-5 2-2 5-2-5-5-2 5-2Z"/>`];
+  P.idle = [hip[0], `${hip[1]}${hammer(126, 168, 92)}${arm([112, 110], [122, 140], [126, 168], 92)}`, ""];
+  a = 2;
+  P.failed = [hip[0], `${hip[1]}${arm([112, 110], inv(120, 140, a), inv(124, 166, a))}`, ""];
+  const all = i => Object.keys(P).filter(k => P[k][i]).map(k => `<g class="sm-po s-${k}">${P[k][i]}</g>`).join("");
+  return `<div class="smith" id="smith" data-act="idle">
+  <svg class="sm-art" viewBox="0 -14 280 246" fill="none" aria-hidden="true">
+    <defs><radialGradient id="F${u}" cx=".5" cy="1" r=".95"><stop offset="0" stop-color="#fff4b8"/><stop offset=".35" stop-color="#ffb52e"/><stop offset=".7" stop-color="#ff6a1a"/><stop offset="1" stop-color="#7a1c0a"/></radialGradient>
+      <radialGradient id="G${u}"><stop offset="0" stop-color="#ff9a2e" stop-opacity=".85"/><stop offset="1" stop-color="#ff6a00" stop-opacity="0"/></radialGradient>
+      <radialGradient id="W${u}"><stop offset="0" stop-color="#fff"/><stop offset=".3" stop-color="#fff3b0" stop-opacity=".9"/><stop offset="1" stop-color="#ffb030" stop-opacity="0"/></radialGradient>
+      <radialGradient id="Lt${u}"><stop offset="0" stop-color="#ffa040" stop-opacity=".4"/><stop offset=".6" stop-color="#ff8a2a" stop-opacity=".12"/><stop offset="1" stop-color="#ff8a2a" stop-opacity="0"/></radialGradient>
+      <radialGradient id="Mo${u}"><stop offset="0" stop-color="#fffbe0"/><stop offset=".5" stop-color="#ffd055"/><stop offset="1" stop-color="#ff7a1a"/></radialGradient>
+      <radialGradient id="Wa${u}"><stop offset="0" stop-color="#16364a"/><stop offset="1" stop-color="#3a7ea0"/></radialGradient>
+      <linearGradient id="H${u}"><stop offset="0" stop-color="#ff7a1a"/><stop offset=".5" stop-color="#ffe680"/><stop offset="1" stop-color="#ff8c1f"/></linearGradient>
+      <linearGradient id="L${u}" x1="0" y1="1" x2="0" y2="0"><stop offset="0" stop-color="#ff4d0d"/><stop offset=".55" stop-color="#ffa21f"/><stop offset="1" stop-color="#ffe066"/></linearGradient>
+      <linearGradient id="T${u}" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#3a74b4"/><stop offset="1" stop-color="#244f80"/></linearGradient>
+      <linearGradient id="A${u}" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#9c6538"/><stop offset=".6" stop-color="#83532d"/><stop offset="1" stop-color="#9a6234"/></linearGradient>
+      <linearGradient id="I${u}" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#6b7682"/><stop offset="1" stop-color="#363e48"/></linearGradient>
+      <linearGradient id="hm${u}"><stop offset="0" stop-color="#3e4752"/><stop offset=".55" stop-color="#6b7682"/><stop offset="1" stop-color="#a3acb5"/></linearGradient>
+      <linearGradient id="B${u}"><stop offset="0" stop-color="#5e3a1b"/><stop offset=".55" stop-color="#9a6532"/><stop offset="1" stop-color="#6e4421"/></linearGradient>
+      <linearGradient id="S${u}" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#f1f5f8"/><stop offset="1" stop-color="#9aa6b2"/></linearGradient>
+      <radialGradient id="K${u}"><stop offset="0" stop-color="#0b111b" stop-opacity=".75"/><stop offset=".7" stop-color="#0b111b" stop-opacity=".4"/><stop offset="1" stop-color="#0b111b" stop-opacity="0"/></radialGradient>
+      <pattern id="cm${u}" width="4" height="3.4" patternUnits="userSpaceOnUse"><rect width="4" height="3.4" fill="#4a535d"/><path d="M0 2.4a2 2 0 0 1 4 0M-2 .7a2 2 0 0 1 4 0M2 .7a2 2 0 0 1 4 0" stroke="#aab4be" stroke-width=".8"/></pattern>
+      <pattern id="wv${u}" width="8" height="8" patternUnits="userSpaceOnUse"><rect width="8" height="8" fill="#5a3c12"/><path d="M0 2h8M0 6h8" stroke="#c9974a" stroke-width="3.2"/><path d="M6 0v4M2 4v4" stroke="#9a6f2a" stroke-width="2.6"/><path d="M0 1.2h4.6M3.8 5.2h4.6" stroke="#ecc27a" stroke-width=".8"/></pattern>
+      <pattern id="zz${u}" width="8" height="10" patternUnits="userSpaceOnUse"><rect width="8" height="10" fill="#c8922f"/><path d="M0 6l2-3 2 3 2-3 2 3" stroke="#6e4410" stroke-width="1.2"/><circle cx="4" cy="8.6" r=".8" fill="#6e4410"/></pattern></defs>
+    ${ell(U("K"), 140, 214, 150, 24, ' class="n"')}<g class="n" fill="#25344d">${K("M6 0h62M14 0l-3 34M18 0l3 34M34 0v30M52 0v8", 2.5, "#25344d")}<path d="M28 30h12v8H28z"/><path d="M46 8a6 7 0 1 0 12 0" stroke="#25344d" stroke-width="2.5" fill="none"/></g>
+    ${ell("#05080d", 92, 220, 56, 5, ' class="n" opacity=".5"')}
+    <g class="sm-po s-idle s-hammer s-inspect s-done s-failed">${ell("#05080d", 192, 220, 50, 5, ' class="n" opacity=".5"')}${anvil}</g>
+    <g class="sm-po s-hammer">${N(U("G"), "M140 146a46 22 0 1 0 92 0a46 22 0 1 0-92 0Z", ' class="n sm-halo"')}<g class="sm-bar"><rect fill="${U("H")}" x="162" y="143" width="48" height="7" rx="2"/>
+      ${K("M172 144.5v4l3-4M180 144.5l2 4 2-4M190 144.5v4M190 146.5h3M199 144.5l-2 4h4", 1.3, "#fff6cf", op(.8))}</g></g>
+    <g class="sm-po s-failed">${hammer(168, 137, 0)}</g>
+    <g class="sm-po s-heat"><circle class="n sm-halo" fill="${U("G")}" cx="205" cy="128" r="90"/>${F(C.st, "M196 72V-14H226V72Z")}${N(C.st2, "M196-14h7v86h-7z")}
+      ${K("M196 2H226M196 20H226M196 38H226M196 56H226M211-14v16M205 2v18M218 20v18M206 38v18M216 56v16", 1.4, C.st2)}
+      ${F(U("I"), "M176 98H246L232 70H190Z")}${K("M192 72.5H230", 1.2, C.irl)}${F(C.ir2, "M174 96H248V101H174Z")}<g class="n" fill="${C.ir3}">${[182, 194, 206, 218, 230, 242].map(x => `<circle cx="${x}" cy="98.5" r="1.2"/>`).join("")}</g></g>
+    <g class="sm-po s-voices">${N(U("G"), "M170 146a44 20 0 1 0 88 0a44 20 0 1 0-88 0Z", ' class="n sm-halo"')}</g>
+    <g class="sm-po s-ore">${F(C.wd2, "M154 168h10v51h-10zM256 168h10v51h-10z")}${N("#000", "M156 169h8v6h-8zM258 169h8v6h-8z", op(.3))}${F(U("B"), "M146 160H274V169H146Z")}${K("M148 161.4H272", 1.3, C.wd3)}${K("M160 164.6h30M206 165h28", 1, C.wdl, op(.7))}
+      ${heap}${F(U("wv"), "M222 126H268L262 160H228Z")}${N("#000", "M222 126H268L267 131H223ZM256 126H268L262 160H252Z", op(.25))}${ingot(236, 119, -10, 4, ch(2), 14, 12)}${ingot(253, 120, 12, 3, ch(3), 13, 11)}${ln("M220 126H270", 3.5, C.wk3)}</g>
+    <g class="sm-po s-quench">${ell(C.wd2, 209, 150, 36, 8)}${ell(U("Wa"), 209, 150.5, 32, 6, ' class="n"')}</g>
+    <g class="sm-po s-idle s-voices s-ore s-inspect s-done s-failed">${legS}</g><g class="sm-po s-hammer s-heat s-quench">${legB}</g>
+    <g class="sm-up">${all(0)}${body}${all(1)}${top}${all(2)}</g>
+    <g class="sm-po s-hammer"><circle class="n sm-flash" fill="${U("W")}" cx="186" cy="143" r="26"/>${sparks}${lit(186, 140, 120)}</g>
+    <g class="sm-po s-heat">${F("#3a3d44", "M158 150H246V219H158Z")}${stones}${N("#ff8a2a", "M159 152H245V160H159Z", op(.22))}${F(C.st3, "M154 143H250V152H154Z")}${K("M156 144.6H248", 1.2, C.stl)}
+      ${F(U("F"), "M164 144Q205 116 246 144Z")}<g stroke="#ff8a2a" stroke-width="1" fill="#2b1a12">${[[172, 141], [182, 136], [196, 133], [214, 133], [228, 136], [238, 141], [190, 140], [222, 140]].map(([x, y]) => `<circle cx="${x}" cy="${y}" r="3.2"/>`).join("")}</g>
+      <g class="sm-flare">${fire(205, 140, 46)}</g><g>${ember(196, 100, 1.8)}${ember(214, 92, 1.8)}${ember(228, 104, 1.5)}</g>
+      ${F(C.ir, "M238 195h12v5h-12z")}${F(C.wd2, "M248 208L278 202V207L248 213Z")}<g class="sm-pleat">${F(C.le, "M250 198L276 190V204L250 209Z")}${K("M256 197l.6 11M262 195l.6 11.4M268 193l.6 11.6", 1.4, C.le2)}</g>
+      <g class="sm-bel">${F(C.wd, "M248 196L278 188V193L248 201Z")}${K("M250 197L276 190.2", 1, C.wd3)}<g transform="translate(257 193.6) scale(1.35)"><g class="sm-raven">${raven}</g></g></g>${lit(200, 132, 140)}</g>
+    <g class="sm-po s-voices">${F(C.st, "M176 219q2-9 10-9q4-6 12-3q6-5 13 0q8-4 14 2q9-1 11 10z")}${K("M186 212q3-2 6 0M210 209q3-2 6 0", 1.2, C.stl)}${fire(214, 208, 26)}
+      ${F(C.cl, "M190 150H238L232 190Q214 198 196 190Z")}${N(C.cl2, "M226 150H238L232 190Q228 193 222 194Z")}${N("#c06a3a", "M194 152h5l3 38q-3 1-5 0z", op(.7))}
+      ${ell(C.cl2, 214, 150, 25, 6.5)}${ell(U("Mo"), 214, 150.4, 21, 4.6, ' class="n"')}${K("M204 149q8-2 16 0", 1.2, "#fffbe0", op(.8))}
+      <g class="sm-cy">${[[226, 78], [240, 96], [214, 100]].map(([x, y]) => `<g class="sm-wave">${K(`M${x} ${y}q4-7 8 0t8 0t8 0`, 7, "#4ad5ff", op(.2))}${K(`M${x} ${y}q4-7 8 0t8 0t8 0`, 2.8, "#8fe6ff")}</g>`).join("")}</g>${lit(214, 150, 110)}</g>
+    <g class="sm-po s-ore"><g class="sm-toss">${ingot(172, 110, 8, 4, ch(0), 14, 12)}</g></g>
+    <g class="sm-po s-quench">${F(U("B"), "M173 150A36 8 0 0 0 245 150L241 219H177Z")}${K("M185 157.6Q183 188 186 219M197 158.6V219M209 158.8V219M221 158.6V219M233 157.6Q235 188 232 219", 1.3, C.wdl)}
+      ${K("M190 172q-2 8 0 16M214 182q2 8 0 14M227 166q-1 6 0 12", 1, C.wd3, op(.7))}${ln("M175 168Q209 178 243 168M177 204Q209 214 241 204", 4.5, C.ir)}${K("M177 166.8Q209 176.4 241 166.8M179 202.8Q209 212.4 239 202.8", 1, C.irl)}
+      ${K("M173 150A36 8 0 0 0 245 150", 2, C.wd3)}<ellipse stroke="#d8eef8" stroke-width="1.2" opacity=".6" cx="206" cy="150.5" rx="9" ry="2"/>
+      <g>${steam(196, 142)}${steam(210, 140)}${steam(224, 142)}</g>${lit(206, 140, 70)}</g>
+  </svg>
+  <div class="sm-cap" aria-hidden="true"><svg class="sm-g" width="40" height="40" viewBox="0 0 48 48" fill="none" stroke-width="5" stroke-linecap="round" hidden>
+      <circle class="sm-trk" cx="24" cy="24" r="19"/><g transform="rotate(-90 24 24)"><circle class="sm-arc" cx="24" cy="24" r="19" stroke-dasharray="119.4" stroke-dashoffset="119.4"/></g>
+      <text x="24" y="28.5" text-anchor="middle"></text></svg><span><b></b><span class="hint"></span></span></div>
+  <span class="vh" aria-live="polite"></span></div>`;
+};
+// o: { act, run, title, pct }. Touches the page only when what it shows changes (progress arrives every second).
+function smithSet(el, o) {
+  const pc = o.run && o.pct != null ? Math.max(0, Math.min(100, Math.round(o.pct))) : null;
+  const k = [o.act, o.run, o.title, pc].join("|");
+  if (!el || el.dataset.k === k) return;
+  el.dataset.k = k; el.dataset.act = o.act; el.toggleAttribute("data-run", !!o.run);
+  const g = $(".sm-g", el); g.toggleAttribute("hidden", !o.run);g.classList.toggle("ind", pc == null);
+  if (pc != null) { $(".sm-arc", el).style.strokeDashoffset = (119.4 * (1 - pc / 100)).toFixed(1); $("text", g).textContent = pc; }
+  $(".sm-cap b", el).textContent = o.title;
+  $(".sm-cap .hint", el).textContent = !o.run ? "" : pc == null ? "working" : `${pc}% of this step`;
+  // screen readers hear the stage and every tenth
+  const say = o.run ? `${o.title}${pc == null ? "" : `, ${Math.floor(pc / 10) * 10} percent`}` : o.title, live = $(".vh", el);
+  if (live.textContent !== say) live.textContent = say;
+}
+
 // The Training page's note on an archived project: when, how much it freed, and what Train rebuilds first.
 function archNote(p) {
   const a = p.archive; if (!a?.archived) return "";
@@ -1343,7 +1702,7 @@ function trainTab(p, base, steps) {
         <button type="button" id="retrain" title="After changing recordings or review verdicts: reuses the synthetic clips">Retrain from recordings</button>
         <button type="button" class="danger" id="stop">Stop</button></div></div>
     <div id="prog"></div><div id="queued"></div><div class="err" id="err"></div><div id="fail"></div>${archNote(p)}
-    <div class="cols"><section class="panel wide" aria-labelledby="h-st" style="gap:4px"><h2 id="h-st">Stages</h2><ol class="stages" id="stages"></ol></section>
+    <div class="cols"><section class="panel wide" aria-labelledby="h-st" style="gap:4px"><h2 id="h-st">Stages</h2><div class="sgrid">${smithHtml(p.word || p.label)}<ol class="stages" id="stages"></ol></div></section>
       <aside class="narrow"><section class="panel" aria-labelledby="h-mem" id="mem" hidden><h2 id="h-mem">Memory</h2><div id="membars"></div></section>
         <section class="panel" aria-labelledby="h-run"><h2 id="h-run">This project</h2><dl class="kv" id="recipe"></dl>
           <label class="f" for="conv">Everyday sentences as not-the-phrase clips (needs the AI assistant)
@@ -1378,7 +1737,17 @@ function trainTab(p, base, steps) {
         ${status === "running" ? `<div class="bar sm"><div id="sbar"></div></div>` : ""}</div></li>`;
     }).join("");
   };
+  // the smith: running stage, else waiting in the queue, else how the last run ended, else ready
+  const smith = (stages, running, s, pct) => {
+    const fail = Object.keys(STAGE_NAMES).find(k => !off(k) && stages[k]?.status === "failed");
+    smithSet($("#smith"), running ? { act: SMITH_ACT[s] || "idle", run: true, title: STAGE_NAMES[s] || "Getting ready", pct }
+      : (JOBS?.queue || []).some(x => x.project === p.name) ? { act: "idle", title: "Waiting in the queue" }
+      : fail ? { act: "failed", title: `Stopped at ${STAGE_NAMES[fail]}` }
+      : stages.export?.status === "done" ? { act: "done", title: "Forged and exported" }
+      : { act: "idle", title: "Ready to train" });
+  };
   renderStages(p.stages);
+  smith(p.stages, p.job.running, Object.keys(STAGE_NAMES).find(k => p.stages[k]?.status === "running"), null);
   const act = async (path, body) => { $("#err").textContent = ""; try { await api(base + path, { method: "POST", body: body || {} }); } catch (e) { $("#err").textContent = e.message; } };
   // Another wake word is training: these buttons queue the run instead (it starts when that one ends).
   const train = async body => {
@@ -1509,9 +1878,11 @@ function trainTab(p, base, steps) {
           <div class="hint">Estimated from this machine's measured rates.</div></div>
         <div class="row" style="gap:28px"><div><div class="big">${t.total}</div><div class="hint">to go</div></div>
           <div><div class="big">${t.end}</div><div class="hint">done around</div></div></div></section>`;
+      smith(d.stages, true, s, pct);
     } else if (d.job.running) {
+      smith(d.stages, true, null, null);
       $("#prog").innerHTML = `<div class="callout info">${icon("spin", 18, 2)}<span>${esc(d.job.title)} running…</span></div>`;
-    } else $("#prog").innerHTML = "";
+    } else { $("#prog").innerHTML = ""; smith(d.stages, false); }
     if (wasRunning !== d.job.running) { watchJobs(); if (wasRunning) hardware(); }
     wasRunning = d.job.running;
   };

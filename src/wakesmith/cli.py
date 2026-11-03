@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import subprocess
 import sys
 from pathlib import Path
 
@@ -165,20 +166,36 @@ def prepare_version(
 def test(
     project_: str = typer.Argument(..., metavar="PROJECT"),
     kind: str = typer.Option("all", help="mww, oww or all"),
-    model: Path = typer.Option(None, help="score this model file instead"),
+    model: Path = typer.Option(
+        None, exists=True, dir_okay=False, readable=True, help="score this model file instead"
+    ),
     frontend: str = typer.Option(
         None, help="microWakeWord features: tflm (ESPHome) or zserge (default: the project's)"
     ),
 ) -> None:
-    """Score held-out real recordings."""
+    """Score held-out real recordings. With --model the scores are saved under results/files/, named
+    by the file's checksum, and the project's own results stay as they are."""
+    import hashlib
+
     from . import evaluate, project
 
     if frontend not in (None, "tflm", "zserge"):
         raise typer.BadParameter("tflm or zserge", param_hint="--frontend")
+    if model and kind not in ("mww", "oww"):  # a model file is one kind, so "all" is no answer
+        raise typer.BadParameter("mww or oww: which kind of model the file is", param_hint="--kind")
+    if kind not in ("all", "mww", "oww"):
+        raise typer.BadParameter("mww, oww or all", param_hint="--kind")
     p = project.load(project_)
+    sha = hashlib.sha256(model.read_bytes()).hexdigest()[:8] if model else ""
     for k in ("mww", "oww") if kind == "all" else (kind,):
-        r = evaluate.score(p, k, model, frontend, report_half=model is None and frontend is None)
+        fe = (frontend or "own") if k == "mww" else "own"
+        out = p.path("results", "files", f"{k}-{fe}-{sha}.json") if model else None
+        r = evaluate.score(
+            p, k, model, frontend, report_half=model is None and frontend is None, out=out
+        )
         typer.echo(evaluate.format_table(r))
+        if out:
+            typer.echo(f"saved in {out}")
 
 
 @app.command()
@@ -282,12 +299,26 @@ def setup(
     if tag in current and se.torch_sees(accel):
         typer.echo(f"torch {current} already fits")
     else:
-        se.install_torch(accel)
-        if not se.torch_sees(accel):
-            typer.echo(f"torch {accel} build can't run on the GPU; falling back to CPU")
-            accel = "cpu"
-            se.install_torch("cpu")
-    typer.echo(f"microWakeWord: {se.install_microwakeword()}")
+        try:
+            se.install_torch(accel)
+            if not se.torch_sees(accel):
+                typer.echo(f"torch {accel} build can't run on the GPU; falling back to CPU")
+                accel = "cpu"
+                se.install_torch("cpu")
+        except RuntimeError as e:
+            raise typer.Exit(f"error: {e}") from None
+        except subprocess.CalledProcessError as e:
+            raise typer.Exit(
+                f"error: installing PyTorch failed: {Path(str(e.cmd[0])).name} exited with {e.returncode}"
+            ) from None
+    try:
+        typer.echo(f"microWakeWord: {se.install_microwakeword()}")
+    except RuntimeError as e:
+        raise typer.Exit(f"error: {e}") from None
+    except subprocess.CalledProcessError as e:
+        raise typer.Exit(
+            f"error: installing microWakeWord failed: {Path(str(e.cmd[0])).name} exited with {e.returncode}"
+        ) from None
     if no_data:
         return
     todo = [a for a in assets.required() if not a.present()]

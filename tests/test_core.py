@@ -233,7 +233,8 @@ def test_restricted_unpickler_refuses_foreign_code():
         _Unpickler(io.BytesIO(pickle.dumps(Evil()))).load()
 
 
-def test_feature_workers_run_one_blas_thread(tmp_path):
+@pytest.mark.parametrize("kind", ["mww", "oww"])
+def test_feature_workers_run_one_blas_thread(tmp_path, kind):
     """In a fresh worker process, every BLAS loaded, scipy's own OpenBLAS too (it comes with the
     augmentation import), is held to one thread: N workers each running N threads fought over the cores."""
     import subprocess
@@ -243,9 +244,12 @@ def test_feature_workers_run_one_blas_thread(tmp_path):
     pytest.importorskip("threadpoolctl")
     sf.write(tmp_path / "noise.wav", np.zeros(16000, np.float32), 16000)
     code = (
-        "import json, sys; from wakesmith import mww; from threadpoolctl import threadpool_info; "
-        "mww._init_worker(sys.argv[1], [sys.argv[2]]); "
-        "print(json.dumps([i['num_threads'] for i in threadpool_info() if i['user_api'] == 'blas']))"
+        "import json, sys; from wakesmith import mww, oww; from threadpoolctl import threadpool_info; "
+        + {
+            "mww": "mww._init_worker(sys.argv[1], [sys.argv[2]]); ",
+            "oww": "oww._init_worker(sys.argv[1], sys.argv[1], False); ",
+        }[kind]
+        + "print(json.dumps([i['num_threads'] for i in threadpool_info() if i['user_api'] == 'blas']))"
     )
     out = subprocess.run(
         [sys.executable, "-c", code, str(tmp_path), str(tmp_path / "noise.wav")],
@@ -1019,6 +1023,8 @@ def test_torch_install_without_uv_passes_pip_only_pip_flags(monkeypatch):
     calls = []
     monkeypatch.setattr(se.subprocess, "run", lambda cmd, check: calls.append(cmd))
     monkeypatch.setattr(se.shutil, "which", lambda name: None)
+    monkeypatch.setattr(se.Path, "home", lambda: se.Path("/nonexistent"))
+    monkeypatch.setattr(se.importlib.util, "find_spec", lambda name: object())  # pip is there
     se.install_torch("cuda")
     assert [c[3] for c in calls] == ["uninstall", "install"]
     assert not any("--reinstall-package" in c for c in calls)
@@ -1026,6 +1032,50 @@ def test_torch_install_without_uv_passes_pip_only_pip_flags(monkeypatch):
     calls.clear()
     se.install_torch("cuda")
     assert calls[0][:3] == ["/usr/bin/uv", "pip", "install"] and "--reinstall-package" in calls[0]
+
+
+def test_torch_install_finds_uv_off_path_and_says_so_without_uv_or_pip(monkeypatch, tmp_path):
+    from wakesmith import setup_env as se
+
+    calls = []
+    monkeypatch.setattr(se.subprocess, "run", lambda cmd, check: calls.append(cmd))
+    monkeypatch.setattr(
+        se.shutil, "which", lambda name: None
+    )  # a service's PATH without ~/.local/bin
+    monkeypatch.setattr(se.Path, "home", lambda: tmp_path)
+    uv = tmp_path / ".local" / "bin" / "uv"
+    uv.parent.mkdir(parents=True)
+    uv.write_text("#!/bin/sh\n")
+    uv.chmod(0o755)
+    se.install_torch("cuda")
+    assert calls[0][:3] == [str(uv), "pip", "install"] and "--reinstall-package" in calls[0]
+    uv.unlink()  # no uv anywhere, and an environment uv made has no pip: nothing is removed first
+    calls.clear()
+    monkeypatch.setattr(se.importlib.util, "find_spec", lambda name: None)
+    with pytest.raises(RuntimeError, match="installing packages needs uv or pip"):
+        se.install_torch("cuda")
+    assert calls == []
+
+
+def test_setup_says_in_one_line_when_microwakeword_cannot_be_installed(monkeypatch):
+    from typer.testing import CliRunner
+
+    from wakesmith import setup_env as se
+    from wakesmith.cli import app
+
+    monkeypatch.setattr(se, "python_problem", lambda: None)
+    monkeypatch.setattr(se, "missing_tools", list)
+    monkeypatch.setattr(se, "find_gpus", list)
+    monkeypatch.setattr(se, "torch_sees", lambda accel: True)  # torch already fits: install skipped
+    monkeypatch.setattr(se, "install_torch", lambda accel: None)
+
+    def no_installer():
+        raise RuntimeError("installing packages needs uv or pip")
+
+    monkeypatch.setattr(se, "install_microwakeword", no_installer)
+    r = CliRunner().invoke(app, ["setup", "--cpu", "--no-data"])
+    assert r.exit_code == 1 and "error: installing packages needs uv or pip" in r.output
+    assert r.exception.__class__ is SystemExit  # no traceback
 
 
 def test_tensorflow_kept_off_the_gpu_after_generation(monkeypatch):
@@ -2297,6 +2347,48 @@ def _names(prefix, n, half=None):
     return out
 
 
+def test_scoring_another_model_file_keeps_the_projects_results(proj, monkeypatch):
+    from typer.testing import CliRunner
+
+    from wakesmith import evaluate
+    from wakesmith.cli import app
+
+    pos, neg = _names("pos", 4), _names("neg", 4)
+    for d, names in (("real", pos), ("real_neg", neg)):
+        proj.path(d, "test").mkdir(parents=True)
+        for n in names:
+            proj.path(d, "test", n).write_bytes(b"")
+    own = proj.path("results", "mww.json")
+    own.parent.mkdir()
+    own.write_text('{"kind": "mww", "mine": true}')
+    other = proj.dir.parent / "live.tflite"
+    other.write_bytes(b"live model")
+    monkeypatch.setattr(
+        evaluate, "mww_scorer", lambda tflite, window=5, frontend="tflm": lambda f: 0.9
+    )
+    for fe in ([], ["--frontend", "zserge"]):
+        r = CliRunner().invoke(
+            app, ["test", str(proj.dir), "--kind", "mww", "--model", str(other), *fe]
+        )
+        assert r.exit_code == 0, r.output
+        assert "saved in" in r.output and "results/files/mww-" in r.output
+    assert json.loads(own.read_text())["mine"]  # the project's own results are untouched
+    assert not proj.path("results", "mww-zserge.json").exists()
+    saved = sorted(f.name for f in proj.path("results", "files").glob("*.json"))
+    wide = CliRunner(env={"COLUMNS": "200"})  # error boxes wrap messages in a narrow terminal
+    for kind in ([], ["--kind", "all"], ["--kind", "foo"]):  # which kind is it?
+        r = wide.invoke(app, ["test", str(proj.dir), "--model", str(other), *kind])
+        assert r.exit_code == 2 and "mww or oww: which kind" in r.output, r.output
+    r = wide.invoke(app, ["test", str(proj.dir), "--kind", "foo"])  # not a kind at all
+    assert r.exit_code == 2 and "mww, oww or all" in r.output
+    r = wide.invoke(app, ["test", str(proj.dir), "--model", str(proj.dir / "nope.tflite")])
+    assert r.exit_code == 2 and "does not exist" in r.output and r.exception.__class__ is SystemExit
+    assert len(saved) == 2 and all(
+        json.loads(proj.path("results", "files", n).read_text())["model"] == str(other)
+        for n in saved
+    )
+
+
 def test_held_out_halves_are_stable_and_disjoint():
     from wakesmith import evaluate
 
@@ -3435,12 +3527,19 @@ def test_versions_survive_deleting_the_one_they_came_from(tmp_path, monkeypatch)
 
 
 def test_runs_started_outside_the_page_count_as_busy(proj):
-    import os
+    import subprocess
+    import sys
 
     from wakesmith import jobs
 
-    proj.set_state(**{"mww-train": {"status": "running", "started": 1.0, "pid": os.getpid()}})
-    assert proj.name in [p.name for p in jobs.running_all()]
+    # a stand-in for `wakesmith train` run in a terminal: its command line names wakesmith
+    run = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(60)", "wakesmith"])
+    try:
+        proj.set_state(**{"mww-train": {"status": "running", "started": 1.0, "pid": run.pid}})
+        assert proj.name in [p.name for p in jobs.running_all()]
+    finally:
+        run.kill()
+        run.wait()
     proj.set_state(**{"mww-train": {"status": "running", "started": 1.0, "pid": 999999999}})
     assert proj.name not in [p.name for p in jobs.running_all()]  # its process is gone
 

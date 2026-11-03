@@ -10,6 +10,8 @@
 
 from __future__ import annotations
 
+import importlib.util
+import os
 import shutil
 import subprocess
 import sys
@@ -105,8 +107,29 @@ def choose_accel(gpus: list[tuple[str, str]]) -> str:
     return "cpu"
 
 
+def _uv() -> str | None:
+    """uv on PATH, or where its installer puts it (a service or cron job may not have ~/.local/bin on
+    PATH, and an environment uv made has no pip to fall back on)."""
+    if found := shutil.which("uv"):
+        return found
+    for d in (Path.home() / ".local" / "bin", Path.home() / ".cargo" / "bin"):
+        if (d / "uv").is_file() and os.access(d / "uv", os.X_OK):
+            return str(d / "uv")
+    return None
+
+
+def _need_pip() -> None:
+    if importlib.util.find_spec("pip") is None:
+        raise RuntimeError(
+            "installing packages needs uv or pip: uv isn't on PATH (nor in ~/.local/bin) and this "
+            "environment has no pip. Install uv (https://docs.astral.sh/uv/) or run with it on PATH"
+        )
+
+
 def _pip(*args: str) -> None:
-    uv = shutil.which("uv")
+    uv = _uv()
+    if not uv:
+        _need_pip()
     cmd = (
         [uv, "pip", "install", "--python", sys.executable, *args]
         if uv
@@ -118,7 +141,7 @@ def _pip(*args: str) -> None:
 def install_torch(accel: str) -> None:
     # Reinstall even when a torch is there: it may be a build for another device. pip has no
     # --reinstall-package (uv only), and its --force-reinstall would reinstall every dependency too.
-    if shutil.which("uv"):
+    if _uv():
         _pip(
             "--reinstall-package",
             "torch",
@@ -130,6 +153,7 @@ def install_torch(accel: str) -> None:
             TORCH_INDEX[accel],
         )
         return
+    _need_pip()  # before removing anything
     subprocess.run(
         [sys.executable, "-m", "pip", "uninstall", "-y", "torch", "torchaudio"], check=True
     )

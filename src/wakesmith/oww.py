@@ -140,6 +140,11 @@ def _init_worker(noise_dir: str, rir_dir: str, frontend: bool = True) -> None:
     )
     if frontend:
         _W["fe"] = Frontend(threads=1)
+    from threadpoolctl import threadpool_limits
+
+    # one BLAS thread per worker, as for microWakeWord's (mww._init_worker): set last, as it only limits
+    # libraries already loaded
+    _W["limits"] = threadpool_limits(1)
 
 
 def _augment(files: list[str], rounds: int) -> list[np.ndarray]:

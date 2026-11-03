@@ -33,7 +33,7 @@ wakesmith serve      # dann http://localhost:8765/ im Browser öffnen
 ```
 
 wakesmith braucht Python 3.10 bis 3.12; `--python 3.12` sorgt dafür, dass uv die passende Version
-nimmt (und sie bei Bedarf lädt). Auf macOS statt apt: `brew install espeak-ng git`.
+nimmt (und sie bei Bedarf lädt).
 
 Nach der uv-Installation einmal ein neues Terminal öffnen, damit der Befehl `wakesmith` gefunden
 wird. `wakesmith setup` dauert je nach Leitung eine Weile. `wakesmith doctor` zeigt, ob alles da ist
