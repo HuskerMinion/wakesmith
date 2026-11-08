@@ -119,7 +119,8 @@ def test_features_leave_out_what_was_heard_as_the_phrase(proj):
     assert len(sets["negative_test"][0]) == 3 and len(sets["positive_train"][0]) == 4
 
 
-def test_time_estimate_counts_clips_still_to_hear(proj):
+def test_time_estimate_counts_clips_still_to_hear(proj, monkeypatch):
+    monkeypatch.setattr(eta, "_can_listen", lambda: True)  # GitHub's runners have no GPU
     proj.samples.negative, proj.samples.negative_test = 4, 4
     assert eta.units(proj, "check-clips") == 8
     clipcheck.run_share(proj, "cpu", 0, 1, listen=listen)
