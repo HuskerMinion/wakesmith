@@ -22,15 +22,18 @@ jobs:
         run: |
           v=$(uv run --no-project python -c "import tomllib; print(tomllib.load(open('pyproject.toml','rb'))['project']['version'])")
           test "v$v" = "$GITHUB_REF_NAME" || { echo "pyproject version $v does not match tag $GITHUB_REF_NAME"; exit 1; }
+          # the page's update checks the installed __version__ against the release: a mismatch would roll back everywhere
+          grep -qx "__version__ = \"$v\"" src/wakesmith/__init__.py || { echo "__version__ does not match $v"; exit 1; }
       - name: Check what the wheel ships
         run: |
           python3 - <<'PY'
           import glob, sys, zipfile
           names = zipfile.ZipFile(glob.glob("dist/*.whl")[0]).namelist()
           need = ["LICENSE", "THIRD_PARTY_NOTICES.md", "wakesmith/web/index.html", "wakesmith/web/review.html",
-                  "wakesmith/web/FONTS-LICENSE.txt", "wakesmith/web/favicon.png", "wakesmith/tts/vits/LICENSE"]
+                  "wakesmith/web/FONTS-LICENSE.txt", "wakesmith/web/favicon.png", "wakesmith/web/wakesmith-w.png",
+                  "wakesmith/tts/vits/LICENSE", "wakesmith/update.py", "wakesmith/clipcheck.py"]
           missing = [n for n in need if not any(x.endswith(n) for x in names)]
-          bad = [x for x in names if x.endswith((".wav", ".tflite", ".onnx", ".pt")) or "/tests/" in x]
+          bad = [x for x in names if x.endswith((".wav", ".tflite", ".onnx", ".pt", ".npy")) or x.startswith("tests/") or "/tests/" in x]
           meta = zipfile.ZipFile(glob.glob("dist/*.whl")[0]).read([n for n in names if n.endswith("METADATA")][0]).decode()
           fonts = sum(x.endswith(".woff2") for x in names)
           ok = "License-Expression: PolyForm-Noncommercial-1.0.0" in meta and meta.count("License-File: ") == 4 and fonts == 7

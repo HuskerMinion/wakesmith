@@ -21,7 +21,7 @@ import numpy as np
 import soundfile as sf
 import yaml
 
-from . import assets, conversational
+from . import assets, clipcheck, conversational
 from .project import Project
 from .real import RealData
 
@@ -72,8 +72,9 @@ def feature_jobs(p: Project) -> list[tuple[str, str, list[str], int, int]]:
     if not p.real.sampling_weight:
         pos_train += real_pos
     pos_test = _originals(p.path("clips", "positive_test"))
-    adv_train = _originals(p.path("clips", "negative_train"))
-    adv_test = _originals(p.path("clips", "negative_test"))
+    # sound-alike clips Whisper heard as the phrase itself are left out (clipcheck.py)
+    adv_train = clipcheck.keep(p, "negative_train", _originals(p.path("clips", "negative_train")))
+    adv_test = clipcheck.keep(p, "negative_test", _originals(p.path("clips", "negative_test")))
     random.Random(0).shuffle(pos_test)
     random.Random(0).shuffle(adv_test)
     h, ha = len(pos_test) // 2, len(adv_test) // 2

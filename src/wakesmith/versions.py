@@ -78,7 +78,7 @@ def create(p: Project, note: str = "") -> Project:
         done = {
             k: v
             for k, v in p.state().items()
-            if k in ("generate", "conversational") and v.get("status") == "done"
+            if k in ("generate", "check-clips", "conversational") and v.get("status") == "done"
         }
         if done:
             q.set_state(**done)

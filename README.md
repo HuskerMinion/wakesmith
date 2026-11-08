@@ -45,9 +45,12 @@ wakesmith needs Python 3.10 to 3.12 (TensorFlow and microWakeWord's dependencies
 newer ones); `--python 3.12` makes uv fetch it if needed. On a Mac with Apple silicon, training runs
 on its GPU (see [Status](#status)).
 
-To update, run `uv tool install --python 3.12` on the newer wheel with `--force`, then `wakesmith setup` again: the
-reinstall starts a fresh environment without PyTorch, and setup puts the right build back (the data
-stays).
+To update, press **Update** on the Hardware page when a new version is out: wakesmith downloads the
+wheel from the Releases page, checks it against the sha256 GitHub lists, installs it next to your PyTorch and restarts itself
+(it waits while anything is training or queued; if it can't restart by itself, the page says to start it again). To see that a new version is out it asks GitHub when
+you open the page, about twice a day; turn that off on the same page. By hand: run `uv tool install --python 3.12`
+on the newer wheel with `--force`, then `wakesmith setup` again: that reinstall starts a fresh
+environment without PyTorch, and setup puts the right build back (the data stays).
 
 To use it from another computer or a phone on your LAN, run `wakesmith serve --host 0.0.0.0` and
 open the link it prints (it carries an access token, which stays the same between restarts).
@@ -101,6 +104,18 @@ runs finish** in the Queue panel adds a desktop notification.
    notice, in the browser too if you allow it.
 
    ![Training progress](docs/images/training.png)
+
+   **Listening check.** A sound-alike one letter away from the phrase ("hey jarvus" for "hey
+   jarvis") is often spoken exactly like the phrase by a synthetic voice, and trained as "not the
+   phrase" it teaches the model to ignore its own wake word. So before the features, Whisper listens
+   to every sound-alike take and leaves out those whose whole transcript is the phrase; one that only
+   contains it ("hey jarvis is") stays. In a test on one wake word Whisper heard 7% of them as the
+   phrase; three models trained without those caught 71-76% of real calls at up to 3 false triggers,
+   against 41-71% for three trained with them, with the same or fewer false triggers in hours of
+   talk. It needs a GPU and Whisper's first download (without them it's skipped and tried again on the
+   next run) and takes about half an hour for a Standard set on
+   one card, once: the clips stay checked for retrains and new versions. The Training page shows how
+   many were left out; turn it off with `samples: check_negatives: false` in `project.yaml`.
 5. **Results and export.** Caught and false triggers at every cutoff, broken down by test set (your
    recordings, device clips, sound-alikes...) so a weak spot shows even when the totals look fine,
    every run side by side, then a `.tflite` with its manifest for ESPHome (plus a YAML snippet)
@@ -126,7 +141,7 @@ There is also a Help page in the app, and every step works from the command line
 ```bash
 wakesmith doctor                        # hardware, settings, downloaded data and licenses
 wakesmith new "hey jarvis" --positives ~/rec/wake --negatives ~/rec/false
-wakesmith train hey_jarvis              # resumable: generate real commonvoice conversational
+wakesmith train hey_jarvis              # resumable: generate check-clips real commonvoice conversational
                                         #   mww-features mww-train oww-features oww-train test export
 wakesmith test hey_jarvis               # held-out results table
 wakesmith export hey_jarvis --cutoff 0.9
@@ -203,7 +218,7 @@ make it good, and they are the only honest test.
 **Record in the browser.** Real voices > Record here: a prompt for each take (close, across the room,
 TV on, quietly...), a level meter, automatic stop when you finish, a name per speaker, and every
 fourth take kept aside for testing (switch any take between train and test). The microphone is
-recorded raw, without echo cancelling or automatic gain, closer to what a device hears.
+recorded raw, without echo canceling or automatic gain, closer to what a device hears.
 
 ![Recording takes in the browser](docs/images/record.png)
 
@@ -250,7 +265,7 @@ usually have none, and the page tells you so.
 **Device clips: the next round.** The best negatives are what fooled the current model, and devices
 that save a clip when they fire collect them for you. Real voices > Device clips imports a folder of
 such clips (a `.json` next to each with `at`, `device`, `model`, `score` is read), transcribes them with
-Whisper in the background (install the `whisper` extra; faster-whisper, Home Assistant's engine, is used
+Whisper in the background (installed with wakesmith; faster-whisper, Home Assistant's engine, is used
 when it's installed). Clips whose transcript has none of the phrase's words are labeled "not the phrase"
 by themselves; the rest wait under *Listen*, because only a person can tell a call from the TV saying the
 phrase. *Quick check* plays them one at a time (Y the phrase, N not the phrase, L leave out). Then choose
@@ -381,11 +396,13 @@ data, models scoring alike on test recordings:
 | openWakeWord features, Standard project | 17.9 min (CPU) | **2.8 min** (Arc Pro B70) |
 | openWakeWord training | 9.5 min (Keras, CPU) | **1.8 min** |
 | Synthetic speech | 3-30 clips/s (CPU) | **about 80 clips/s** (RTX 5060 Ti), 50-130 per Arc card |
+| Listening check (new, once per set of clips) | none | about 14 clips/s per RTX 5060 Ti: 30 min for 27,500 on one card |
 | **A whole Standard run** (both model types) | **about an hour** | **15 minutes** (RTX 5060 Ti) |
 
 Measured on a Ryzen 5 7600X with an Arc Pro B70, and on an i9-13900K with an RTX 5060 Ti; the whole-run
 figures are both on the RTX 5060 Ti machine, before and after training moved to the GPU. The details
-are under Hardware below.
+are under Hardware below. The whole-run time is without the listening check, which adds about half an
+hour on one card the first time.
 
 ## Hardware
 
@@ -472,7 +489,9 @@ Training data is downloaded at setup, never bundled; `wakesmith doctor` and the 
 list each item and its license. The default **personal** data profile uses datasets with
 **non-commercial** terms (microWakeWord's negative sets: CC BY-NC 4.0; openWakeWord's ACAV100M
 features: CC BY-NC-SA 4.0), so models trained with it are for personal use. Common Voice is CC0; the
-aligner that cuts phrases out of it (MMS, through torchaudio) has CC BY-NC 4.0 weights. Every export
+aligner that cuts phrases out of it (MMS, through torchaudio) has CC BY-NC 4.0 weights. Whisper
+(large-v3-turbo, MIT, through Hugging Face transformers) is downloaded the first time it listens, for
+the listening check and device clips; it only decides which clips to use. Every export
 includes a LICENSE-NOTE.txt listing what that model was trained on.
 
 ## Credits

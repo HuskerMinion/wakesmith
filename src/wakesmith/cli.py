@@ -20,6 +20,23 @@ app = typer.Typer(
 CPU_HELP = "use only the CPU, even if a GPU is found"
 
 
+def _refuse_during_an_update() -> None:
+    from . import assets
+
+    if (
+        "--help" not in sys.argv and assets.update_underway()
+    ):  # help runs none of the command's code
+        raise typer.Exit(assets.UPDATE_UNDERWAY)
+
+
+@app.callback()
+def _every_command(ctx: typer.Context) -> None:
+    # Commands import wakesmith's files, which the page's update may be replacing right now. A second
+    # server and a look at the machine are fine; `clips` and `room` decide below (the timed sync skips).
+    if ctx.invoked_subcommand not in ("serve", "doctor", "clips", "room"):
+        _refuse_during_an_update()
+
+
 def _cpu_only(cpu: bool) -> None:
     if cpu:
         os.environ["WAKESMITH_CPU"] = "1"  # inherited by worker processes
@@ -356,6 +373,12 @@ clips_app = typer.Typer(
 app.add_typer(clips_app, name="clips")
 
 
+@clips_app.callback()
+def _clips_commands(ctx: typer.Context) -> None:
+    if ctx.invoked_subcommand != "sync-all":  # a timer runs that: it skips, without failing
+        _refuse_during_an_update()
+
+
 @clips_app.command("import")
 def clips_import(
     project_: str = typer.Argument(..., metavar="PROJECT"), folder: str = typer.Argument(...)
@@ -472,8 +495,11 @@ def clips_sync_all(
     limit: int = typer.Option(0, help="at most this many new clips per wake word (0: all)"),
 ) -> None:
     """`clips sync` for every wake word with a source folder (devices.source)."""
-    from . import clipsync
+    from . import assets, clipsync
 
+    if assets.update_underway():
+        typer.echo("skipped: wakesmith is being updated; the next sync catches up")
+        return
     rs = clipsync.sync_all(transcribe_device, limit)
     for r in rs:
         typer.echo(f"{r['project']}: {clipsync.describe(r)}")
@@ -642,6 +668,7 @@ def serve(
     ),
 ) -> None:
     """Start the web UI."""
+    import logging
     import secrets
 
     _cpu_only(cpu)
@@ -666,13 +693,49 @@ def serve(
         typer.echo("self-signed certificate: the browser warns once; accept it to continue")
     elif not local:
         typer.echo("recording takes in the browser needs HTTPS from other devices: add --https")
-    uvicorn.run(create_app(token), host=host, port=port, log_level="warning", **tls)
+    webapp = create_app(token)
+    # A Server of our own, not uvicorn.run: the page's update asks it to stop, and then this process
+    # becomes the new version. The bounded shutdown is for the page's open live-updates connections.
+    server = uvicorn.Server(
+        uvicorn.Config(
+            webapp, host=host, port=port, log_level="warning", timeout_graceful_shutdown=3, **tls
+        )
+    )
+    updater = webapp.state.updater
+
+    def stop_for_restart() -> None:
+        # open connections are cut off: expected here, not the errors uvicorn would print about it
+        logging.getLogger("uvicorn.error").setLevel(logging.CRITICAL)
+        server.should_exit = True
+
+    updater.restart = stop_for_restart
+    from . import update
+
+    update.clean_leftovers()
+    try:
+        server.run()
+    except KeyboardInterrupt:
+        return  # told to stop, even if an update had just finished
+    if not server.started:  # the port is taken, say; uvicorn has said so
+        raise typer.Exit(3)
+    if updater.restarting:
+        try:
+            update.restart()
+        except OSError as e:
+            raise typer.Exit(
+                f"updated, but restarting failed ({e}): start wakesmith serve again"
+            ) from None
 
 
 room_app = typer.Typer(
     help="Whole-room recordings: split them into takes, send them to the wake words."
 )
 app.add_typer(room_app, name="room")
+
+
+@room_app.callback()
+def _room_commands() -> None:
+    _refuse_during_an_update()
 
 
 @room_app.command("list")

@@ -27,7 +27,7 @@ import time
 from contextlib import contextmanager
 from pathlib import Path
 
-from . import mww
+from . import assets, mww, sysstat
 from . import project as projects
 from .project import Project
 
@@ -120,17 +120,52 @@ def stages(p: Project, names) -> dict:
     out = {s: st.get(s) for s in names}
     if not status(p)["running"]:
         for s, v in out.items():
-            if v and v.get("status") == "running" and not (v.get("pid") and _alive(v["pid"])):
+            if v and v.get("status") == "running" and not _stage_running(v):
                 out[s] = {**v, "status": "failed", "error": STOPPED}
     return out
 
 
+def _stage_running(v: object) -> bool:
+    """A stage noted as running whose process is alive. One that started at another moment than the
+    stage's (noted as `ticks`) is another process that got the pid after a restart, not the run."""
+    if not (isinstance(v, dict) and v.get("status") == "running" and v.get("pid")):
+        return False
+    if not _alive(v["pid"]):
+        return False
+    noted, now = v.get("ticks"), sysstat.start_ticks(v["pid"])
+    if noted is None:  # noted by a version before 0.4.8: at least it can't be from before a reboot
+        boot, started = sysstat.booted_at(), v.get("started")
+        return not boot or not isinstance(started, (int, float)) or started >= boot
+    return now is None or noted == now
+
+
 def outside_run(p: Project) -> bool:
     """A run started outside the page (the command line, a script) is training this project now."""
-    return any(
-        isinstance(v, dict) and v.get("status") == "running" and v.get("pid") and _alive(v["pid"])
-        for v in p.state().values()
-    )
+    return any(_stage_running(v) for v in p.state().values())
+
+
+def busy(p: Project) -> bool:
+    """This project is training now, however the run was started: nothing may change under it."""
+    return status(p)["running"] or outside_run(p)
+
+
+def shown(p: Project) -> dict:
+    """status() as the page shows it: a run started outside the page (the command line, a script) counts
+    as running too, with its process session as `pid` (the memory panel follows it like a page job) and
+    `outside`, since the page can't stop it. When its session is one it doesn't lead (the shell it was
+    typed in), `pid` is the run's own process: the session would count everything else in that terminal."""
+    job = status(p)
+    if job["running"]:
+        return job
+    for v in p.state().values():
+        if _stage_running(v):
+            try:
+                sid = os.getsid(v["pid"])
+            except OSError:
+                sid = v["pid"]
+            out = {"running": True, "outside": True, "started": v.get("started")}
+            return {**out, "pid": sid, "own_session": sid == v["pid"], "run_pid": v["pid"]}
+    return job
 
 
 def _with_jobs() -> list[Project]:
@@ -390,6 +425,8 @@ def _reconcile() -> None:
 def kick() -> list[dict]:
     """Start queued runs while there is room. Safe to call from any process at any time."""
     started = []
+    if assets.update_underway():  # they stay queued; the server's check starts them afterwards
+        return started
     with _locked():
         _reconcile()
         while True:
@@ -434,6 +471,18 @@ def progress(p: Project) -> dict:
                 out[f"generate-{part}"] = json.loads(f.read_text())
             except json.JSONDecodeError:
                 pass
+    shares = []  # check-clips: one progress file per card
+    for f in sorted(p.path("logs").glob("check-clips-[0-9]*.json")):
+        try:
+            shares.append(json.loads(f.read_text()))
+        except (OSError, json.JSONDecodeError):
+            pass
+    if shares:
+        out["check-clips"] = {
+            "done": sum(x.get("done", 0) for x in shares),
+            "total": sum(x.get("total", 0) for x in shares),
+            "time": min(x.get("time", 0) for x in shares),
+        }
     mlog = p.path("logs", "mww-train.log")
     if mlog.exists():
         # microWakeWord prints "Validation Batch #k ... Mini-Batch #m" (\r-terminated) every step

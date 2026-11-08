@@ -1,6 +1,9 @@
 """The training pipeline as resumable stages, with status in <project>/state.json.
 
 generate      synthetic clips of the phrase and its sound-alikes (GPU when available)
+check-clips   Whisper listens to the sound-alike clips; those it hears as the phrase itself are left
+              out of training (clipcheck.py; GPU only; runs with every features stage, and has nothing
+              to do once every clip was checked)
 real          prepare real recordings (held-out split, review corrections, trimming)
 commonvoice   real volunteer voices from Common Voice (only when enabled)
 conversational  everyday sentences from an AI assistant, spoken as not-the-phrase clips (experimental;
@@ -24,7 +27,9 @@ from collections.abc import Callable
 from datetime import datetime
 
 from . import (
+    assets,
     candidates,
+    clipcheck,
     commonvoice,
     conversational,
     ensemble,
@@ -37,6 +42,7 @@ from . import (
     oww,
     runs,
     synth,
+    sysstat,
     verdict,
 )
 from .project import Project
@@ -44,6 +50,7 @@ from .real import RealData
 
 STAGES = [
     "generate",
+    "check-clips",
     "real",
     "commonvoice",
     "conversational",
@@ -65,6 +72,8 @@ def enabled(p: Project, stage: str) -> bool:
         return p.uses_commonvoice
     if stage == "conversational":
         return p.conversational.clips > 0
+    if stage == "check-clips":
+        return p.samples.check_negatives
     return True
 
 
@@ -72,6 +81,7 @@ def enabled(p: Project, stage: str) -> bool:
 # the maker "archived"; such makers rerun first whenever a stage that reads their output runs.
 NEEDS = {
     "commonvoice": ("real",),  # it adds takes to real/train
+    "check-clips": ("generate",),
     "mww-features": ("generate", "real", "commonvoice"),
     "mww-train": ("mww-features", "real"),  # best of N picks on real_neg/test
     "oww-features": ("generate", "real", "commonvoice"),
@@ -104,6 +114,8 @@ def run(
     last: str = STAGES[-1],
     log: Callable[[str], None] | None = None,
 ) -> None:
+    if assets.update_underway():
+        raise RuntimeError(assets.UPDATE_UNDERWAY)
     logf = p.path("logs", "train.log")
     logf.parent.mkdir(parents=True, exist_ok=True)
 
@@ -117,11 +129,17 @@ def run(
     if extra := rebuild_first(p, stages):
         say(f"rebuilding what archiving removed first: {', '.join(extra)}")
         stages = [s for s in STAGES if s in stages or s in extra]
+    if {"mww-features", "oww-features"} & set(stages) and "check-clips" not in stages:
+        # the features leave out what Whisper heard as the phrase: clips not checked yet (a project
+        # from before the check, or clips made again) are checked first; nothing to do otherwise
+        stages = [s for s in STAGES if s in stages or s == "check-clips"]
     # Speech generation, both models' training and openWakeWord features use the GPU: other stages must
     # not open the driver at all.
-    gpu_stages = {"generate", "mww-train", "oww-features", "oww-train"}
+    gpu_stages = {"generate", "check-clips", "mww-train", "oww-features", "oww-train"}
     if p.conversational.clips > 0:
         gpu_stages.add("conversational")
+    if not (p.samples.check_negatives and clipcheck.todo(p)):
+        gpu_stages.discard("check-clips")  # nothing to hear: the stage only says so
     if gpu_stages & set(stages):
         hw, problem = hardware.detect_safe()
         if problem:
@@ -141,7 +159,16 @@ def run(
     for stage in stages:
         if not enabled(p, stage):
             continue
-        p.set_state(**{stage: {"status": "running", "started": time.time(), "pid": os.getpid()}})
+        p.set_state(
+            **{
+                stage: {
+                    "status": "running",
+                    "started": time.time(),
+                    "pid": os.getpid(),
+                    "ticks": sysstat.start_ticks(os.getpid()),
+                }
+            }
+        )
         say(f"=== {stage}")
         t0 = time.time()
         try:
@@ -172,12 +199,14 @@ def _tf_off_gpu() -> None:
 
 def _run_stage(p: Project, stage: str, hw: hardware.Hardware, say) -> dict | None:
     # TensorFlow stays off the GPU (mww-train hands it back to PyTorch); speech generation keeps it
-    if stage not in ("generate", "conversational"):
+    if stage not in ("generate", "check-clips", "conversational"):
         _tf_off_gpu()
     if stage == "generate":
         if synth.complete(p):
             return {"skipped": "all clips present"}
         return synth.run(p, hw.tts_devices(), hw.tts_batch(), log=say)
+    if stage == "check-clips":
+        return clipcheck.run(p, hw.tts_devices(), log=say)
     if stage == "real":
         real = RealData(p)
         return real.prepare() if real else {"skipped": "no real recordings"}

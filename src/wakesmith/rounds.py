@@ -9,7 +9,7 @@ positives. This module brings them in and turns them into training data:
    is read when present (its "device" names the device, else the first folder below the one imported),
    else the file time is used. Copies, because device clip folders are often
    pruned after a while.
-2. transcribe: Whisper on every clip not transcribed yet (wakesmith[whisper]: Hugging Face
+2. transcribe: Whisper on every clip not transcribed yet (Hugging Face
    transformers on the GPU, or faster-whisper when installed, the engine Home Assistant uses).
 3. suggest: "wake" when the transcript says the phrase, "not_wake" when it has none of the phrase's
    words, "unclear" otherwise. You confirm or change labels (label(), the Device clips page).
@@ -187,8 +187,8 @@ class _Whisper:
             from transformers import WhisperForConditionalGeneration, WhisperProcessor
         except ImportError:
             raise RuntimeError(
-                "transcribing needs Whisper: install wakesmith with the whisper extra "
-                "(uv tool install --with transformers ..., or faster-whisper)"
+                "transcribing needs Whisper, which comes with wakesmith: reinstall it, "
+                "or install faster-whisper"
             ) from None
         name = "openai/whisper-large-v3-turbo"
         dtype = torch.float32 if device == "cpu" else torch.float16

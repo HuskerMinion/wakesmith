@@ -23,6 +23,7 @@ from .. import (
     archive,
     assets,
     assistant,
+    clipcheck,
     clipsync,
     commonvoice,
     ensemble,
@@ -41,6 +42,7 @@ from .. import (
     runs,
     sessions,
     sysstat,
+    update,
     verdict,
     versions,
 )
@@ -116,6 +118,9 @@ async def _lifespan(app: FastAPI):
     async def check():
         last_archive = None
         while True:
+            if app.state.updater.frozen():  # files are being replaced: nothing new starts from them
+                await asyncio.sleep(QUEUE_CHECK_S)
+                continue
             try:
                 await asyncio.to_thread(jobs.kick)
             except Exception as e:  # noqa: BLE001 - keep checking; the next try may work
@@ -136,6 +141,7 @@ async def _lifespan(app: FastAPI):
 def create_app(token: str | None = None) -> FastAPI:
     app = FastAPI(title="wakesmith", docs_url=None, redoc_url=None, lifespan=_lifespan)
     state: dict = {"hw": None, "hw_time": 0.0}
+    updater = app.state.updater = update.Updater()
 
     @app.middleware("http")
     async def auth(request: Request, call_next):
@@ -152,7 +158,18 @@ def create_app(token: str | None = None) -> FastAPI:
             given = request.query_params.get("token") or request.cookies.get("wakesmith_token")
             if not given or not secrets.compare_digest(given, token):
                 return JSONResponse({"detail": "access token required"}, status_code=401)
-        resp = await call_next(request)
+        if write and updater.frozen():  # nothing new starts on files that are being replaced
+            return JSONResponse(
+                {"detail": "wakesmith is updating, or waiting to be started again after an update"},
+                status_code=503,
+            )
+        if write:
+            updater.writes += 1
+        try:
+            resp = await call_next(request)
+        finally:
+            if write:
+                updater.writes -= 1
         if token and request.query_params.get("token"):
             resp.set_cookie("wakesmith_token", token, httponly=True, samesite="strict")
         return resp
@@ -273,6 +290,40 @@ def create_app(token: str | None = None) -> FastAPI:
         threading.Thread(target=_download_all, daemon=True).start()
         return download_status()
 
+    # -- updating wakesmith ------------------------------------------------------------------
+    def update_waits() -> str | None:
+        """What only this server knows about; the updater checks for runs itself."""
+        if dl["running"]:
+            return "Training data is downloading: update when it has finished."
+        if sessions.split_running():
+            return "A room recording is being split: update when it has finished."
+        return None
+
+    updater.waiting = update_waits
+
+    @app.get("/api/update")
+    def update_status():
+        updater.check()  # asks GitHub only when due and turned on
+        return updater.status()
+
+    @app.post("/api/update/check")
+    def update_check():
+        updater.check(force=True)
+        return updater.status()
+
+    @app.put("/api/update/settings")
+    def update_settings(body: dict):
+        update.set_auto_check(body.get("auto") is True)
+        return updater.status()
+
+    @app.post("/api/update")
+    def update_start(body: dict):
+        try:
+            updater.start(str(body.get("version", "")))
+        except ValueError as e:
+            raise HTTPException(409, str(e)) from None
+        return updater.status()
+
     def offered(language: str) -> None:
         """400 unless new wake words may be in this language (experimental ones only when turned on)."""
         if language not in [x.code for x in languages.available()]:
@@ -350,7 +401,7 @@ def create_app(token: str | None = None) -> FastAPI:
             "language": p.language,
             "stages": jobs.stages(p, STAGES),
             "estimates": eta.estimates(p),
-            "job": jobs.status(p),
+            "job": jobs.shown(p),
             "results": results,
             "exported": sorted(
                 str(f.relative_to(p.path("export")))
@@ -384,9 +435,7 @@ def create_app(token: str | None = None) -> FastAPI:
         projects.assign_versions(found)
         for p in found:
             st = jobs.stages(p, STAGES)
-            job = jobs.status(p)
-            if not job["running"] and jobs.outside_run(p):
-                job = {**job, "running": True, "outside": True}
+            job = jobs.shown(p)
             out.append(
                 {
                     "name": p.name,
@@ -566,7 +615,7 @@ def create_app(token: str | None = None) -> FastAPI:
     @app.delete("/api/projects/{name}")
     def delete_project(name: str):
         p = proj(name)
-        if jobs.status(p)["running"]:
+        if jobs.busy(p):
             raise HTTPException(409, "a job is running; stop it before deleting the wake word")
         try:
             freed = projects.delete(p)
@@ -636,7 +685,7 @@ def create_app(token: str | None = None) -> FastAPI:
     def make_verdict(name: str):
         """Score the live version's model on this version's held-out clips (a minute or two)."""
         p = proj(name)
-        if jobs.status(p)["running"]:
+        if jobs.busy(p):
             raise HTTPException(409, "a job is running; compare after it ends")
         out = {}
         for kind, on in (("mww", p.microwakeword.enabled), ("oww", p.openwakeword.enabled)):
@@ -698,7 +747,7 @@ def create_app(token: str | None = None) -> FastAPI:
                         kin.save()
             p.save()
             return summary(p)
-        if jobs.status(p)["running"]:
+        if jobs.busy(p):
             raise HTTPException(409, "a job is running; stop it before changing settings")
         _apply(p, body)  # first: settings it refuses leave every version as it was
         if "written_as" in body:
@@ -711,7 +760,7 @@ def create_app(token: str | None = None) -> FastAPI:
 
     # -- takes recorded in the browser --------------------------------------------------------
     def _idle(p: projects.Project) -> None:
-        if jobs.status(p)["running"]:
+        if jobs.busy(p):
             raise HTTPException(409, "a job is running; recordings can change after it ends")
 
     @app.get("/api/projects/{name}/recordings")
@@ -901,6 +950,9 @@ def create_app(token: str | None = None) -> FastAPI:
             synth[kind] = sum(
                 sum(1 for e in os.scandir(d) if e.name.endswith(".wav")) for d in dirs if d.is_dir()
             )
+        if p.samples.check_negatives:  # clips Whisper heard as the phrase aren't learned from
+            left_out = sum(len(clipcheck.phrase_clips(p, s)) for s in clipcheck.SPLITS)
+            synth["negative"] = max(0, synth["negative"] - left_out)
         return {
             "sources": _groups(p),
             "synthetic": synth,
@@ -1168,7 +1220,7 @@ def create_app(token: str | None = None) -> FastAPI:
                     chunk = f.read()
                 pos += len(chunk)
                 lines = chunk.decode("utf-8", "replace").splitlines()
-            job = jobs.status(p)
+            job = jobs.shown(p)
             data = {
                 "lines": lines[-200:],
                 "progress": jobs.progress(p),
@@ -1407,7 +1459,7 @@ def create_app(token: str | None = None) -> FastAPI:
     def _failure(p: projects.Project) -> dict:
         """The failed stage (the first one, in pipeline order: later failures are older), its
         log excerpt and the quick checks. Empty when nothing failed or a job is running."""
-        if jobs.status(p)["running"]:
+        if jobs.busy(p):
             return {}
         st = jobs.stages(p, STAGES)
         stage = next((s for s in STAGES if (st.get(s) or {}).get("status") == "failed"), None)

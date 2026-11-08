@@ -997,6 +997,29 @@ def test_new_project_without_sound_alikes_gets_suggestions(tmp_path, monkeypatch
     assert len(r.json()["negatives"]) >= 2 and "husker" in r.json()["negatives"]
 
 
+def test_real_voices_howto_names_what_the_page_has():
+    import re
+
+    from wakesmith.web.server import HERE
+
+    page = (HERE / "index.html").read_text()
+    guide = page[page.index("const howtoHtml") :]
+    guide = guide[: guide.index("</p>`;")]
+    # the buttons, fields and tabs it tells you to use are still called that elsewhere on the page
+    for name in (
+        "Who's speaking?",
+        "Record 10 s of room sound",
+        "Retrain from recordings",
+        "Device clips",
+    ):
+        assert name in guide and page.count(name) > guide.count(name), name
+    assert "Use this house's room echoes" in page  # the switch step 5 sends you to, on Train
+    # its links go to pages the router knows
+    for route in re.findall(r'href="#/([a-z]+)', guide) + ["p"]:
+        assert f'"#/{route}' in page.replace(guide, ""), route
+    assert re.findall(r"#/p/\$\{enc\(p\.name\)\}/(\w+)", guide) == ["train", "results"]
+
+
 def test_help_page_guide_is_the_running_versions_readme():
     from fastapi.testclient import TestClient
 
@@ -2038,7 +2061,8 @@ def test_training_after_archive_rebuilds_what_it_needs_first(proj, tmp_path, mon
     monkeypatch.setattr(pipeline, "_run_stage", lambda p, s, hw, say: ran.append(s))
     monkeypatch.setattr(hardware, "detect_safe", lambda: (hardware.detect(gpu=False), None))
     pipeline.run(proj, "mww-train", "mww-train", log=lambda m: None)
-    assert ran == ["real", "mww-features", "mww-train"]
+    # the listening check comes with every features stage (nothing to do once the clips were heard)
+    assert ran == ["check-clips", "real", "mww-features", "mww-train"]
     assert proj.state()["mww-features"]["status"] == "done"
     assert proj.state()["oww-features"]["status"] == "archived"  # not needed yet
     assert "rebuilding what archiving removed" in proj.path("logs", "train.log").read_text()
@@ -3535,7 +3559,8 @@ def test_runs_started_outside_the_page_count_as_busy(proj):
     # a stand-in for `wakesmith train` run in a terminal: its command line names wakesmith
     run = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(60)", "wakesmith"])
     try:
-        proj.set_state(**{"mww-train": {"status": "running", "started": 1.0, "pid": run.pid}})
+        started = __import__("time").time()
+        proj.set_state(**{"mww-train": {"status": "running", "started": started, "pid": run.pid}})
         assert proj.name in [p.name for p in jobs.running_all()]
     finally:
         run.kill()

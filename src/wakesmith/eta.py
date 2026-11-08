@@ -7,14 +7,18 @@ Until a stage has run once, the defaults below (measured on 12 cores + 2 x Arc) 
 
 from __future__ import annotations
 
+import functools
+import importlib.util
 import json
+import sys
 
-from . import assets
+from . import assets, hardware, setup_env
 from .project import Project
 from .real import RealData
 
 DEFAULT_SECONDS_PER_UNIT = {
     "generate": 0.0072,
+    "check-clips": 0.07,  # Whisper turbo, one clip per window: ~14 clips/s on an RTX 5060 Ti
     "real": 0.01,
     "mww-features": 0.0009,
     "mww-train": 0.01,  # PyTorch port: ~0.007 on a GPU, ~0.02 on 12 CPU threads
@@ -38,6 +42,14 @@ def _load() -> dict:
         return {}
 
 
+@functools.lru_cache(maxsize=1)
+def _can_listen() -> bool:
+    """A GPU (from PCI ids, not opening its driver) and Whisper: without them the check is skipped."""
+    if hardware.forced_cpu() or importlib.util.find_spec("transformers") is None:
+        return False
+    return sys.platform == "darwin" or bool(setup_env.find_gpus())
+
+
 def units(p: Project, stage: str) -> float:
     s = p.samples
     clips = s.positive + s.negative + s.positive_test + s.negative_test
@@ -46,6 +58,15 @@ def units(p: Project, stage: str) -> float:
         return conv
     if stage == "generate":
         return clips
+    if stage == "check-clips":
+        # the sound-alike clips Whisper hasn't heard yet (one line per clip heard; roughly)
+        if not p.samples.check_negatives or not _can_listen() or p.hardware.get("gpus") == []:
+            return 0
+        heard = 0
+        for f in p.path("clips", "whisper").glob("negatives-*.jsonl"):
+            with open(f, "rb") as fh:
+                heard += sum(1 for _ in fh)
+        return max(0, s.negative + s.negative_test - heard)
     if stage in ("mww-features", "oww-features"):
         return clips + conv
     if stage == "mww-train":
@@ -77,7 +98,8 @@ def _key(p: Project, stage: str) -> str:
 
 def record(p: Project, stage: str, seconds: float, info: dict | None) -> None:
     """Fold a finished stage's rate into the machine's timings (skipped stages don't count)."""
-    n = units(p, stage)
+    # the listening check's units are the clips still to hear: count what this run heard instead
+    n = (info or {}).get("listened", 0) if stage == "check-clips" else units(p, stage)
     if n <= 0 or (info and "skipped" in info):
         return
     t = _load()

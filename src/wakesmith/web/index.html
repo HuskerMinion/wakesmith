@@ -137,6 +137,8 @@
   details.learns > summary::-webkit-details-marker { display: none; }
   details.learns > summary > h2 > svg { color: var(--soft); vertical-align: -3px; margin-right: 6px; transition: transform .15s; } details.learns[open] > summary > h2 > svg { transform: rotate(90deg); }
   details.learns > div { display: flex; flex-direction: column; gap: 10px; margin-top: 12px; }
+  ol.howto { margin: 0; padding-left: 22px; display: flex; flex-direction: column; gap: 10px; line-height: 1.5; }
+  ol.howto b { color: var(--text); } ol.howto li::marker { color: var(--gold); font-weight: 700; }
   .lsrc { display: flex; flex-direction: column; gap: 6px; } .lgroup { padding: 8px 12px; border-radius: 10px; background: var(--inset); }
   .lgroup .takes { margin-top: 8px; }
   .nextrow { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 16px; padding: 6px 16px 10px 58px; border-bottom: 1px solid var(--line2); color: var(--info); font-size: 13.5px; }
@@ -393,6 +395,7 @@
     <a class="brand" href="#/"><img src="/static/wakesmith-w.png" alt="" width="40" height="40"><span>wake<b>smith</b></span></a>
     <div id="nav"></div>
     <div class="machine" id="hw"><strong>This machine</strong>detecting hardware…</div>
+    <div id="upnote"></div>
   </nav>
   <main id="view"></main>
 </div>
@@ -403,9 +406,10 @@
 const $ = (s, el = document) => el.querySelector(s);
 const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 const enc = encodeURIComponent;
-const STAGE_NAMES = {"generate":"Synthetic speech","real":"Your recordings","commonvoice":"Common Voice","conversational":"Everyday sentences","mww-features":"microWakeWord features",
+const STAGE_NAMES = {"generate":"Synthetic speech","check-clips":"Listening check","real":"Your recordings","commonvoice":"Common Voice","conversational":"Everyday sentences","mww-features":"microWakeWord features",
   "mww-train":"microWakeWord training","oww-features":"openWakeWord features","oww-train":"openWakeWord training","test":"Test","export":"Export"};
 const STAGE_HELP = {"generate":"Thousands of synthetic speakers saying the phrase and its sound-alikes.",
+  "check-clips":"Whisper listens to the sound-alike clips. Any it hears as the phrase itself are left out, so the model doesn't learn to ignore its own wake word.",
   "real":"Your recordings: training takes trimmed, test takes set aside.",
   "commonvoice":"Real volunteer voices: the phrase cut out of Common Voice takes, split by speaker.",
   "conversational":"The AI assistant writes everyday sentences with words of the phrase; synthetic voices say them as not-the-phrase clips.",
@@ -524,6 +528,74 @@ async function hardware() {
     $("#hw").innerHTML = `<strong>This machine</strong>${gpus}<br>${h.cpus} cores · ${Math.round(h.ram_free_gb)}/${Math.round(h.ram_gb)} GB RAM free<br>${Math.round(h.disk_free_gb)} GB disk free`
       + warn.map(w => `<div class="warn">${icon("bang", 14, 2.5)} ${esc(w)}</div>`).join("");
   } catch { $("#hw").innerHTML = ""; }
+}
+
+// ---- updating wakesmith: the sidebar's notice, the panel on the Hardware page ------------------------
+const UP_STAGE = { starting: "Getting ready", downloading: "Downloading", installing: "Installing", checking: "Checking the new version", restarting: "Restarting" };
+let upFollowing = false;
+function drawUpdate(u) {
+  $("#upnote").innerHTML = u.available && !UP_STAGE[u.job.stage] && u.job.stage !== "installed"
+    ? `<a class="btn" href="#/hardware" style="display:flex;margin-top:10px">${icon("refresh", 16, 2)}Update to ${esc(u.latest.version)}</a>` : "";
+  const el = $("#upd");
+  if (!el) return;
+  const j = u.job, head = `<h2 id="h-upd">wakesmith ${esc(u.version)}</h2>`;
+  if (u.source) { el.innerHTML = `${head}<p class="hint" style="margin:0">Running from a source folder: update it with git.</p>`; return; }
+  const when = u.checked ? new Date(u.checked * 1000).toLocaleString() : "";
+  const line = UP_STAGE[j.stage] ? `<p style="margin:0;color:var(--soft)" role="status">Updating to ${esc(j.target)}: ${esc(UP_STAGE[j.stage])}… The page comes back by itself.</p>`
+    : j.stage === "installed" ? `<p style="margin:0;color:var(--soft)">wakesmith ${esc(j.target)} is installed. Start wakesmith again to use it.</p>`
+    : u.available ? `<p style="margin:0;color:var(--soft)"><b>wakesmith ${esc(u.latest.version)} is out.</b> <a href="${esc(u.latest.page)}" target="_blank" rel="noopener">What's new</a></p>`
+    : u.checked ? `<p class="hint" style="margin:0">This is the newest version (checked ${esc(when)}).</p>` : "";
+  const idle = !UP_STAGE[j.stage] && j.stage !== "installed";
+  el.innerHTML = `${head}${line}
+    ${j.error ? `<div class="callout warn">${icon("bang", 18, 2)}<span>${esc(j.error)}</span></div>` : ""}
+    ${u.check_error ? `<p class="err" style="margin:0">${esc(u.check_error)}</p>` : ""}
+    ${idle && u.available && u.busy ? `<p class="hint" style="margin:0">${esc(u.busy)}</p>` : ""}
+    ${idle ? `<div class="row">${u.available ? `<button type="button" class="primary" id="upgo" ${u.busy ? "disabled" : ""}>Update to ${esc(u.latest.version)}</button>` : ""}
+      <button type="button" id="upcheck">Check now</button></div>
+    <label style="display:flex;gap:12px;align-items:flex-start;min-height:44px;cursor:pointer"><input type="checkbox" id="upauto" ${u.auto ? "checked" : ""} style="width:22px;height:22px;margin:2px 0 0;accent-color:var(--orange)">
+      <span><b>Check for updates automatically</b><br><span class="hint">Asks GitHub for the newest version when you open wakesmith, about twice a day. Nothing about your wake words is sent, and nothing installs until you press Update.</span></span></label>` : ""}`;
+  if (!idle) return;
+  const act = async (path, opts) => { try { drawUpdate(await api(path, opts)); } catch (e) { alert(e.message); } };
+  $("#upcheck").onclick = () => act("/api/update/check", { method: "POST", body: {} });
+  $("#upauto").onchange = e => act("/api/update/settings", { method: "PUT", body: { auto: e.target.checked } });
+  if (u.available) $("#upgo").onclick = async () => {
+    if (!await ask(`Update to ${u.latest.version}?`, "wakesmith downloads the new version, installs it and restarts, usually within a minute or two. Your wake words, recordings and training data stay as they are.", "Update and restart")) return;
+    try { const s = await api("/api/update", { method: "POST", body: { version: u.latest.version } }); drawUpdate(s); followUpdate(s.job.target); }
+    catch (e) { alert(e.message); }
+  };
+}
+// Until the new version answers. While the server restarts requests fail, which is expected; a server that
+// takes long (finishing other work first) can still come back, so this keeps asking after saying so.
+async function followUpdate(target) {
+  if (upFollowing) return;
+  upFollowing = true;
+  const note = text => $("#upd")?.insertAdjacentHTML("beforeend", `<div class="callout warn">${icon("bang", 18, 2)}<span>${text}</span></div>`);
+  const until = Date.now() + 35 * 60e3;  // the longest install, then the restart
+  let gone = 0, restarted = false, said = false;
+  while (Date.now() < until) {
+    await new Promise(r => setTimeout(r, 1500));
+    let u;
+    try { u = await api("/api/update"); }
+    catch {
+      restarted ||= gone >= 2;  // one failed request is a hiccup, not a restart
+      if (++gone > 80 && !said) { said = true; note(`wakesmith hasn't come back yet. If it stays away, start it again with <code class="mono">wakesmith serve</code>.`); }
+      continue;
+    }
+    gone = 0;
+    if (u.version === target) { location.reload(); return; }
+    drawUpdate(u);
+    if (u.job.stage === "restarting") restarted = true;
+    if (!UP_STAGE[u.job.stage]) {
+      upFollowing = false;
+      if (restarted && !u.job.error && u.job.stage !== "installed") note(`wakesmith came back on ${esc(u.version)}, not ${esc(target)}: the update didn't take. Try again, or install it by hand.`);
+      return;
+    }
+  }
+  upFollowing = false;
+  if (!said) note(`wakesmith hasn't come back. Start it again with <code class="mono">wakesmith serve</code>.`);
+}
+async function loadUpdate() {
+  try { const u = await api("/api/update"); drawUpdate(u); if (UP_STAGE[u.job.stage]) followUpdate(u.job.target); } catch {}
 }
 
 function route() {
@@ -999,7 +1071,7 @@ async function viewProject(name, tab) {
   return trainTab(p, base, steps);
 }
 
-// ---- recording in the browser: raw mic (no echo cancelling or gain), 16 kHz mono WAV -------------
+// ---- recording in the browser: raw mic (no echo canceling or gain), 16 kHz mono WAV -------------
 const PROMPTS = ["close to the device, in your normal voice", "across the room, normal voice", "from the doorway, a bit louder",
   "close, quietly", "across the room, with the TV or music on", "close, quickly", "from the next room, calling out",
   "close, slowly", "facing away from the device", "while something else is going on (kettle, tap, fan)"];
@@ -1100,6 +1172,7 @@ async function voicesTab(p, base, steps) {
   v.innerHTML = `${steps("voices")}<div><div class="kicker">${esc(p.label)}</div><h1>Real voices</h1>
       <p class="sub">Synthetic voices train the model; real ones tell you whether it works. Some takes are kept aside for testing and never trained on, so the test is honest.</p></div>
     <details class="panel learns" id="learns"><summary><h2 style="display:inline">${icon("chev", 22, 2.5)}What ${esc(p.label)} learns from</h2> <span class="hint">every source, how much of it trains and how much is kept aside to test, and its clips to play</span></summary><div id="learnsbody"><p class="hint">Loading…</p></div></details>
+    <details class="panel learns" id="howto"><summary><h2 style="display:inline">${icon("chev", 22, 2.5)}How to get good real voices</h2> <span class="hint">six steps for a model that works for the people in your house</span></summary><div>${howtoHtml(p)}</div></details>
     <div role="tablist" aria-label="Where the voices come from" class="seg" id="tabs"></div>
     <div class="cols"><div class="wide" id="pane"></div>
     <aside class="narrow"><div class="summary"><h2>So far</h2><dl class="kv" id="sofar"></dl><div id="sofarnote"></div>
@@ -1111,6 +1184,7 @@ async function voicesTab(p, base, steps) {
   if ($("#cancelww")) $("#cancelww").onclick = () => deleteWakeWord(p.name, p.label, true);
   voicesOpen = null;
   learnsPanel(p, base);
+  $("#howto").ontoggle = () => store.set("ws-howto-closed", !$("#howto").open);
   const tabs = () => $("#tabs").innerHTML = [["rec", "Record here"], ["folders", "Folders"], ["dev", "Device clips"], ["cv", "Common Voice"]].map(([k, l]) =>
     `<button type="button" role="tab" aria-selected="${tab === k}" data-tab="${k}">${l}</button>`).join("");
   $("#tabs").onclick = e => { const b = e.target.closest("[data-tab]"); if (b && !busy) { tab = b.dataset.tab; draw(); } };
@@ -1276,7 +1350,7 @@ async function voicesTab(p, base, steps) {
       <div class="row"><button type="button" id="devimport">Import new clips</button>
         <button type="button" id="devtx" ${s.total > s.transcribed ? "" : "disabled"}>Transcribe ${s.total - s.transcribed} clips</button>
         ${s.unlabelled > s.to_check ? `<button type="button" id="devaccept">Label the ${s.unlabelled - s.to_check} clear “not the phrase” clips</button>` : ""}<span class="hint" id="devmsg"></span></div>
-      <p class="hint" style="margin:0">${s.total} clips${s.first ? `, ${esc(new Date(s.first).toLocaleDateString())} to ${esc(new Date(s.last).toLocaleDateString())}` : ""}; ${s.transcribed} transcribed. Transcribing runs Whisper in the background (the whisper extra). Clips where the transcript has none of the phrase's words are labeled “not the phrase” by themselves; a person listens to the rest.</p></section>
+      <p class="hint" style="margin:0">${s.total} clips${s.first ? `, ${esc(new Date(s.first).toLocaleDateString())} to ${esc(new Date(s.last).toLocaleDateString())}` : ""}; ${s.transcribed} transcribed. Transcribing runs Whisper in the background. Clips where the transcript has none of the phrase's words are labeled “not the phrase” by themselves; a person listens to the rest.</p></section>
     <section class="panel" aria-labelledby="h-devl"><h2 id="h-devl" class="sr">Label the clips</h2>${howTo()}
       <div class="row" style="justify-content:space-between"><div role="tablist" class="seg" id="devseg">${seg.map(([k, l]) => `<button type="button" role="tab" aria-selected="${devShow === k}" data-dseg="${k}">${l}</button>`).join("")}</div>
         <button type="button" class="primary" id="quickgo" ${dev.clips.filter(devPick()).length ? "" : "disabled"}>${icon("play", 14)}Quick check, one at a time</button></div>
@@ -1417,11 +1491,30 @@ async function voicesTab(p, base, steps) {
     catch (e) { err(e.message); }
   };
   $("#go").onclick = () => train(); if (hasVoices) $("#retrain").onclick = () => train("real");
-  try { await load(true); draw(); } catch (e) { err(e.message); }
+  try {
+    await load(true); draw();
+    // open for a wake word without real voices yet, unless it was closed here before
+    if (!rec.pos.takes.length && !rec.pos.chosen?.clips && !store.get("ws-howto-closed", false)) $("#howto").open = true;
+  } catch (e) { err(e.message); }
 }
 
+// the Real voices how-to: what to record, where, how much, what to keep aside, and what comes after
+const howtoHtml = p => `<ol class="howto">
+  <li><b>Record where the device listens.</b> Put the phone or laptop right next to the device, so it hears what the device hears.
+    <a href="#/room">Record a room</a> does this for all your wake words at once: room sound, three claps, then the phrase from each spot, cut into takes for you.</li>
+  <li><b>Vary the takes more than you count them.</b> Near and across the room, facing away, quietly, with the TV or music on, at different times of day.
+    A few dozen takes per person is a good start; add more where Results shows misses.</li>
+  <li><b>Record everyone who will use it.</b> Each person names themselves under "Who's speaking?". A model for your house should know your voices: that isn't overtraining.</li>
+  <li><b>Keep a quarter aside to test.</b> Every fourth take is kept aside and never trained on; click a take's train/test tag to switch it.
+    Keep about a quarter of each person's takes aside. For a folder, list them in HELDOUT.txt.</li>
+  <li><b>Add what isn't the phrase.</b> "Record 10 s of room sound" a few times: quiet, the TV, the kitchen. The claps from Record a room become this house's room echoes;
+    turn them on under <a href="#/p/${enc(p.name)}/train">Train</a>.</li>
+  <li><b>Train, use it, feed back its mistakes.</b> Train, check <a href="#/p/${enc(p.name)}/results">Results</a>, export, and use it for a few days.
+    The Device clips tab brings in the times it woke by mistake, the best "not the phrase" clips there are. Then Retrain from recordings.</li></ol>
+  <p class="hint" style="margin:0">Synthetic voices are always included. Common Voice only helps when volunteers happened to read your phrase; its tab says how many takes it finds.</p>`;
+
 // ---- the smith beside the Training stages: his pose follows the running stage (CSS animations only) --------
-const SMITH_ACT = { generate: "voices", real: "ore", commonvoice: "ore", conversational: "ore", "mww-features": "heat", "oww-features": "heat",
+const SMITH_ACT = { generate: "voices", "check-clips": "inspect", real: "ore", commonvoice: "ore", conversational: "ore", "mww-features": "heat", "oww-features": "heat",
   "mww-train": "hammer", "oww-train": "hammer", test: "inspect", export: "quench" };
 let smithN = 0;  // gradient and pattern ids per drawing
 const smithHtml = word => {
@@ -1694,9 +1787,14 @@ function archNote(p) {
     Your recordings, results, exported files and the trained model were kept.${a.clips ? " Its synthetic clips were removed too, so Train makes them again (the slow part)." : ""}</span></div>`;
 }
 
+// what the listening check found: sound-alike takes Whisper heard as the phrase, left out of training
+const checkLine = st => {
+  const i = st?.status === "done" ? st.info || {} : {};
+  return i.checked ? `<dt title="Sound-alike takes Whisper heard as the phrase itself: left out of training">Heard as the phrase</dt><dd class="mono" title="of ${i.checked.toLocaleString()} sound-alike takes">${i.heard_as_phrase.toLocaleString()} left out (${(100 * i.share).toFixed(1)}%)</dd>` : "";
+};
 function trainTab(p, base, steps) {
   const v = $("#view");
-  const off = k => (k.startsWith("mww") && !p.microwakeword.enabled) || (k.startsWith("oww") && !p.openwakeword.enabled) || (k === "commonvoice" && !(p.uses_commonvoice ?? p.commonvoice?.enabled)) || (k === "conversational" && !(p.conversational?.clips > 0));
+  const off = k => (k.startsWith("mww") && !p.microwakeword.enabled) || (k.startsWith("oww") && !p.openwakeword.enabled) || (k === "commonvoice" && !(p.uses_commonvoice ?? p.commonvoice?.enabled)) || (k === "conversational" && !(p.conversational?.clips > 0)) || (k === "check-clips" && p.samples?.check_negatives === false);
   v.innerHTML = `${steps("train")}<div class="head"><div><div class="kicker">${esc(p.label)}</div><h1>Training</h1></div>
       <div class="row"><button type="button" class="primary" id="go">Train</button>
         <button type="button" id="retrain" title="After changing recordings or review verdicts: reuses the synthetic clips">Retrain from recordings</button>
@@ -1717,10 +1815,10 @@ function trainTab(p, base, steps) {
           <p class="hint">This version's folder: <span class="mono" style="overflow-wrap:anywhere">${esc(p.folder)}</span>. The log is <span class="mono">logs/train.log</span> in it, the models are in <span class="mono">export</span>.</p></details>
         <p class="hint" style="margin:0">You can close this page: training keeps running, and Wake words shows when it's done.</p>
         <section class="panel danger-zone" aria-labelledby="h-del"><h2 id="h-del">${unfinished(p) ? "Not finished?" : "Delete"}</h2>
-          <p class="hint" style="margin:0">${unfinished(p) ? "Nothing is trained yet. Cancelling removes the project." : "Removes this wake word, its generated voices and its models."}</p>
+          <p class="hint" style="margin:0">${unfinished(p) ? "Nothing is trained yet. Canceling removes the project." : "Removes this wake word, its generated voices and its models."}</p>
           <button type="button" class="danger" id="delww">${icon("trash", 16)}${unfinished(p) ? "Cancel this wake word" : "Delete this wake word"}</button></section></aside></div>`;
   $("#recipe").innerHTML = `<dt>Models</dt><dd>${[p.microwakeword.enabled && "microWakeWord", p.openwakeword.enabled && "openWakeWord"].filter(Boolean).join(", ")}</dd>
-    <dt>Synthetic takes</dt><dd class="mono">${p.samples.positive.toLocaleString()}</dd><dt>Sound-alikes</dt><dd class="mono">${p.samples.negative.toLocaleString()} takes of ${p.negatives.length}</dd>
+    <dt>Synthetic takes</dt><dd class="mono">${p.samples.positive.toLocaleString()}</dd><dt>Sound-alikes</dt><dd class="mono">${p.samples.negative.toLocaleString()} takes of ${p.negatives.length}</dd>${checkLine(p.stages["check-clips"])}
     <dt>Real recordings</dt><dd>${p.real.positives ? "yes" : "none"}${p.real.negatives ? " · not-the-phrase clips" : ""}</dd>
     ${p.microwakeword.enabled ? `<dt>Front end</dt><dd>${esc(p.microwakeword.frontend)}</dd>` : ""}
     <dt>Live model</dt><dd>${liveLine(p.live) || "none set"} · <a href="#/p/${enc(p.name)}/results">Models</a></dd>`;
@@ -1733,7 +1831,7 @@ function trainTab(p, base, steps) {
       const mark = status === "done" ? icon("check", 14, 3) : status === "running" ? icon("spin", 14, 2.5) : status === "failed" ? icon("bang", 14, 3) : "";
       const word = { done: "done", running: "running", failed: "stopped", off: "off", waiting: "waiting", archived: "removed to save space" }[status] || status;
       return `<li class="${status}"><span class="sdot">${mark}</span><div class="sbody"><div class="sline"><b>${STAGE_NAMES[s]}</b><span>${word}${t ? " · " + t : ""}</span></div>
-        <div class="hint">${status === "failed" && st.error ? `<span style="color:var(--warn)">${esc(st.error)}</span>` : status === "archived" ? "Its files were removed when the project was archived. The next Train or Retrain makes them again first." : STAGE_HELP[s]}</div>
+        <div class="hint">${status === "failed" && st.error ? `<span style="color:var(--warn)">${esc(st.error)}</span>` : s === "check-clips" && status === "done" && st.info?.skipped && st.info.unchecked && st.info.checked ? `Skipped this time: ${esc(st.info.skipped)}${st.info.error ? ` (${esc(st.info.error)})` : ""}. ${st.info.unchecked.toLocaleString()} takes aren't checked and are used; those heard as the phrase earlier stay left out.` : s === "check-clips" && status === "done" && st.info?.skipped && !st.info.checked ? `Skipped: ${esc(st.info.skipped)}${st.info.error ? ` (${esc(st.info.error)})` : ""}. Every sound-alike take is used.` : status === "archived" ? "Its files were removed when the project was archived. The next Train or Retrain makes them again first." : STAGE_HELP[s]}</div>
         ${status === "running" ? `<div class="bar sm"><div id="sbar"></div></div>` : ""}</div></li>`;
     }).join("");
   };
@@ -1838,7 +1936,8 @@ function trainTab(p, base, steps) {
         + (r.used_gb > 0.9 * r.total_gb ? `<div class="callout warn">${icon("bang", 18, 2)}<span>System memory is nearly full. Close other big programs; if it runs out, the training job is stopped first (your other programs are kept).</span></div>` : "");
     }
     $("#go").disabled = $("#retrain").disabled = d.job.running;
-    $("#stop").disabled = !d.job.running;
+    $("#stop").disabled = !d.job.running || !!d.job.outside;
+    $("#stop").title = d.job.outside ? "Started outside this page (the command line or a script): stop it there" : "";
     $("#delww").disabled = $("#conv").disabled = d.job.running;
     const pr = d.progress, run = Object.entries(d.stages).find(([, s]) => s?.status === "running");
     let pct = null, label = "";
@@ -1860,6 +1959,8 @@ function trainTab(p, base, steps) {
           const i = splits.indexOf(x.split); splits.slice(0, i).forEach(sp => done += sizes[sp]); done += x.done;
         }
         if (work > 0) pct = 100 * done / work;
+      } else if (s === "check-clips" && pr["check-clips"]?.total && pr["check-clips"].time >= (d.stages["check-clips"]?.started || 0) - 5) {
+        const x = pr["check-clips"]; pct = 100 * x.done / x.total; label = `${x.done.toLocaleString()} of ${x.total.toLocaleString()} sound-alike clips`;
       } else if (s === "conversational" && pr["generate-conversational"]?.time >= (d.stages.conversational?.started || 0)) {
         const x = pr["generate-conversational"]; pct = 100 * x.done / Math.max(1, x.total);
         label = `${x.split === "sentences" ? "writing sentences" : "speaking them"} ${x.done}/${x.total}`;
@@ -2475,6 +2576,7 @@ async function viewHardware() {
   const v = $("#view");
   v.innerHTML = `<div class="head"><div><h1>Hardware</h1><p class="sub">What wakesmith found on this machine and the settings that follow from it.</p></div>
     <button type="button" id="again">${icon("refresh", 16, 2)}Detect again</button></div><div id="hwbody"><p class="hint">detecting…</p></div>
+    <section class="panel" aria-labelledby="h-upd" id="upd" style="margin-top:22px"><h2 id="h-upd">wakesmith</h2><p class="hint" style="margin:0">loading…</p></section>
     <section class="panel" aria-labelledby="h-sto" id="storage" style="margin-top:22px"><h2 id="h-sto">Storage</h2><p class="hint" style="margin:0">measuring…</p></section>
     <section class="panel" aria-labelledby="h-ai" id="ai"><h2 id="h-ai">AI assistant (optional)</h2><p class="hint" style="margin:0">loading…</p></section>`;
   const draw = h => {
@@ -2500,6 +2602,7 @@ async function viewHardware() {
   };
   const load = async () => { try { await hardware(); draw(HW); } catch (e) { $("#hwbody").innerHTML = `<p class="err">${esc(e.message)}</p>`; } };
   $("#again").onclick = load;
+  loadUpdate();
   const drawAi = s => {
     $("#ai").innerHTML = `<h2 id="h-ai">AI assistant (optional)</h2>
       <p style="margin:0;color:var(--soft)">An AI model can explain why a training job stopped and give advice on a round's results. It runs on your own model server
@@ -2641,7 +2744,7 @@ async function viewData() {
   table(); box();
 }
 
-hardware(); route();
+hardware(); route(); loadUpdate();
 </script>
 </body>
 </html>

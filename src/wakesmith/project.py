@@ -37,6 +37,10 @@ class Samples:
     negative: int = 25000  # synthetic sound-alike clips (training)
     positive_test: int = 2500
     negative_test: int = 2500
+    # Whisper listens to the sound-alike clips and those it hears as the phrase itself are left out of
+    # training (clipcheck.py): a voice that says "hey jarvus" exactly like "hey jarvis" teaches the model
+    # to ignore its own wake word. Needs a GPU (~30 min for 27,500 clips on one card).
+    check_negatives: bool = True
 
 
 @dataclass

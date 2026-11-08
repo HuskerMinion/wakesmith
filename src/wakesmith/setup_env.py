@@ -126,16 +126,20 @@ def _need_pip() -> None:
         )
 
 
-def _pip(*args: str) -> None:
+def pip_command(*args: str) -> list[str]:
+    """The command that installs packages into this Python environment."""
     uv = _uv()
     if not uv:
         _need_pip()
-    cmd = (
+    return (
         [uv, "pip", "install", "--python", sys.executable, *args]
         if uv
         else [sys.executable, "-m", "pip", "install", *args]
     )
-    subprocess.run(cmd, check=True)
+
+
+def _pip(*args: str) -> None:
+    subprocess.run(pip_command(*args), check=True)
 
 
 def install_torch(accel: str) -> None:
@@ -200,6 +204,20 @@ def install_microwakeword() -> Path:
     subprocess.run(["git", "-C", str(src), "checkout", "-q", MWW_COMMIT], check=True)
     _pip("-e", str(src))
     return src
+
+
+def refresh_microwakeword() -> None:
+    """After an update: follow the pinned commit if this version pins another one. Nothing to do
+    without a clone (setup hasn't run), and nothing is reinstalled when the pin is unchanged."""
+    src = assets.home() / "src" / "microWakeWord"
+    if not (src / ".git").exists():
+        return
+    head = subprocess.run(
+        ["git", "-C", str(src), "rev-parse", "HEAD"], capture_output=True, text=True, check=True
+    ).stdout.strip()
+    if head != MWW_COMMIT:
+        subprocess.run(["git", "-C", str(src), "fetch", "-q", "origin"], check=True)
+        install_microwakeword()
 
 
 def missing_tools() -> list[str]:

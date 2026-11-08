@@ -40,7 +40,7 @@ from pathlib import Path
 import numpy as np
 import soundfile as sf
 
-from . import assets, recordings
+from . import assets, recordings, sysstat
 from . import project as projects
 
 SR = 16000
@@ -107,7 +107,7 @@ def folder(sid: str) -> Path:
 def _read(f: Path, default):
     try:
         return json.loads(f.read_text())
-    except (OSError, json.JSONDecodeError):
+    except (OSError, ValueError):  # ValueError: not JSON, or not even text
         return default
 
 
@@ -195,7 +195,7 @@ def listing() -> list[dict]:
                 "seconds": s.get("seconds", 0),
                 "phrases": [x["phrase"] for x in s.get("phrases", [])],
                 "segments": len(segs),
-                "split": split_status(s["id"])["status"] if s.get("id") else None,
+                "split": split_status(s["id"]).get("status") if s.get("id") else None,
             }
         )
     return out
@@ -714,11 +714,43 @@ def _alive(pid: int) -> bool:
 
 def split_status(sid: str) -> dict:
     st = _read(folder(sid) / "split.json", {"status": None})
-    if st.get("status") == "running":
-        pid = st.get("pid")
-        if (pid and not _alive(pid)) or (not pid and time.time() - st.get("started", 0) > 30):
-            st["status"] = "stopped"
+    if not isinstance(st, dict):
+        return {"status": None}
+    if st.get("status") == "running" and not _split_alive(st):
+        st["status"] = "stopped"
     return st
+
+
+def _split_alive(st: dict) -> bool:
+    """The process a split.json notes as running is that split. It's written before the process has
+    noted itself (no pid, for a moment), and anything unlike what's written there counts as gone."""
+    pid, noted, started = st.get("pid"), st.get("ticks"), st.get("started")
+    if not isinstance(started, (int, float)) or not 0 <= started < 1e12:  # also NaN, infinity
+        started = 0
+    if pid is None:
+        return time.time() - started <= 30
+    if isinstance(pid, bool) or not isinstance(pid, int) or not 0 < pid < 2**31:
+        return False
+    if noted is None:  # noted by a version before 0.4.8: at least it can't be from before a reboot
+        boot = sysstat.booted_at()
+        if boot and started < boot:
+            return False
+    else:
+        now = sysstat.start_ticks(pid)
+        if now is not None and noted != now:
+            return False
+    return _alive(pid)
+
+
+def split_running() -> bool:
+    """A room recording is being split now. A folder it can't make sense of doesn't count."""
+    for f in home().glob("*/split.json"):
+        try:
+            if split_status(f.parent.name).get("status") == "running":
+                return True
+        except (OSError, ValueError, ArithmeticError, RecursionError):
+            continue
+    return False
 
 
 def start_split(sid: str, device: str = "auto") -> dict:
@@ -738,7 +770,12 @@ def start_split(sid: str, device: str = "auto") -> dict:
 def run_split(sid: str, device: str = "auto", model: str = "turbo") -> dict:
     """The split job's body (`wakesmith room split`): notes its state in split.json."""
     d = folder(sid)
-    st = {"status": "running", "pid": os.getpid(), "started": time.time()}
+    st = {
+        "status": "running",
+        "pid": os.getpid(),
+        "ticks": sysstat.start_ticks(os.getpid()),
+        "started": time.time(),
+    }
     _write(d / "split.json", st)
     try:
         dev = auto_device() if device == "auto" else device
@@ -797,7 +834,7 @@ def send(sid: str, busy=None) -> dict:
     skips a project (a job running on it); it is sent next time."""
     from . import jobs
 
-    busy = busy or (lambda p: jobs.status(p)["running"])
+    busy = busy or jobs.busy
     d = folder(sid)
     s = load(sid)
     a, _ = sf.read(d / "audio.wav", dtype="float32")

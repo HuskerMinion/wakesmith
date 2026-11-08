@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "wakesmith"
-version = "0.4.7"
+version = "0.4.8"
 description = "Forge your own wake word: train microWakeWord and openWakeWord models from synthetic speech plus your own recordings, on Intel Arc, NVIDIA or CPU"
 readme = "README.md"
 license = "PolyForm-Noncommercial-1.0.0"
@@ -28,13 +28,14 @@ dependencies = [
     "fastapi>=0.110",
     "uvicorn>=0.29",
     "threadpoolctl>=3",  # one math thread per feature worker (mww.py)
+    "transformers>=4.40",  # Whisper: the listening check of sound-alike clips (clipcheck.py), device clips
 ]
 
 [project.optional-dependencies]
 dev = ["pytest>=8", "ruff>=0.6"]
 # transcribing device clips (wakesmith clips transcribe): Whisper on any torch device; faster-whisper
 # (Home Assistant's engine) is used instead when it is installed
-whisper = ["transformers>=4.40"]
+whisper = ["transformers>=4.40"]  # now installed with wakesmith itself (the listening check); kept for old commands
 
 [project.scripts]
 wakesmith = "wakesmith.cli:app"

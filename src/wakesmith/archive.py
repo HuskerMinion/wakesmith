@@ -281,7 +281,7 @@ def plan(p: Project, clips: bool = False, found: dict[str, list[str]] | None = N
         if f.is_file() and not f.is_symlink() and f.suffix in (".tmp", ".part"):
             add(f.name, "leftover of an interrupted write")
     if drop_clips:
-        add("clips", "your own synthetic clips (slow to make again)", "generate")
+        add("clips", "your own synthetic clips (slow to make again)", "generate", "check-clips")
     st = p.state()
     marks = [
         s
@@ -304,7 +304,7 @@ class Busy(RuntimeError):
 
 
 def _busy(p: Project) -> str:
-    if jobs.status(p)["running"]:
+    if jobs.busy(p):
         return "a job is running for it"
     if any(i.get("project") == p.name for i in jobs.queue()):
         return "it has a run waiting in the queue"
@@ -417,7 +417,7 @@ def overview(p: Project, found: dict[str, list[str]], queued: set[str], now: flo
         "idle_days": round(max(0.0, now - last) / 86400, 1),
         "live": statuses.count("live"),
         "offered": statuses.count("offered"),
-        "running": bool(jobs.status(p)["running"]),
+        "running": jobs.busy(p),
         "queued": p.name in queued,
         "archived": bool(a and a["archived"]),
         "archived_at": a.get("archived_at") if a else None,

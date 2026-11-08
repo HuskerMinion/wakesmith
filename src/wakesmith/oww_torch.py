@@ -194,7 +194,7 @@ class HeadTrainer:
     The model is oww.build_model's: Flatten, (Dense, LayerNorm(eps 1e-5), ReLU) x (blocks + 1), Dense(1),
     sigmoid. Its weights are kept in Keras' layout and order (kernels (in, out), then bias; gamma, beta),
     so they move between this and the Keras model with get_weights/set_weights unchanged, starting from
-    the Keras model's own seeded initialisation. They live in one flat tensor (the layers use views of
+    the Keras model's own seeded initialization. They live in one flat tensor (the layers use views of
     it), so the optimizer is a handful of device calls per step instead of a handful per weight.
 
     The optimizer is Keras 3's AdamW as it computes: every variable decays first (v -= v * wd * lr),

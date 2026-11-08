@@ -96,6 +96,11 @@ Beim ersten deutschen Wort werden die deutschen Stimmen geladen (etwa 0,5 GB). B
 **Standard** dauert ein Durchlauf mit einer GPU etwa eine halbe Stunde (gemessen auf einer RTX 5060 Ti),
 ein **Quick test** etwa 10 Minuten; ohne GPU deutlich länger.
 
+Beim ersten Durchlauf hört Whisper alle ähnlich klingenden Aufnahmen ab und lässt die weg, die es als
+das Wort selbst hört. Sonst lernt das Modell, sein eigenes Wort zu
+überhören. Das braucht eine GPU (ohne GPU wird es übersprungen) und mit einer Karte bei **Standard**
+etwa eine halbe Stunde, nur einmal.
+
 ## 6. Ergebnis prüfen und exportieren
 
 Unter **Results & export** siehst du, wie viele deiner zurückgelegten Aufnahmen erkannt werden und wie

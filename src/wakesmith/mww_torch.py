@@ -3,7 +3,7 @@
 Reads the project's mww/training.yaml and features and reproduces microWakeWord's recipe:
 - batches: a feature set picked by sampling_weight, a clip at random, cut or zero-padded to the input length by the
   set's truncation strategy. Built in worker processes, one gather per shard (microWakeWord: 128 Python picks);
-- the same MixedNet (wakesmith's MODEL_ARGS), Keras' initialisation, Adam defaults and BatchNorm settings;
+- the same MixedNet (wakesmith's MODEL_ARGS), Keras' initialization, Adam defaults and BatchNorm settings;
 - the loss as microWakeWord computes it: it passes penalty (B,) x class weight (B,1), a (B,B) matrix, so Keras
   takes mean(loss x penalty) x mean(class weight): class weights scale the whole batch, not each sample;
 - validation every eval_step_interval: the validation set (truncate_start) and the ambient set (windows every

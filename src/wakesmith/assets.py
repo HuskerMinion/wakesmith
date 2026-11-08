@@ -7,11 +7,13 @@ non-commercial terms, so models trained with them are for personal use only.
 
 from __future__ import annotations
 
+import fcntl
 import hashlib
 import os
 import shutil
 import socket
 import threading
+import time
 import zipfile
 from contextlib import contextmanager, nullcontext
 from dataclasses import dataclass
@@ -24,6 +26,54 @@ PSG_COMMIT = "2971426"  # model configs (.pt.json) at this commit
 
 def home() -> Path:
     return Path(os.environ.get("WAKESMITH_HOME", Path.home() / ".local/share/wakesmith"))
+
+
+UPDATE_UNDERWAY = (
+    "wakesmith is being updated: run this again when it has finished "
+    "(if the page says it's installed, stop wakesmith serve first)"
+)
+
+
+def hold_update_lock() -> int | None:
+    """Take the lock that says this process is updating wakesmith (update.py); its descriptor, or None
+    when another process holds it. The system lets go when the process ends or replaces itself, however
+    that happens, so a crash can't leave an update looking like it's still going. OSError when locks
+    don't work here."""
+    home().mkdir(parents=True, exist_ok=True)
+    fd = os.open(home() / "update.lock", os.O_CREAT | os.O_RDWR, 0o600)
+    try:
+        for attempt in range(5):  # another process's look (update_underway) holds it for an instant
+            try:
+                fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                return fd
+            except BlockingIOError:
+                if attempt < 4:
+                    time.sleep(0.02)
+    except OSError:
+        os.close(fd)
+        raise
+    os.close(fd)
+    return None
+
+
+def update_underway() -> bool:
+    """Files of this wakesmith are being replaced: nothing should start from them now. Looks with a
+    shared lock, so two looks at once don't take each other for an update; where locks don't work
+    there's no telling, and no update could have taken one."""
+    try:
+        fd = os.open(home() / "update.lock", os.O_RDWR)
+    except OSError:
+        return False
+    try:
+        fcntl.flock(fd, fcntl.LOCK_SH | fcntl.LOCK_NB)
+        fcntl.flock(fd, fcntl.LOCK_UN)
+        return False
+    except BlockingIOError:
+        return True
+    except OSError:
+        return False
+    finally:
+        os.close(fd)
 
 
 @dataclass(frozen=True)

@@ -27,7 +27,7 @@ from pathlib import Path
 import numpy as np
 import soundfile as sf
 
-from . import assets, conversational, hardware
+from . import assets, clipcheck, conversational, hardware
 from .project import Project
 
 SR = 16000
@@ -269,7 +269,9 @@ def _feature_sets(p: Project) -> dict[str, tuple[list[str], int]]:
     """set name -> (input files, augmentation rounds); real recordings repeat once per copy."""
 
     def originals(split: str) -> list[str]:
-        return sorted(str(x) for x in p.path("clips", split).glob("clip_[0-9]*.wav"))
+        # without the sound-alike clips Whisper heard as the phrase itself (clipcheck.py)
+        files = sorted(str(x) for x in p.path("clips", split).glob("clip_[0-9]*.wav"))
+        return clipcheck.keep(p, split, files)
 
     sets = {
         "positive_train": (

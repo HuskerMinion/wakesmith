@@ -29,8 +29,47 @@ def ram() -> dict:
     return {"total_gb": round(total / 2**30, 1), "used_gb": round((total - avail) / 2**30, 1)}
 
 
+def start_ticks(pid: int) -> int | None:
+    """When a process started, in clock ticks since boot (field 22 of stat; the comm field, 2, may hold
+    spaces): told apart from a later process with the same pid, whatever the wall clock did since.
+    None without /proc."""
+    try:
+        return int(Path(f"/proc/{pid}/stat").read_text().rsplit(")", 1)[1].split()[19])
+    except (OSError, ValueError, IndexError):
+        return None
+
+
+def booted_at() -> int | None:
+    """When the machine started (wall clock), or None without /proc."""
+    try:
+        for line in Path("/proc/stat").read_text().splitlines():
+            if line.startswith("btime "):
+                return int(line.split()[1])
+    except (OSError, ValueError, IndexError):
+        pass
+    return None
+
+
+def _with_children(root: int) -> list[int]:
+    """root and every process below it."""
+    kids: dict[int, list[int]] = defaultdict(list)
+    for d in Path("/proc").iterdir():
+        if d.name.isdigit():
+            try:  # field 4 of stat is the parent; the comm field (2) may hold spaces
+                kids[int((d / "stat").read_text().rsplit(")", 1)[1].split()[1])].append(int(d.name))
+            except (OSError, IndexError, ValueError):
+                continue
+    out, todo = [], [root]
+    while todo:
+        pid = todo.pop()
+        out.append(pid)
+        todo.extend(kids.get(pid, ()))
+    return out
+
+
 def job_pids(job: dict) -> list[int]:
-    """The job's processes: its systemd unit's cgroup, else the processes in its session."""
+    """The job's processes: its systemd unit's cgroup, else the processes in its session; for a run
+    typed in a terminal, whose session is the shell's, the run and what it started."""
     unit = job.get("unit")
     if unit:
         uid = os.getuid()
@@ -41,6 +80,9 @@ def job_pids(job: dict) -> list[int]:
             return [int(x) for x in f.read_text().split()]
         except OSError:
             pass
+    run = job.get("run_pid")
+    if run and not job.get("own_session"):
+        return _with_children(run)
     sid = job.get("pid")
     if not sid:
         return []

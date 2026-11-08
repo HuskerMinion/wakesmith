@@ -24,7 +24,7 @@ import time
 from contextlib import contextmanager
 from pathlib import Path
 
-from . import jobs, rounds
+from . import assets, jobs, rounds
 from . import project as projects
 from .project import Project
 
@@ -62,7 +62,9 @@ def _own_job_running(p: Project) -> bool:
     """The project's job is running, and it isn't this process (a Sync now job's launcher is our
     parent: _jobrun notes its own pid)."""
     st = jobs.status(p)
-    return bool(st.get("running")) and st.get("pid") not in (os.getpid(), os.getppid())
+    if st.get("running") and st.get("pid") not in (os.getpid(), os.getppid()):
+        return True
+    return jobs.outside_run(p)  # a sync never notes a stage as running: this isn't itself
 
 
 def pick_device(p: Project, want: str = "auto") -> str:
@@ -183,6 +185,9 @@ def describe(r: dict) -> str:
 
 def sync_all(device: str = "auto", limit: int = 0) -> list[dict]:
     """sync() for every project with devices.source set; one failing doesn't stop the rest."""
+    if assets.update_underway():
+        log("skipped: wakesmith is being updated; the next sync catches up")
+        return []
     home = projects.projects_home()
     out = []
     for f in projects.project_files(home):
