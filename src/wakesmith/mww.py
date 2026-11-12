@@ -14,6 +14,7 @@ import random
 import shutil
 import subprocess
 import sys
+import threading
 from multiprocessing import get_context
 from pathlib import Path
 
@@ -259,7 +260,9 @@ def build_features(p: Project, workers: int, log=print) -> None:
             pass
 
 
-def write_config(p: Project) -> Path:
+def write_config(p: Project, train_dir: str = "trained", config: str = "training.yaml") -> Path:
+    """mww/<config>: microWakeWord's training config, writing the model to mww/<train_dir>. Feature paths are
+    relative to mww/, so the config has to live there; best of N on several GPUs gives each candidate its own."""
     neg_root = assets.home() / "mww" / "negative_datasets"
     feats = [
         {
@@ -339,7 +342,7 @@ def write_config(p: Project) -> Path:
     phases = 2 if p.microwakeword.finetune_steps else 1
     cfg = {
         "window_step_ms": 10,
-        "train_dir": "trained",
+        "train_dir": train_dir,
         "features": feats,
         "training_steps": [p.microwakeword.steps, p.microwakeword.finetune_steps][:phases],
         "positive_class_weight": [1] * phases,
@@ -356,15 +359,34 @@ def write_config(p: Project) -> Path:
         "minimization_metric": None,
         "maximization_metric": "average_viable_recall",
     }
-    path = p.path("mww", "training.yaml")
-    path.write_text(yaml.safe_dump(cfg, sort_keys=False))
+    path = p.path("mww", config)
+    # candidates training at once all write training.yaml: each replaces it whole, never half written
+    tmp = path.with_name(f".{path.name}.{os.getpid()}.{threading.get_ident()}.tmp")
+    try:
+        tmp.write_text(yaml.safe_dump(cfg, sort_keys=False))
+        tmp.replace(path)
+    finally:
+        tmp.unlink(missing_ok=True)  # only left when the write failed (e.g. a full disk)
     return path
 
 
+TRAIN_RAM_GB = (
+    8.0  # one trainer and its batch workers (~7 GB resident on a 24-core PC, features mapped)
+)
+
+
+def train_devices(gpus: list, ram_free_gb: float = 0.0) -> list[str]:
+    """Where training can run: every GPU with room for the validation sets (~5 GB), else the CPU. With
+    `ram_free_gb`, no more GPUs than there is free RAM for a trainer on each (best of N runs one per GPU)."""
+    big = [g.device for g in gpus if g.memory_gb >= 6]
+    if big and ram_free_gb:
+        big = big[: max(1, int(ram_free_gb // TRAIN_RAM_GB))]
+    return big or ["cpu"]
+
+
 def train_device(gpus: list) -> str:
-    """Where training runs: the first GPU with room for the validation sets (~5 GB), else the CPU."""
-    big = [g for g in gpus if g.memory_gb >= 6]
-    return big[0].device if big else "cpu"
+    """Where one training run goes: the first of train_devices."""
+    return train_devices(gpus)[0]
 
 
 def more_open_files() -> None:
@@ -386,20 +408,61 @@ def more_open_files() -> None:
             continue
 
 
+def _wait(proc: subprocess.Popen, stop: threading.Event | None) -> int:
+    """The step's exit code; ends it (terminate, then kill) once `stop` is set."""
+    try:
+        while True:
+            try:
+                return proc.wait(timeout=0.5 if stop is not None else None)
+            except subprocess.TimeoutExpired:
+                if stop is not None and stop.is_set():
+                    proc.terminate()
+                    try:
+                        return proc.wait(timeout=10)
+                    except subprocess.TimeoutExpired:
+                        proc.kill()
+                        return proc.wait()
+    finally:  # Ctrl-C (also during the grace above): the step doesn't outlive this
+        if proc.poll() is None:
+            proc.kill()
+            proc.wait()
+
+
 def train(
-    p: Project, log_file: Path, resume: bool = False, device: str = "cpu", seed: int | None = None
+    p: Project,
+    log_file: Path,
+    resume: bool = False,
+    device: str = "cpu",
+    seed: int | None = None,
+    train_dir: str = "trained",
+    share: int = 1,
+    stop: threading.Event | None = None,
 ) -> Path:
-    """Train, then export through microWakeWord. A finished earlier run is moved aside unless resume.
+    """Train, then export through microWakeWord; returns the streaming model. A finished earlier run in
+    mww/trained is moved aside unless resume.
 
     The trainer is wakesmith's PyTorch port (mww_torch) on `device`, a GPU or the CPU; it always starts
     over (a run takes minutes). WAKESMITH_MWW_TRAINER=tf runs microWakeWord's own trainer (CPU, ~3-6x
-    slower), which can resume from its checkpoint."""
+    slower), which can resume from its checkpoint.
+
+    Best of N on several GPUs: `train_dir` (under mww/) gets the run instead of mww/trained, with its own
+    config file, and `share` runs at once split the CPU's batch workers between them; once `stop` is set
+    the step running is ended and the run fails."""
     more_open_files()
-    cfg = write_config(p)
-    run_dir = p.path("mww", "trained")
-    if run_dir.exists() and not resume:
-        shutil.rmtree(p.path("mww", "trained.previous"), ignore_errors=True)
-        run_dir.rename(p.path("mww", "trained.previous"))
+    own = train_dir != "trained"
+    cfg = write_config(
+        p, train_dir, f"training-{Path(train_dir).name}.yaml" if own else "training.yaml"
+    )
+    if own:  # combining the candidates (ensemble.py) reads mww/training.yaml
+        write_config(p)
+    run_dir = p.path("mww", train_dir)
+    model = run_dir / model_path(p).relative_to(p.path("mww", "trained"))
+    if run_dir.exists() and not resume and not own:
+        if model.exists():  # a whole model becomes the previous one
+            shutil.rmtree(p.path("mww", "trained.previous"), ignore_errors=True)
+            run_dir.rename(p.path("mww", "trained.previous"))
+        else:  # half written by a stopped run: never put it over the previous model
+            shutil.rmtree(run_dir)
     test = [
         "--test_tf_nonstreaming",
         "0",
@@ -453,8 +516,10 @@ def train(
         ]
     else:
         # batch workers build batches while the model trains: on a GPU they are the CPU's only job
-        workers = max(1, min(6, cpus - 2)) if device != "cpu" else max(1, min(4, cpus // 3))
-        torch_env = {**env, "OMP_NUM_THREADS": str(max(1, min(8, cpus - workers)))}
+        share = max(1, share)
+        free = max(1, cpus // share)  # this run's part of the CPU
+        workers = max(1, min(6, free - 2)) if device != "cpu" else max(1, min(4, free // 3))
+        torch_env = {**env, "OMP_NUM_THREADS": str(max(1, min(8, free - workers)))}
         cuda = os.environ.get(
             "WAKESMITH_CUDA_DEVICES", "all"
         )  # what the pipeline hid from TensorFlow
@@ -471,23 +536,28 @@ def train(
             "--workers",
             str(workers),
         ]
+        if own:
+            trainer += ["--config", cfg.name]
         if device == "cpu":
             trainer += ["--threads", torch_env["OMP_NUM_THREADS"]]
         if seed is not None:
             trainer += ["--seed", str(seed)]
         runs = [(trainer, torch_env), ([*export, "--train", "0", *test], env)]
-    with open(log_file, "a") as log:
-        for cmd, cmd_env in runs:
-            rc = subprocess.run(
-                cmd,
-                cwd=p.path("mww"),
-                stdout=log,
-                stderr=subprocess.STDOUT,
-                env=cmd_env,
-                check=False,
-            ).returncode
-            if rc != 0:
-                break
-    if rc != 0 or not model_path(p).exists():
+    try:
+        with open(log_file, "a") as log:
+            for cmd, cmd_env in runs:
+                if stop is not None and stop.is_set():
+                    rc = -15
+                    break
+                proc = subprocess.Popen(
+                    cmd, cwd=p.path("mww"), stdout=log, stderr=subprocess.STDOUT, env=cmd_env
+                )
+                rc = _wait(proc, stop)
+                if rc != 0:
+                    break
+    finally:
+        if own:  # interrupted too: the candidate's config goes
+            cfg.unlink(missing_ok=True)
+    if rc != 0 or not model.exists():
         raise RuntimeError(f"microWakeWord training failed (exit {rc}): see {log_file}")
-    return model_path(p)
+    return model

@@ -1357,6 +1357,13 @@ def test_best_of_n_pick_puts_false_triggers_first():
     assert best["n"] == 1 and "s1" in why
     # near-ties on false triggers compete on positives caught
     assert choose([c(1, 40, 8), c(2, 46, 9), c(3, 47, 30)])[0]["n"] == 2
+    # a seed that barely fires can't win on few false triggers (real 3000-step run: 0/181 caught, 0 false)
+    best, why = choose([c(1, 0, 0), c(2, 126, 23), c(3, 144, 41), c(4, 105, 14)])
+    assert best["n"] == 4 and "1 that caught under 70% of the best one's 144 left out" in why
+    # a real trade-off still counts: 112 caught is over 70% of 150, and its 19 false triggers win
+    assert choose([c(1, 150, 50), c(2, 112, 19), c(3, 150, 31), c(4, 148, 37)])[0]["n"] == 2
+    # nobody caught anything: nothing is left out, false triggers decide as before
+    assert choose([c(1, 0, 5), c(2, 0, 2)])[0]["n"] == 2
     # a failed candidate is skipped; without held-out data the validation score decides
     v = [{"n": 1, "failed": "x"}, {"n": 2, "validation": 0.91}, {"n": 3, "validation": 0.94}]
     assert choose(v)[0]["n"] == 3
@@ -2342,7 +2349,7 @@ def test_pipeline_combines_after_the_pick_and_carries_on_if_it_fails(proj, monke
     built = []
     monkeypatch.setattr(ensemble, "combine", lambda p, log: built.append(1))
     monkeypatch.setattr(ensemble, "info", lambda p: {"candidates": [1, 2, 3]})
-    hw = types.SimpleNamespace(gpus=[])
+    hw = types.SimpleNamespace(gpus=[], ram_free_gb=0.0)
     assert pipeline._run_stage(proj, "mww-train", hw, print) == {"picked": 2} and not built
     proj.microwakeword.combine = True
     info = pipeline._run_stage(proj, "mww-train", hw, print)
@@ -2445,12 +2452,12 @@ def _two_candidates(proj, monkeypatch, pos, neg, scores):
             proj.path(d, "test", n).write_bytes(b"")
     made = []
 
-    def train(p, log_file, device, seed=None):
+    def train(p, log_file, device, seed=None, train_dir="trained", share=1, stop=None):
         made.append(seed)
-        m = mww.model_path(p)
-        shutil.rmtree(p.path("mww", "trained"), ignore_errors=True)
+        m = p.path("mww", train_dir) / mww.model_path(p).relative_to(p.path("mww", "trained"))
         m.parent.mkdir(parents=True)
         m.write_bytes(f"c{len(made)}".encode())
+        return m
 
     monkeypatch.setattr(mww, "train", train)
 
@@ -2611,11 +2618,11 @@ def test_best_of_n_training_keeps_the_last_round(proj, monkeypatch):
     _round(proj)
     proj.microwakeword.candidates = 2
 
-    def train(p, log_file, device, seed=None):
-        m = mww.model_path(p)
-        shutil.rmtree(p.path("mww", "trained"), ignore_errors=True)
+    def train(p, log_file, device, seed=None, train_dir="trained", share=1, stop=None):
+        m = p.path("mww", train_dir) / mww.model_path(p).relative_to(p.path("mww", "trained"))
         m.parent.mkdir(parents=True)
         m.write_bytes(b"new")
+        return m
 
     monkeypatch.setattr(mww, "train", train)
     candidates.train(proj, proj.path("logs", "mww-train.log"), "cpu", log=lambda m: None)

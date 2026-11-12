@@ -64,7 +64,7 @@ def doctor(cpu: bool = typer.Option(False, "--cpu", help=CPU_HELP)) -> None:
     )
     typer.echo(
         f"settings: TTS on {', '.join(hw.tts_devices())} (batch {hw.tts_batch()}), "
-        f"microWakeWord training on {mww.train_device(hw.gpus)}, {hw.workers()} CPU workers"
+        f"microWakeWord training on {', '.join(mww.train_devices(hw.gpus, hw.ram_free_gb))}, {hw.workers()} CPU workers"
     )
     if low := hardware.disk_warning(str(assets.home().parent)):
         typer.echo(f"warning: {low}")

@@ -50,7 +50,16 @@ def _can_listen() -> bool:
     return sys.platform == "darwin" or bool(setup_env.find_gpus())
 
 
-def units(p: Project, stage: str) -> float:
+def _rounds(p: Project, slots: int | None = None) -> int:
+    """Best of N trains one candidate per GPU at a time: rounds of training one after another. Slots:
+    as many as the last run here had (timings.json), unless given."""
+    n = max(1, p.microwakeword.candidates)
+    k = slots if slots is not None else _load().get("mww-train:slots", 1)
+    k = max(1, min(n, int(k) if isinstance(k, (int, float)) else 1))
+    return -(-n // k)
+
+
+def units(p: Project, stage: str, slots: int | None = None) -> float:
     s = p.samples
     clips = s.positive + s.negative + s.positive_test + s.negative_test
     conv = max(0, p.conversational.clips)
@@ -70,9 +79,7 @@ def units(p: Project, stage: str) -> float:
     if stage in ("mww-features", "oww-features"):
         return clips + conv
     if stage == "mww-train":
-        return (p.microwakeword.steps + p.microwakeword.finetune_steps) * max(
-            1, p.microwakeword.candidates
-        )
+        return (p.microwakeword.steps + p.microwakeword.finetune_steps) * _rounds(p, slots)
     if stage == "oww-train":
         return p.openwakeword.steps * 1.2  # phases 2 and 3 add a tenth each
     if stage in ("real", "test"):
@@ -99,10 +106,13 @@ def _key(p: Project, stage: str) -> str:
 def record(p: Project, stage: str, seconds: float, info: dict | None) -> None:
     """Fold a finished stage's rate into the machine's timings (skipped stages don't count)."""
     # the listening check's units are the clips still to hear: count what this run heard instead
-    n = (info or {}).get("listened", 0) if stage == "check-clips" else units(p, stage)
+    slots = (info or {}).get("slots") if stage == "mww-train" else None
+    n = (info or {}).get("listened", 0) if stage == "check-clips" else units(p, stage, slots)
     if n <= 0 or (info and "skipped" in info):
         return
     t = _load()
+    if slots:
+        t["mww-train:slots"] = slots
     rate = seconds / n
     key = _key(p, stage)
     old = t.get(key)

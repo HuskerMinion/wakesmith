@@ -405,8 +405,22 @@ def finished(job_file: str | Path, code: int) -> None:
     with _locked():
         job = _read(job_file, {})
         if isinstance(job, dict) and not job.get("finished"):
+            if code != 0:  # stopped or failed: the model a training run moved aside is the model
+                # again, before the job counts as ended, so no run of the project can start meanwhile
+                _restore_model(job_file.parent)
             _finish(job_file, job, code)
     kick()
+
+
+def _restore_model(project_dir: Path) -> None:
+    try:
+        from . import candidates
+
+        p = projects.load(project_dir)
+        if not outside_run(p):  # a command-line run of it may have moved the model aside itself
+            candidates.restore_model(p)
+    except Exception:  # noqa: BLE001, S110 - best effort: the next training run does it too
+        pass
 
 
 def _reconcile() -> None:
@@ -419,6 +433,7 @@ def _reconcile() -> None:
             and not job.get("finished")
             and not status(p)["running"]
         ):
+            _restore_model(p.dir)  # the job died with its launcher: it can't have finished well
             _finish(p.path("job.json"), job, None)
 
 
@@ -484,7 +499,10 @@ def progress(p: Project) -> dict:
             "time": min(x.get("time", 0) for x in shares),
         }
     mlog = p.path("logs", "mww-train.log")
-    if mlog.exists():
+    cand = _candidate_progress(p)
+    if cand:
+        out["mww-train"] = cand
+    elif mlog.exists():
         # microWakeWord prints "Validation Batch #k ... Mini-Batch #m" (\r-terminated) every step
         m = re.findall(r"Validation Batch #(\d+):[^\r\n]*Mini-Batch #(\d+)", _tail(mlog, 4000))
         if m:
@@ -516,6 +534,37 @@ def progress(p: Project) -> dict:
                 "total": int(total),
             }
     return out
+
+
+def _steps_done(log: Path) -> int:
+    """Training steps a microWakeWord log has got to (it prints "Validation Batch #k ... Mini-Batch #m")."""
+    try:
+        if not log.is_file():  # a directory or a pipe would raise or block in _tail
+            return 0
+        text = _tail(log, 4000)
+    except OSError:
+        return 0
+    m = re.findall(r"Validation Batch #(\d+):[^\r\n]*Mini-Batch #(\d+)", text)
+    return (int(m[-1][0]) - 1) * mww.EVAL_INTERVAL + int(m[-1][1]) if m else 0
+
+
+_CAND_LOG = re.compile(r"mww-train-s\d+\.log")  # what candidates.train names a candidate's log
+
+
+def _candidate_progress(p: Project) -> dict | None:
+    """Best of N (logs/mww-candidates.json, while candidates.train runs): finished candidates count
+    whole, each one training (several at once with several GPUs) by its own log."""
+    try:
+        s = json.loads(p.path("logs", "mww-candidates.json").read_text())
+        n, done, running = int(s["n"]), list(s["done"]), dict(s["running"])
+    except (OSError, ValueError, KeyError, TypeError):
+        return None
+    per = p.microwakeword.steps + p.microwakeword.finetune_steps
+    names = [Path(str(f)).name for f in running.values()]
+    steps = len(done) * per + sum(
+        min(per, _steps_done(p.path("logs", f))) for f in names if _CAND_LOG.fullmatch(f)
+    )
+    return {"done": steps, "total": n * per, "running": len(running)}
 
 
 def _tail(path: Path, n: int) -> str:

@@ -221,7 +221,10 @@ def _run_stage(p: Project, stage: str, hw: hardware.Hardware, say) -> dict | Non
         return None
     if stage == "mww-train":
         info = candidates.train(
-            p, p.path("logs", "mww-train.log"), device=mww.train_device(hw.gpus), log=say
+            p,
+            p.path("logs", "mww-train.log"),
+            device=mww.train_devices(hw.gpus, hw.ram_free_gb),
+            log=say,
         )
         if p.microwakeword.combine and info:
             try:

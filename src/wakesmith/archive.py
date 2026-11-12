@@ -9,8 +9,12 @@ from the source folders, which live outside the project and are never touched). 
   mww/candidates/s<N>/ extras     best-of-N runs' training logs and checkpoints, except the small files
                                   needed to average or compare candidates later (KEEP_CANDIDATE); the
                                   same in mww/candidates.previous (mww/combined.previous stays)
-  mww/trained.previous            the model before the last retrain
-  *.tmp, *.part                   leftovers of interrupted writes
+  mww/trained.previous            the model before the last retrain (kept while it's the only model,
+                                  e.g. after a stopped run)
+  *.tmp, *.part                   leftovers of interrupted writes (in the project folder)
+  mww/candidates/s<N>.part,       leftovers of a killed training run: a half-trained candidate, a half
+  mww/trained.part,               copy of the kept one, a candidate's config and temporary files
+  mww/training-s<N>*.yaml, mww/.training*.tmp
   clips/ (only with clips=True)   the project's own synthetic clips -> generate rerun (slow: speech synthesis)
 
 Nothing is removed through a symlink, and nothing another project links to (rounds share clips, some
@@ -41,7 +45,7 @@ import threading
 import time
 from pathlib import Path
 
-from . import assistant, jobs, models
+from . import assistant, jobs, models, mww
 from . import project as projects
 from .candidates import KEEP_CANDIDATE
 from .pipeline import STAGES, enabled
@@ -256,6 +260,7 @@ def plan(p: Project, clips: bool = False, found: dict[str, list[str]] | None = N
     if cv_on and cv_ok and "real" in stages:
         add("commonvoice", "prepared Common Voice takes", "commonvoice")
 
+    training = jobs.busy(p)  # page or command line
     cands = p.path("mww", "candidates")
     if _safe(p, "mww/candidates") and cands.is_dir():
         try:
@@ -264,6 +269,10 @@ def plan(p: Project, clips: bool = False, found: dict[str, list[str]] | None = N
             picked = None
         for d in sorted(cands.glob("s*")):
             if d.name == f"s{picked}" or not d.is_dir() or d.is_symlink():
+                continue
+            if not d.name[1:].isdigit():  # s<N>.part: a candidate a stopped run left half trained
+                if not training:  # while it trains it's the run's work in progress
+                    add(str(d.relative_to(p.dir)), "half-trained candidate of a stopped run")
                 continue
             for x in sorted(d.iterdir()):
                 if x.name not in KEEP_CANDIDATE:
@@ -276,7 +285,18 @@ def plan(p: Project, clips: bool = False, found: dict[str, list[str]] | None = N
             for x in sorted(d.iterdir()):
                 if x.name not in KEEP_CANDIDATE:
                     add(str(x.relative_to(p.dir)), "previous round's training logs and checkpoints")
-    add("mww/trained.previous", "the model before the last retrain")
+    if p.path("mww", "trained.previous").exists() and not mww.model_path(p).exists():
+        # a stopped run moved the model aside and none came back: it's the model, not a spare
+        kept.append("mww/trained.previous: kept, it's the model until the next training run")
+    else:
+        add("mww/trained.previous", "the model before the last retrain")
+    left = ["mww/trained.part"]
+    for pattern in ("training-s*.yaml", ".training*.tmp"):
+        left += [f"mww/{f.name}" for f in sorted(p.path("mww").glob(pattern))]
+    if not training:  # while it trains they are its work in progress
+        for rel in left:
+            if p.path(rel).exists():  # a killed training run's half copy, config or temporary file
+                add(rel, "leftover of an interrupted training run")
     for f in sorted(p.dir.iterdir()):
         if f.is_file() and not f.is_symlink() and f.suffix in (".tmp", ".part"):
             add(f.name, "leftover of an interrupted write")

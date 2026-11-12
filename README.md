@@ -97,9 +97,10 @@ runs finish** in the Queue panel adds a desktop notification.
 4. **Train.** Live progress for every stage, with the time left measured on your machine and live
    RAM and GPU memory. A Quick test takes about 8 minutes with a GPU and 20 on six CPU cores; a
    Standard model about 15 minutes with a GPU. A Standard run trains three microWakeWord candidates
-   and keeps the one that does best on half of your held-out recordings (runs of one recipe differ a
-   lot); its results come from the other half, which played no part in choosing, so the choice
-   doesn't flatter them.
+   (side by side, one per card, with two or more GPUs and the free memory for them) and keeps the one with the fewest false
+   triggers on half of your held-out recordings, among those that catch at least 70% as many takes as
+   the best one (runs of one recipe differ a lot); its results come from the other half, which played
+   no part in choosing, so the choice doesn't flatter them.
    Start another run while one is going and it waits in the queue; finished and failed runs show a
    notice, in the browser too if you allow it.
 

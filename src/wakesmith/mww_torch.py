@@ -403,6 +403,9 @@ def main() -> None:
         "--threads", type=int, default=0, help="CPU threads for PyTorch (0: its default)"
     )
     ap.add_argument("--seed", type=int, default=None)
+    ap.add_argument(
+        "--config", default="training.yaml", help="training config in the mww folder (cwd)"
+    )
     a = ap.parse_args()
     if a.threads:
         torch.set_num_threads(a.threads)
@@ -414,7 +417,7 @@ def main() -> None:
     from microwakeword import mixednet
     from microwakeword.model_train_eval import load_config
 
-    flags = model_flags()
+    flags = model_flags(a.config)
     config = load_config(flags, mixednet)
     seed = a.seed if a.seed is not None else random.SystemRandom().randrange(2**31)
     model = train(
