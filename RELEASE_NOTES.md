@@ -1,21 +1,21 @@
-## What's new in 0.4.9
+## What's new in 0.4.10
 
-**Candidates train on every GPU at once.** A Standard run trains microWakeWord several times with
-different seeds and keeps the best one. With two or more graphics cards, those runs now go side by side,
-one per card, as many at once as free memory allows (about 8 GB each), instead of one after another on
-the first card: on two RTX 5060 Ti, four candidates took 4 minutes instead of about 7. The Training page counts every candidate in its progress and says how
-many train at once, and the time estimate learns from it after the first run. With one card, or on the
-CPU, nothing changes.
+**Devices can send their clips to wakesmith.** Clips your devices save when they fire (or nearly fire)
+are the best training data there is, but until now they had to be copied off by hand or by a script.
+wakesmith now has an inbox for them: on the Hardware page, under *Device upload*, press *Create token*,
+then paste the URL and token into the device. On TECHO5 devices that is the setup page's *Send wake
+clips to* → *wakesmith*, then *Test*. Each clip arrives as `<device>/<kind>/<name>.wav` with its `.json`,
+the same layout as a device's own clip folder, so *Sync automatically* and *Device clips* pick them up
+with nothing else to change. Sending a clip twice is harmless. The inbox is off until you make a token;
+wakesmith keeps only a fingerprint of it, and *Revoke* turns it off again. Any other device can send to
+it too (`POST /api/clips`, described in the README). Devices need to reach wakesmith, so start it with
+`--host 0.0.0.0` on your own network; never expose it to the internet.
 
-**The kept candidate catches calls.** Choosing between candidates looked at false triggers first, so a
-seed that barely fires could win: in one short run the kept candidate caught none of the held-out takes.
-Now only candidates that catch at least 70% as many held-out takes as the best one compete; among those,
-the fewest false triggers still decide. Results says when a candidate was left out for that.
+To update: the Update button on the Hardware page, or by hand:
+`uv tool install --python 3.12 --force ./wakesmith-0.4.10-py3-none-any.whl`, then `wakesmith setup`.
 
-To update: the Update button on the Hardware page (from 0.4.8; nothing else to do), or by hand:
-`uv tool install --python 3.12 --force ./wakesmith-0.4.9-py3-none-any.whl`, then `wakesmith setup`.
-
-Earlier: the listening check, the Real voices guide and updating from the page in
+Earlier: candidates on every GPU at once and a kept candidate that catches calls in
+[0.4.9](https://github.com/HuskerMinion/wakesmith/releases/tag/v0.4.9), the listening check, the Real voices guide and updating from the page in
 [0.4.8](https://github.com/HuskerMinion/wakesmith/releases/tag/v0.4.8), a smith at the forge while you train and `test --model` keeping the project's results in
 [0.4.7](https://github.com/HuskerMinion/wakesmith/releases/tag/v0.4.7), Macs with Apple silicon and the folder summary in
 [0.4.6](https://github.com/HuskerMinion/wakesmith/releases/tag/v0.4.6), Also written as, play buttons that show what's playing and the version's folder in

@@ -2578,6 +2578,7 @@ async function viewHardware() {
     <button type="button" id="again">${icon("refresh", 16, 2)}Detect again</button></div><div id="hwbody"><p class="hint">detecting…</p></div>
     <section class="panel" aria-labelledby="h-upd" id="upd" style="margin-top:22px"><h2 id="h-upd">wakesmith</h2><p class="hint" style="margin:0">loading…</p></section>
     <section class="panel" aria-labelledby="h-sto" id="storage" style="margin-top:22px"><h2 id="h-sto">Storage</h2><p class="hint" style="margin:0">measuring…</p></section>
+    <section class="panel" aria-labelledby="h-du" id="devup"><h2 id="h-du">Device upload</h2><p class="hint" style="margin:0">loading…</p></section>
     <section class="panel" aria-labelledby="h-ai" id="ai"><h2 id="h-ai">AI assistant (optional)</h2><p class="hint" style="margin:0">loading…</p></section>`;
   const draw = h => {
     const vendor = (name, col, fg) => `<span class="vendor" style="border-color:${col};color:${fg}">${name}</span>`;
@@ -2645,6 +2646,46 @@ async function viewHardware() {
   aiLoad().then(drawAi);
   if (HW) draw(HW); else load();
   storagePanel();
+  deviceUploadPanel();
+}
+
+// Device upload (inbox.py): devices POST their clips to /api/clips with a token made here. Only the
+// token's hash is kept, so it is shown once, right after Create token.
+async function deviceUploadPanel(fresh) {
+  const el = $("#devup"); if (!el) return;
+  let d;
+  try { d = await api("/api/device-upload"); } catch (e) { el.innerHTML = `<h2 id="h-du">Device upload</h2><p class="err">${esc(e.message)}</p>`; return; }
+  if (!$("#devup")) return;
+  const tok = fresh || "";
+  el.innerHTML = `<h2 id="h-du">Device upload</h2>
+    <p style="margin:0;color:var(--soft)">Devices can send their wake word clips straight here instead of you copying them off. Clips are stored as
+      <code class="mono">&lt;device&gt;/&lt;kind&gt;/&lt;name&gt;.wav</code> with their <code class="mono">.json</code> in the folder below; set a wake word's
+      Device clips folder (Sync automatically) to it and Sync picks them up. ${d.on ? "" : "Off until you create a token."}</p>
+    ${d.note ? `<div class="callout ${d.reachable ? "info" : "warn"}">${icon(d.reachable ? "info" : "bang", 18, 2)}<span>${esc(d.note)}</span></div>` : ""}
+    <dl class="kv"><dt>URL</dt><dd><span class="mono" id="duurl">${esc(d.url)}</span> <button type="button" id="ducopyurl">Copy</button></dd>
+      <dt>Token</dt><dd>${tok ? `<span class="mono" id="dutok" style="word-break:break-all">${esc(tok)}</span> <button type="button" class="primary" id="ducopytok">Copy</button>
+        <br><span class="hint">Shown only now: wakesmith keeps just a fingerprint of it. Paste it into the device, then leave this page.</span>`
+        : d.on ? `set${d.created ? ` on ${esc(new Date(d.created * 1000).toLocaleString([], { year: "numeric", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }))}` : ""} <span class="hint">(not shown again; create a new one if you lost it)</span>` : "none"}</dd></dl>
+    <div class="row"><button type="button" ${d.on ? "" : `class="primary"`} id="dunew">${d.on ? "Create a new token" : "Create token"}</button>
+      ${d.on ? `<button type="button" class="danger" id="durevoke">Revoke</button>` : ""}<span class="hint" id="dumsg"></span></div>
+    <div class="row" style="align-items:flex-end"><label class="f grow" for="dufolder">Save clips in<input type="text" id="dufolder" class="mono" value="${esc(d.folder)}" autocomplete="off"></label>
+      <button type="button" id="dusave">Save</button></div>
+    <div class="err" id="duerr"></div>`;
+  const err = m => $("#duerr").textContent = m || "", msg = m => $("#dumsg").textContent = m || "";
+  const copy = async t => { err(); try { await copyText(t); msg("copied"); } catch (e) { err(e.message); } };
+  $("#ducopyurl").onclick = () => copy(d.url);
+  if ($("#ducopytok")) $("#ducopytok").onclick = () => copy(tok);
+  $("#dunew").onclick = async () => {
+    if (d.on && !await ask("Create a new token?", "The current token stops working: devices that use it can't send clips until you paste the new one into them.", "Create a new token")) return;
+    err(); try { const r = await api("/api/device-upload/token", { method: "POST" }); deviceUploadPanel(r.token); } catch (e) { err(e.message); }
+  };
+  if ($("#durevoke")) $("#durevoke").onclick = async () => {
+    if (!await ask("Revoke the token?", "Devices can no longer send clips here until you create a new token and paste it into them. Clips already received stay.", "Revoke")) return;
+    err(); try { await api("/api/device-upload/token", { method: "DELETE" }); deviceUploadPanel(); } catch (e) { err(e.message); }
+  };
+  $("#dusave").onclick = async () => {
+    err(); try { await api("/api/device-upload", { method: "PUT", body: { folder: $("#dufolder").value } }); await deviceUploadPanel(tok); msg("saved"); } catch (e) { err(e.message); }
+  };
 }
 
 // Disk use per wake word, Archive buttons and the auto-archive setting (archive.py).

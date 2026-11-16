@@ -20,6 +20,7 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Response, StreamingResponse
 
 from .. import (
+    __version__,
     archive,
     assets,
     assistant,
@@ -30,6 +31,7 @@ from .. import (
     eta,
     evaluate,
     hardware,
+    inbox,
     jobs,
     languages,
     models,
@@ -138,7 +140,13 @@ async def _lifespan(app: FastAPI):
     task.cancel()
 
 
-def create_app(token: str | None = None) -> FastAPI:
+# device upload: its own Bearer token (inbox.py); with a trailing slash too, so a device that adds one
+# gets the inbox's answer, not the page's
+INBOX_PATHS = ("/api/clips", "/api/clips/", "/api/clips/ping", "/api/clips/ping/")
+
+
+def create_app(token: str | None = None, listen: dict | None = None) -> FastAPI:
+    """`listen`: {"host", "port", "https"} as `wakesmith serve` was started, for the device upload URL."""
     app = FastAPI(title="wakesmith", docs_url=None, redoc_url=None, lifespan=_lifespan)
     state: dict = {"hw": None, "hw_time": 0.0}
     updater = app.state.updater = update.Updater()
@@ -147,21 +155,30 @@ def create_app(token: str | None = None) -> FastAPI:
     async def auth(request: Request, call_next):
         # Any web page could send requests to a wakesmith on localhost: refuse writes from another site
         # (Origin not this server) and requests for a Host name other than this machine's.
+        # Devices' clip uploads carry their own token instead (checked by the route; no cookies, no
+        # CORS, so a web page can't send that header from another site).
         origin, host = request.headers.get("origin"), request.headers.get("host", "")
         write = request.method not in ("GET", "HEAD", "OPTIONS")
+        device = request.url.path in INBOX_PATHS
+
+        def refuse(
+            status: int, why: str
+        ) -> JSONResponse:  # devices get the inbox's shape of answer
+            body = {"ok": False, "error": why} if device else {"detail": why}
+            return JSONResponse(body, status_code=status)
+
         if write and origin and origin.split("://", 1)[-1].rstrip("/") != host:
-            return JSONResponse({"detail": "cross-site request refused"}, status_code=403)
+            return refuse(403, "cross-site request refused")
         name = host.split("]")[0] + "]" if host.startswith("[") else host.rsplit(":", 1)[0]
-        if not token and name not in ("localhost", "127.0.0.1", "[::1]"):
+        if not token and not device and name not in ("localhost", "127.0.0.1", "[::1]"):
             return JSONResponse({"detail": "unknown host"}, status_code=403)
-        if token:
+        if token and not device:
             given = request.query_params.get("token") or request.cookies.get("wakesmith_token")
             if not given or not secrets.compare_digest(given, token):
                 return JSONResponse({"detail": "access token required"}, status_code=401)
         if write and updater.frozen():  # nothing new starts on files that are being replaced
-            return JSONResponse(
-                {"detail": "wakesmith is updating, or waiting to be started again after an update"},
-                status_code=503,
+            return refuse(
+                503, "wakesmith is updating, or waiting to be started again after an update"
             )
         if write:
             updater.writes += 1
@@ -170,7 +187,7 @@ def create_app(token: str | None = None) -> FastAPI:
         finally:
             if write:
                 updater.writes -= 1
-        if token and request.query_params.get("token"):
+        if token and not device and request.query_params.get("token"):
             resp.set_cookie("wakesmith_token", token, httponly=True, samesite="strict")
         return resp
 
@@ -1078,6 +1095,97 @@ def create_app(token: str | None = None) -> FastAPI:
             raise HTTPException(400, str(e)) from None
         except (RuntimeError, OSError) as e:
             raise HTTPException(500, f"could not change the daily sync: {e}") from None
+
+    # -- device upload: devices push their clips here (inbox.py) ---------------------------------
+    def _device_error(status: int, error: str) -> JSONResponse:
+        return JSONResponse({"ok": False, "error": error}, status_code=status)
+
+    def _device_auth(request: Request) -> JSONResponse | None:
+        if inbox.check_auth(request.headers.get("authorization")):
+            return None
+        # the same answer when the inbox is off: a caller without the token learns nothing
+        return _device_error(
+            401, "missing or wrong token (or device upload is off in wakesmith's settings)"
+        )
+
+    @app.get("/api/clips/ping/")
+    @app.get("/api/clips/ping")
+    def clips_ping(request: Request):
+        if (refused := _device_auth(request)) is not None:
+            return refused
+        return {"ok": True, "wakesmith": __version__}
+
+    @app.post("/api/clips/")
+    @app.post("/api/clips")
+    async def clips_upload(request: Request):
+        if (refused := _device_auth(request)) is not None:
+            return refused
+        too_large = (
+            f"too large: the audio may be {inbox.AUDIO_MAX_BYTES} bytes, "
+            f"the whole request {inbox.BODY_MAX_BYTES}"
+        )
+        try:
+            if int(request.headers.get("content-length") or 0) > inbox.BODY_MAX_BYTES:
+                return _device_error(413, too_large)
+        except ValueError:
+            return _device_error(400, "bad Content-Length")
+        body = bytearray()
+        async for chunk in request.stream():  # counted as it arrives
+            body += chunk
+            if len(body) > inbox.BODY_MAX_BYTES:
+                return _device_error(413, too_large)
+        try:
+            parts = await asyncio.to_thread(  # off the event loop: up to 2 MB to split
+                inbox.parse_multipart, request.headers.get("content-type", ""), bytes(body)
+            )
+            missing = [k for k in ("audio", "meta") if k not in parts]
+            if missing:
+                raise inbox.BadUpload(f"missing part: {', '.join(missing)}")
+            return await asyncio.to_thread(inbox.store, parts["audio"], parts["meta"])
+        except inbox.TooLarge as e:
+            return _device_error(413, str(e))
+        except inbox.BadUpload as e:
+            return _device_error(400, str(e))
+        except (OSError, ValueError) as e:  # disk full, a folder that can't be made
+            why = getattr(e, "strerror", None) or type(e).__name__
+            return _device_error(500, f"could not store the clip: {why}")
+
+    def _upload_info() -> dict:
+        where = listen or {"host": "127.0.0.1", "port": 8765, "https": False}
+        return {
+            **inbox.settings(),
+            **inbox.upload_url(where["host"], int(where["port"]), bool(where.get("https"))),
+        }
+
+    @app.get("/api/device-upload")
+    def device_upload():
+        return _upload_info()
+
+    @app.put("/api/device-upload")
+    async def device_upload_set(request: Request):
+        """{"folder"}: where uploaded clips are stored."""
+        try:
+            body = await request.json()
+        except ValueError:
+            raise HTTPException(400, 'send JSON: {"folder": "/full/path"}') from None
+        if not isinstance(body, dict):
+            raise HTTPException(400, 'send JSON: {"folder": "/full/path"}')
+        try:
+            inbox.set_folder(str(body.get("folder", "")))
+        except ValueError as e:
+            raise HTTPException(400, str(e)) from None
+        return _upload_info()
+
+    @app.post("/api/device-upload/token")
+    def device_upload_token():
+        """A new token, replacing any earlier one. This answer is the only time it is shown."""
+        new = inbox.create_token()
+        return {**_upload_info(), "token": new}
+
+    @app.delete("/api/device-upload/token")
+    def device_upload_revoke():
+        inbox.revoke()
+        return _upload_info()
 
     @app.post("/api/projects/{name}/devices/import")
     async def devices_import(name: str, request: Request):

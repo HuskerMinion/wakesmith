@@ -285,6 +285,23 @@ wait for you. From the command line: `wakesmith clips sync PROJECT [--from DIR] 
 With `auto`, Whisper uses the GPU only while no other wakesmith job runs; a wake word whose own job
 is running is skipped until the next run.
 
+**Receiving clips from TECHO5 devices.** Instead of copying clips off the devices, let them send
+each clip as they save it. On the Hardware page, under *Device upload*, press *Create token* and copy
+it (it is shown once; wakesmith keeps only a fingerprint of it). Then on the device's setup page choose
+*Send wake clips to* → *wakesmith*, paste the URL shown next to the token and the token itself, and press
+*Test*. Clips arrive in the *Save clips in* folder as `<device>/<kind>/<name>.wav` with their `.json`,
+the same layout as the device's own clip folder: set a wake word's *Sync automatically* folder to it and
+Sync picks them up. Devices need to reach wakesmith, so start it with `--host 0.0.0.0` (your LAN only);
+with `--https` the device has to accept wakesmith's self-signed certificate. *Revoke* turns the inbox
+off again; *Create a new token* replaces the old one. Any other device can send to it too:
+`POST /api/clips` with `Authorization: Bearer <token>` and a multipart form of `audio` (16 kHz mono
+16-bit WAV, at most 2 MB) and `meta` (JSON with `name`, `device`, `kind` = wake, nearmiss, mistake or
+noise, `at` in UTC like `2026-10-12T21:33:01Z`, `model`, and optionally `slot`, `score`, `cutoff`);
+`GET /api/clips/ping` checks a token. Answers: 200 `{"ok": true, "stored": "<path>"}` (with
+`"duplicate": true` when that device already sent a clip of that name: sending again is harmless),
+400 for audio or meta it can't use (the message says which), 401 for a missing or wrong token, 413
+for audio over 2 MB.
+
 **Versions.** Every round of training is a version of its wake word (v1, v2, ...), with a short note on
 what it tried; the wake words page shows one row per word and folds out its versions. *New version* (a
 word's ⋯ menu, or `wakesmith version PROJECT`) makes the next round in one step: the recipe, recordings

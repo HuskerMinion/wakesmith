@@ -693,7 +693,7 @@ def serve(
         typer.echo("self-signed certificate: the browser warns once; accept it to continue")
     elif not local:
         typer.echo("recording takes in the browser needs HTTPS from other devices: add --https")
-    webapp = create_app(token)
+    webapp = create_app(token, {"host": host, "port": port, "https": https})
     # A Server of our own, not uvicorn.run: the page's update asks it to stop, and then this process
     # becomes the new version. The bounded shutdown is for the page's open live-updates connections.
     server = uvicorn.Server(
