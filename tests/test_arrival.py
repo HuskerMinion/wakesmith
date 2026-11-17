@@ -30,6 +30,14 @@ def _meta(name="20261117-035233-971-s1-p1.00-c0.85", model="hey_jarvis_v2", devi
             "slot": 1, "model": model, "score": 1, "cutoff": 0.85}  # fmt: skip
 
 
+@pytest.fixture(autouse=True)
+def _fresh_gpu_reading(monkeypatch):
+    """No GPU reading cached by one test (a fake nvidia-smi) reaches another, here or in other files."""
+    from wakesmith import mww
+
+    monkeypatch.setattr(mww, "_free_cache", (0.0, {}))
+
+
 def _until(cond, seconds=10.0):
     end = time.monotonic() + seconds
     while not cond() and time.monotonic() < end:
@@ -863,3 +871,347 @@ def test_a_clip_imported_from_dot_by_an_older_version_isnt_imported_again(home, 
                       "score": None, "text": None, "suggestion": None, "label": None}])  # fmt: skip
     monkeypatch.chdir(src)
     assert rounds.import_folder(p, ".")["added"] == 0
+
+
+# -- 0.4.13: device take runs as a test set ------------------------------------------------------
+def _held_out(p):
+    from wakesmith import recordings
+
+    listing = recordings.listing(p, "pos")
+    rows = listing["takes"] if "takes" in listing else listing["files"]
+    return sorted((r.get("condition") or "").split(", ")[1] for r in rows if r.get("held"))
+
+
+def test_take_runs_alternate_test_then_train_and_keep_their_role(home):
+    from wakesmith import takes
+
+    p = _word("hey jarvis", "hey_jarvis")
+    for run, n in (("r1", 3), ("r2", 2), ("r3", 2)):
+        for i in range(n):
+            m = {**_take_meta(i, run=run), "name": f"20261117-0600{i:02d}-000-{run}"}
+            inbox.store(_voice(), json.dumps(m).encode())
+    assert rounds.import_folder(p, inbox.folder())["takes"] == 7
+    assert takes.runs(p) == {"kitchen/r1": "test", "kitchen/r2": "train", "kitchen/r3": "test"}
+    assert _held_out(p) == ["run r1"] * 3 + ["run r3"] * 2
+    p.devices.takes = "train"  # changing the setting later leaves runs already seen as they were
+    p.save()
+    m = {**_take_meta(9, run="r1"), "name": "20261117-060009-000-r1"}
+    inbox.store(_voice(), json.dumps(m).encode())
+    rounds.import_folder(p, inbox.folder())
+    assert _held_out(p).count("run r1") == 4
+
+
+@pytest.mark.parametrize(("mode", "held"), [("train", 0), ("test", 4)])
+def test_take_modes_train_or_test_every_run(home, mode, held):
+    p = _word("hey jarvis", "hey_jarvis")
+    p.devices.takes = mode
+    p.save()
+    for run in ("r1", "r2"):
+        for i in range(2):
+            m = {**_take_meta(i, run=run), "name": f"20261117-0600{i:02d}-000-{run}"}
+            inbox.store(_voice(), json.dumps(m).encode())
+    rounds.import_folder(p, inbox.folder())
+    assert len(_held_out(p)) == held
+
+
+def test_takes_without_a_run_id_group_by_gaps_not_the_clock(home):
+    from wakesmith import takes
+
+    s = {}
+
+    def take(dev, at):
+        k = takes.run_key(dev, {}, at, s)
+        takes.note(s, dev, k, at)
+        return k
+
+    k1 = take("kitchen", "2026-11-17T14:58:00Z")
+    assert take("kitchen", "2026-11-17T15:03:00Z") == k1  # across the hour
+    k2 = take("kitchen", "2026-11-17T15:20:00Z")  # 17 minutes later: a new run
+    assert k2 != k1 and take("hall", "2026-11-17T15:21:00Z").startswith("hall/")
+    assert takes.run_key("kitchen", {"run": "abc"}, "x", s) == "kitchen/abc"
+
+
+def test_a_late_take_joins_its_run_and_moves_nothing(home):
+    from wakesmith import takes
+
+    s = {}
+
+    def take(at):
+        k = takes.run_key("d", {}, at, s)
+        takes.note(s, "d", k, at)
+        return k
+
+    k = take("2026-11-17T08:00:00Z")
+    assert take("2026-11-17T08:06:00Z") == k
+    assert take("2026-11-17T08:05:00Z") == k  # uploaded late (or retried): same run
+    assert take("2026-11-17T08:07:00Z") == k and s["d"][-1]["last"] == "2026-11-17T08:07:00Z"
+    assert takes.run_key("d", {}, "2026-11-17T07:55:00Z", s) == k  # a little before its start
+    assert takes.run_key("d", {}, "2026-11-17T07:40:00Z", s) != k
+
+
+def test_a_take_without_a_sidecar_is_timed_by_its_file_and_runs_split(home):
+    import os as _os
+
+    from wakesmith import takes
+
+    p = _word("hey jarvis", "hey_jarvis")
+    d = inbox.folder() / "kitchen" / "take"
+    d.mkdir(parents=True)
+    for i, ago in enumerate((7200, 7100, 60)):  # two takes two hours ago, one a minute ago
+        f = d / f"t{i}.wav"
+        f.write_bytes(_voice())
+        _os.utime(f, (time.time() - ago,) * 2)
+    assert rounds.import_folder(p, inbox.folder())["takes"] == 3
+    assert list(takes.runs(p).values()) == ["test", "train"]
+
+
+def test_a_run_whose_takes_all_fail_takes_no_turn(home):
+    from wakesmith import takes
+
+    p = _word("hey jarvis", "hey_jarvis")
+    silent = {**_take_meta(0, run="r0"), "name": "20261117-060000-000-r0"}
+    inbox.store(_wav(1.0), json.dumps(silent).encode())  # refused: silent
+    for i in range(2):
+        m = {**_take_meta(i, run="r1"), "name": f"20261117-0601{i:02d}-000-r1"}
+        inbox.store(_voice(), json.dumps(m).encode())
+    rounds.import_folder(p, inbox.folder())
+    assert takes.runs(p) == {"kitchen/r1": "test"}  # the first run that landed is the test
+
+
+def test_alternation_follows_the_last_role_after_a_mode_change(home):
+    from wakesmith import takes
+
+    p = _word("hey jarvis", "hey_jarvis")
+    assert takes.next_role(p, {}) == "test"
+    assert takes.next_role(p, {"a": "test", "b": "test"}) == "train"
+    assert takes.next_role(p, {"a": "test", "b": "train"}) == "test"
+
+
+def test_the_takes_setting_saves_and_is_checked(client, home):
+    _word("hey jarvis", "hey_jarvis")
+    url = f"/api/projects/hey_jarvis/devices/sync?token={UI_TOKEN}"
+    assert client.put(url, json={"takes": "test"}).json()["takes"] == "test"
+    assert client.put(url, json={"takes": "sometimes"}).status_code == 400
+    page = (Path(arrival.__file__).parent / "web" / "index.html").read_text()
+    assert 'id="synctakes"' in page
+
+
+def test_a_word_whose_job_runs_syncs_once_the_job_ends(home):
+    p = _word("hey jarvis", "hey_jarvis", inbox.folder(), "hey_jarvis")
+    busy, ran = [True], []
+    a = arrival.Arrivals(run=ran.append, delay=0.05, busy=lambda w: busy[0], recheck=0.1)
+    a.note(_store(_meta()), "hey_jarvis_v2")
+    time.sleep(0.4)
+    assert ran == [] and a.pending() == [str(p.dir)]  # still waiting, not dropped
+    busy[0] = False
+    assert _until(lambda: ran == [str(p.dir)])
+
+
+# -- 0.4.13: timing in the candidate pick --------------------------------------------------------
+def test_speech_end_finds_the_last_loud_frame():
+    import numpy as np
+
+    from wakesmith import evaluate
+
+    a = np.zeros(16000, np.float32)
+    a[3200:9600] = 0.3 * np.sin(np.arange(6400) / 5)
+    assert evaluate.speech_end(a) == 0.6
+    assert evaluate.speech_end(np.zeros(16000, np.float32)) is None
+
+
+def test_the_pick_passes_over_candidates_that_fire_early():
+    from wakesmith import candidates
+
+    base = {"positives": 100, "negatives": 400, "cutoff": 0.9}
+    cands = [
+        {**base, "n": 1, "caught": 90, "false": 2, "fires_ms": -20.0},
+        {**base, "n": 2, "caught": 85, "false": 2, "fires_ms": 60.0},
+        {**base, "n": 3, "caught": 80, "false": 2},
+    ]
+    best, why = candidates.choose(cands)
+    assert best["n"] == 2 and "1 that fire before the wake word ends passed over" in why
+    every = [{**c, "fires_ms": -5.0} for c in cands]  # all early: the usual pick, nothing skipped
+    best, why = candidates.choose(every)
+    assert best["n"] == 1 and "passed over" not in why
+
+
+def test_timing_without_test_clips_is_none(home):
+    from wakesmith import candidates
+
+    p = _word("hey jarvis", "hey_jarvis")
+    assert candidates.timing(p, Path("nope.tflite"), 0.9) is None
+
+
+def test_a_weak_on_time_candidate_never_beats_a_good_early_one():
+    from wakesmith import candidates
+
+    base = {"positives": 50, "negatives": 400, "cutoff": 0.9}
+    cands = [
+        {**base, "n": 1, "caught": 45, "false": 2, "fires_ms": -10.0},
+        {**base, "n": 2, "caught": 5, "false": 1},
+        {"n": 3, "failed": "boom"},
+    ]
+    best, why = candidates.choose(cands)
+    assert best["n"] == 1 and "passed over" not in why
+
+
+def test_a_gpu_another_program_filled_is_left_out():
+    from wakesmith import mww
+
+    gpu = lambda d, gb=16: type("G", (), {"device": d, "memory_gb": gb})()
+    two = [gpu("cuda:0"), gpu("cuda:1")]
+    assert mww.train_devices(two, free_gb={"cuda:0": 0.8, "cuda:1": 15.0}) == ["cuda:1"]
+    assert mww.train_devices(two, free_gb={"cuda:0": 0.8, "cuda:1": 2.0}) == ["cuda:1"]  # best left
+    assert mww.train_devices(two, free_gb={}) == ["cuda:0", "cuda:1"]  # unknown: as before
+    assert mww.train_devices([gpu("xpu:0")], free_gb={"cuda:0": 1.0}) == ["xpu:0"]
+
+
+def test_gpu_free_follows_cuda_visible_devices(monkeypatch):
+    from wakesmith import mww
+
+    out = {"s": "0, NVIDIA RTX 5060 Ti, 900\n1, NVIDIA RTX 5060 Ti, 15000\n"}
+
+    class R:
+        @property
+        def stdout(self):
+            return out["s"]
+
+    monkeypatch.setattr(mww.subprocess, "run", lambda *a, **kw: R())
+    for k in ("CUDA_VISIBLE_DEVICES", "CUDA_DEVICE_ORDER"):
+        monkeypatch.delenv(k, raising=False)
+    assert mww.gpu_free_gb() == {"cuda:0": 900 / 1024, "cuda:1": 15000 / 1024}
+    monkeypatch.setenv("CUDA_VISIBLE_DEVICES", "1")
+    assert mww.gpu_free_gb() == {"cuda:0": 15000 / 1024}
+    monkeypatch.setenv("CUDA_VISIBLE_DEVICES", "GPU-8f2a,GPU-11c0")  # UUIDs: not matched
+    assert mww.gpu_free_gb() == {}
+    monkeypatch.delenv("CUDA_VISIBLE_DEVICES")
+    out["s"] = "0, NVIDIA RTX 3060, 900\n1, NVIDIA RTX 4090, 15000\n"  # unlike cards
+    assert mww.gpu_free_gb() == {}  # torch orders them fastest first: can't match by index
+    monkeypatch.setenv("CUDA_DEVICE_ORDER", "PCI_BUS_ID")
+    assert mww.gpu_free_gb() == {"cuda:0": 900 / 1024, "cuda:1": 15000 / 1024}
+
+
+def test_the_estimate_counts_only_gpus_with_room(home, monkeypatch):
+    from wakesmith import eta, mww
+
+    p = _word("hey jarvis", "hey_jarvis")
+    p.microwakeword.candidates = 4
+    monkeypatch.setattr(eta, "_load", lambda: {"mww-train:slots": 2})
+    monkeypatch.setattr(mww, "gpu_free_gb", lambda max_age=0: {"cuda:0": 0.5, "cuda:1": 14.0})
+    assert eta._rounds(p) == 4  # one card with room: four rounds, not two
+    monkeypatch.setattr(mww, "gpu_free_gb", lambda max_age=0: {})
+    assert eta._rounds(p) == 2
+
+
+def test_the_gpu_check_reads_the_trainers_mask_inside_a_stage(monkeypatch):
+    from wakesmith import mww, pipeline
+
+    class R:
+        stdout = "0, NVIDIA RTX 5060 Ti, 900\n1, NVIDIA RTX 5060 Ti, 15000\n"
+
+    monkeypatch.setattr(mww.subprocess, "run", lambda *a, **kw: R())
+    for k in (
+        "CUDA_VISIBLE_DEVICES",
+        "CUDA_DEVICE_ORDER",
+        "WAKESMITH_CUDA_DEVICES",
+        "WAKESMITH_TF_GPU",
+    ):
+        monkeypatch.setenv(k, "x")  # recorded, so the test restores whatever _tf_off_gpu sets
+        monkeypatch.delenv(k)
+    pipeline._tf_off_gpu()  # as every training stage does: CUDA_VISIBLE_DEVICES=-1 for TensorFlow
+    assert mww.gpu_free_gb() == {"cuda:0": 900 / 1024, "cuda:1": 15000 / 1024}
+    gpu = lambda d: type("G", (), {"device": d, "memory_gb": 16})()
+    assert mww.train_devices([gpu("cuda:0"), gpu("cuda:1")], free_gb=mww.gpu_free_gb()) == [
+        "cuda:1"
+    ]
+    monkeypatch.setenv("WAKESMITH_CUDA_DEVICES", "1")  # the trainer gets card 1 only
+    assert mww.gpu_free_gb() == {"cuda:0": 15000 / 1024}
+
+
+def test_the_estimate_keeps_its_gpu_count_while_training_runs(home, monkeypatch):
+    from wakesmith import eta, mww
+
+    p = _word("hey jarvis", "hey_jarvis")
+    p.microwakeword.candidates = 4
+    monkeypatch.setattr(eta, "_load", lambda: {"mww-train:slots": 2})
+    monkeypatch.setattr(mww, "gpu_free_gb", lambda max_age=0: {"cuda:0": 1.0, "cuda:1": 1.0})
+    from wakesmith import candidates, jobs
+
+    monkeypatch.setattr(jobs, "busy", lambda q: True)  # a page job or a command-line run
+    f = candidates.progress_path(p)  # its own run, on 2 cards its trainers now fill
+    f.parent.mkdir(parents=True, exist_ok=True)
+    f.write_text(json.dumps({"n": 4, "slots": 2, "done": [], "running": {}}))
+    assert eta._rounds(p) == 2
+    f.write_text(json.dumps({"n": 4, "slots": 1, "done": [], "running": {}}))
+    assert eta._rounds(p) == 4  # a run that got one card: four rounds, whatever the last run had
+
+
+def test_a_late_take_from_an_older_run_leaves_the_current_run_whole(home):
+    from wakesmith import takes
+
+    s = {}
+
+    def take(at):
+        k = takes.run_key("d", {}, at, s)
+        takes.note(s, "d", k, at)
+        return k
+
+    r1 = take("2026-11-17T10:00:00Z")
+    assert take("2026-11-17T10:04:00Z") == r1
+    r2 = take("2026-11-17T10:30:00Z")
+    assert r2 != r1
+    assert take("2026-11-17T10:03:00Z") == r1  # a retried take of the first run
+    assert take("2026-11-17T10:32:00Z") == r2  # the current run is still one run
+    old = {
+        "d": {"key": "d/2026-11-17T09:00", "last": "2026-11-17T09:05:00Z"}
+    }  # first builds' shape
+    assert takes.run_key("d", {}, "2026-11-17T09:07:00Z", old) == "d/2026-11-17T09:00"
+
+
+def test_a_late_run_older_than_the_remembered_ones_stays_whole(home):
+    from wakesmith import takes
+
+    s = {}
+
+    def take(at):
+        k = takes.run_key("d", {}, at, s)
+        takes.note(s, "d", k, at)
+        return k
+
+    for day in range(1, 22):  # 21 daily runs
+        take(f"2026-10-{day:02d}T10:00:00Z")
+    k = take("2026-09-30T10:00:00Z")  # a late run from before all of them
+    assert take("2026-09-30T10:01:00Z") == k and take("2026-09-30T10:02:00Z") == k
+    assert len(s["d"]) == takes.KEEP_SPANS
+
+
+def test_a_stopped_runs_progress_file_steers_nothing(home, monkeypatch):
+    from wakesmith import candidates, eta, jobs, mww
+
+    p = _word("hey jarvis", "hey_jarvis")
+    p.microwakeword.candidates = 4
+    monkeypatch.setattr(eta, "_load", lambda: {"mww-train:slots": 2})
+    monkeypatch.setattr(mww, "gpu_free_gb", lambda max_age=0: {"cuda:0": 1.0, "cuda:1": 14.0})
+    f = candidates.progress_path(p)
+    f.parent.mkdir(parents=True, exist_ok=True)
+    f.write_text(json.dumps({"n": 4, "slots": 2, "done": [], "running": {}}))  # left by a kill
+    assert eta._rounds(p) == 4  # idle: the GPUs with room now (one), not the dead run's two
+    job = p.path("job.json")
+    job.write_text(json.dumps({"pid": 1, "title": "train", "started": time.time()}))
+    jobs._finish(job, json.loads(job.read_text()), -15)  # the launcher notes the stop
+    assert not f.exists()
+
+
+def test_a_command_line_runs_progress_file_is_left_alone(home, monkeypatch):
+    from wakesmith import candidates, jobs
+
+    p = _word("hey jarvis", "hey_jarvis")
+    f = candidates.progress_path(p)
+    f.parent.mkdir(parents=True, exist_ok=True)
+    f.write_text("{}")
+    monkeypatch.setattr(jobs, "outside_run", lambda q: True)  # trained from the command line now
+    jobs._drop_progress(p.dir)
+    assert f.exists()
+    monkeypatch.setattr(jobs, "outside_run", lambda q: False)
+    jobs._drop_progress(p.dir)
+    assert not f.exists()

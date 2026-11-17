@@ -267,7 +267,7 @@ def import_folder(
         cid = f"{device}/{wav.name}"
         if takes.is_take(meta, rel):  # recorded on the device as the phrase: into recordings
             if cid not in took and old_id not in took:
-                new_takes.append((str(meta.get("at") or ""), cid, device, wav, meta))
+                new_takes.append((takes.take_time(wav, meta), cid, device, wav, meta))
             continue
         if cid in known or old_id in known:  # in already, perhaps under its old id
             continue

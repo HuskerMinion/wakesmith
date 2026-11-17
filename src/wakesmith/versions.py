@@ -147,7 +147,7 @@ def _create(p: Project, note: str) -> Project:
                 shutil.copy2(p.path("devices", "clips.json"), q.path("devices", "clips.json"))
             # deleted clips stay deleted, and device takes already in recordings/ (copied above) don't
             # come in a second time
-            for keep in ("deleted.json", "takes.json"):
+            for keep in ("deleted.json", "takes.json", "take_runs.json", "take_sessions.json"):
                 if p.path("devices", keep).exists():
                     q.path("devices").mkdir(exist_ok=True)
                     shutil.copy2(p.path("devices", keep), q.path("devices", keep))

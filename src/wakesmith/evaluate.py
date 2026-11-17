@@ -149,6 +149,64 @@ def mww_scorer(tflite: Path, window: int = 5, frontend: str = "tflm") -> Callabl
     return peak
 
 
+def speech_end(a: np.ndarray, sr: int = 16000) -> float | None:
+    """Seconds into the clip where its speech ends: the last 10 ms frame within 26 dB of its loudest
+    (clean synthetic clips: the wake word's own end). None for a silent clip."""
+    n = sr // 100
+    frames = a[: len(a) // n * n].reshape(-1, n)
+    if not len(frames):
+        return None
+    rms = np.sqrt(np.mean(frames.astype(np.float64) ** 2, axis=1))
+    top = rms.max()
+    if top < 1e-4:
+        return None
+    loud = np.flatnonzero(rms >= top * 0.05)
+    return float((loud[-1] + 1) * n / sr)
+
+
+def fire_delays(
+    tflite: Path, clips: list[Path], cutoff: float, window: int = 5, frontend: str = "tflm"
+) -> list[float | None]:
+    """For each clip, when the model first fires (its last `window` scores average >= cutoff) relative
+    to the end of the clip's speech, in ms (negative: before the wake word has ended); None when it
+    never fires or the clip is silent. Each clip starts from a fresh model (tflm: after 1 s of
+    silence, as mww_scorer)."""
+    from microwakeword.inference import Model
+
+    out: list[float | None] = []
+    for f in clips:
+        a = read_16k_mono(f)
+        end = speech_end(a)
+        if end is None:
+            out.append(None)
+            continue
+        # zserge, as the device and mww_scorer: no digital silence before (its noise estimate starts
+        # on the clip's own room sound)
+        lead = 0 if frontend == "zserge" else 16000
+        x = np.concatenate([np.zeros(lead, np.float32), a, np.zeros(8000, np.float32)])
+        m = Model(str(tflite))
+        if frontend == "zserge":
+            s = np.round(
+                np.asarray(m.predict_spectrogram(devicefront.features(x)), np.float32) * 255
+            )
+            s = s / 255
+        else:
+            s = np.asarray(m.predict_clip(x, step_ms=10), np.float32)
+        if len(s) < window:
+            out.append(None)
+            continue
+        avg = np.convolve(s, np.ones(window) / window, mode="valid")
+        hit = np.flatnonzero(avg >= cutoff)
+        if not len(hit):
+            out.append(None)
+            continue
+        j = hit[0] + window - 1  # the inference that completed the window
+        # prediction j ends at spectrogram frame slices + j*stride - 1; frame F covers 160F..160F+480
+        t = ((m.input_feature_slices + j * m.stride - 1) * 160 + 480 - lead) / 16000
+        out.append(round((t - end) * 1000, 1))
+    return out
+
+
 def score(
     p: Project,
     kind: str,

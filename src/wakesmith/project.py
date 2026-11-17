@@ -151,6 +151,10 @@ class Devices:
     since: str = ""  # ISO time: only clips from then on (e.g. when the current model went live)
     # sync this word soon after the device upload stores a clip it takes (arrival.py), not only daily
     on_arrival: bool = True
+    # takes recorded on a device (takes.py), a run at a time: "alternate" holds the first run out
+    # as a test set (every capture kept, so misses count honestly), trains on the next, and so on;
+    # "train" or "test": every run
+    takes: str = "alternate"
 
 
 @dataclass

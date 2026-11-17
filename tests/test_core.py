@@ -2780,6 +2780,7 @@ def test_clip_sync_since_limit_and_project_settings(proj, tmp_path):
         "model_prefix": "hey_jarvis",
         "since": "2026-10-24T18:00",
         "on_arrival": True,
+        "takes": "alternate",
     }
     r = clipsync.sync(p, device="cpu", limit=2, whisper=_FakeWhisper(SAID))
     assert (r["new"], r["left"]) == (2, 1) and "1 more next time" in clipsync.describe(r)

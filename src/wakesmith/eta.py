@@ -50,12 +50,35 @@ def _can_listen() -> bool:
     return sys.platform == "darwin" or bool(setup_env.find_gpus())
 
 
+def _own_slots(p: Project) -> int | None:
+    """While this project's candidates train: the GPUs that run actually has (its progress file)."""
+    try:
+        from . import candidates, jobs
+
+        if not jobs.busy(p):  # a page job or a command-line run; a stopped run's file says nothing
+            return None
+        f = candidates.progress_path(p)
+        k = json.loads(f.read_text()).get("slots") if f.exists() else None
+        return int(k) if isinstance(k, int | float) and k >= 1 else None
+    except (OSError, ValueError, TypeError, AttributeError):
+        return None
+
+
 def _rounds(p: Project, slots: int | None = None) -> int:
     """Best of N trains one candidate per GPU at a time: rounds of training one after another. Slots:
     as many as the last run here had (timings.json), unless given."""
     n = max(1, p.microwakeword.candidates)
+    running = _own_slots(p) if slots is None else None
+    if running is not None:  # this project's run: its own count (its trainers fill the cards)
+        return -(-n // max(1, min(n, running)))
     k = slots if slots is not None else _load().get("mww-train:slots", 1)
     k = max(1, min(n, int(k) if isinstance(k, (int, float)) else 1))
+    if slots is None:  # before a run: only the GPUs with room now (another program may fill one)
+        from .mww import TRAIN_VRAM_GB, gpu_free_gb
+
+        free = gpu_free_gb(max_age=30)
+        if free:
+            k = max(1, min(k, sum(gb >= TRAIN_VRAM_GB for gb in free.values())))
     return -(-n // k)
 
 

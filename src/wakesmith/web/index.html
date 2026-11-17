@@ -1485,6 +1485,8 @@ async function voicesTab(p, base, steps) {
       <label class="f" for="syncsince">Only clips from <span class="hint">optional, a time (UTC), e.g. when this model went live</span>
         <input type="text" id="syncsince" class="mono" value="${esc(y.since || "")}" placeholder="2026-10-24T18:00"></label>
       <label style="display:flex;gap:10px;align-items:center;min-height:44px;cursor:pointer"><input type="checkbox" id="syncarr" ${y.on_arrival !== false ? "checked" : ""} style="width:22px;height:22px;margin:0;accent-color:var(--orange)"><span><b>As clips arrive</b> <span class="hint">a minute after a device sends this word a clip through Device upload (while wakesmith is running)</span></span></label>
+      <label class="f" for="synctakes">Takes recorded on a device <span class="hint">a whole run at a time; a held-out run counts misses honestly, since every capture with speech is kept</span>
+        <select id="synctakes">${[["alternate", "Alternate runs: first for the test, next for training, …"], ["train", "Train on every run"], ["test", "Hold every run out for the test"]].map(([v, l]) => `<option value="${v}" ${(y.takes || "alternate") === v ? "selected" : ""}>${l}</option>`).join("")}</select></label>
       <div class="row"><button type="button" id="syncsave">Save</button><button type="button" id="syncnow" ${y.source ? "" : "disabled"}>Sync now</button><span class="hint" id="syncmsg"></span></div>
       <p class="hint" style="margin:0">${last}</p>
       <div class="row"><label style="display:flex;gap:10px;align-items:center;min-height:44px;cursor:pointer"><input type="checkbox" id="syncday" ${sc.installed ? "checked" : ""} ${sched && !sc.error ? "" : "disabled"} style="width:22px;height:22px;margin:0;accent-color:var(--orange)"><b>Every day at</b></label>
@@ -1492,7 +1494,7 @@ async function voicesTab(p, base, steps) {
   };
   const syncWire = () => {
     const msg = t => { const m = $("#syncmsg"); if (m) m.textContent = t; };
-    $("#syncsave").onclick = async () => { err(); try { dev.sync = await api(base + "/devices/sync", { method: "PUT", body: { source: $("#syncsrc").value, model_prefix: $("#syncpre").value, since: $("#syncsince").value, on_arrival: $("#syncarr").checked } }); draw(); msg("saved"); } catch (e) { err(e.message); } };
+    $("#syncsave").onclick = async () => { err(); try { dev.sync = await api(base + "/devices/sync", { method: "PUT", body: { source: $("#syncsrc").value, model_prefix: $("#syncpre").value, since: $("#syncsince").value, on_arrival: $("#syncarr").checked, takes: $("#synctakes").value } }); draw(); msg("saved"); } catch (e) { err(e.message); } };
     $("#syncnow").onclick = async () => { err(); try { await api(base + "/devices/sync", { method: "POST" }); msg("syncing in the background: Training shows the log; come back in a few minutes"); } catch (e) { err(e.message); } };
     const setDaily = async () => { err(); try { sched = await api("/api/clips-schedule", { method: "PUT", body: { on: $("#syncday").checked, at: $("#syncat").value.trim() } }); draw(); } catch (e) { err(e.message); $("#syncday").checked = !!sched?.installed; } };
     $("#syncday").onchange = setDaily;

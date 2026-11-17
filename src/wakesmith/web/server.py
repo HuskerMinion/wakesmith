@@ -1086,6 +1086,10 @@ def create_app(token: str | None = None, listen: dict | None = None) -> FastAPI:
         p.devices.model_prefix = str(body.get("model_prefix", p.devices.model_prefix)).strip()
         p.devices.since = str(body.get("since", p.devices.since)).strip()
         p.devices.on_arrival = bool(body.get("on_arrival", p.devices.on_arrival))
+        tk = str(body.get("takes", p.devices.takes))
+        if tk not in takes.MODES:
+            raise HTTPException(400, f"takes: one of {', '.join(takes.MODES)}")
+        p.devices.takes = tk
         p.save()
         return _sync_info(p)
 

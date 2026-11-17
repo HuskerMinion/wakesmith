@@ -385,6 +385,7 @@ def _finish(job_file: Path, job: dict, code: int | None) -> None:
     result = "stopped" if job.get("stop_requested") else "ok" if code == 0 else "failed"
     job = {**job, "finished": time.time(), "exit": code, "result": result}
     _write(job_file, job)
+    _drop_progress(job_file.parent)
     _record(
         {
             "project": job.get("project") or job_file.parent.name,
@@ -410,6 +411,19 @@ def finished(job_file: str | Path, code: int) -> None:
                 _restore_model(job_file.parent)
             _finish(job_file, job, code)
     kick()
+
+
+def _drop_progress(project_dir: Path) -> None:
+    """A run stopped or killed mid-way leaves its candidates' progress (candidates.train cleans it only
+    when it ends by itself): the page and the estimate would read a dead run's. Not while the project
+    is training from the command line: that run's file is its own."""
+    try:
+        if outside_run(projects.load(project_dir)):
+            return
+    except Exception:  # noqa: BLE001, S110 - an unreadable project: nothing of a run to keep
+        pass
+    for f in ("mww-candidates.json", "mww-candidates.json.part"):
+        (project_dir / "logs" / f).unlink(missing_ok=True)
 
 
 def _restore_model(project_dir: Path) -> None:

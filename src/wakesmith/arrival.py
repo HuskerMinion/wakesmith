@@ -7,8 +7,8 @@ A burst of clips is one sync: each word's sync waits until DELAY_S after its new
 MAX_WAIT_S after its first), and brings in up to LIMIT clips (the rest the next time). Syncs run one
 at a time, each as its own `wakesmith clips sync` process (as the timer runs it, outside the job queue,
 so a training job never waits for one and Whisper never loads inside the server), with output in
-clips-sync.log. Such a sync skips a word whose own job is running, and transcribes on the CPU while
-another job holds the GPU (clipsync.py); the clips it skipped come in with the next one.
+clips-sync.log. A word whose own job is running waits (checked every BUSY_RECHECK_S) and syncs when
+the job ends. A sync transcribes on the CPU while another job holds the GPU (clipsync.py).
 This runs only while `wakesmith serve` does, since that's where the upload is received.
 """
 
@@ -28,6 +28,7 @@ from . import project as projects
 DELAY_S = 60.0  # after a word's newest clip, so a burst is one sync (and one Whisper load)
 MAX_WAIT_S = 600.0  # but never longer than this after its first waiting clip (a steady trickle)
 LIMIT = 200  # clips per arrival sync, oldest first; a flood comes in over several syncs
+BUSY_RECHECK_S = 300.0  # a word whose own job runs (a sync would skip it): look again this often
 SYNC_TIMEOUT_S = 3600.0
 
 
@@ -72,6 +73,13 @@ def _run_sync(project_dir: str) -> None:
         )
 
 
+def _own_job_running(project_dir: str) -> bool:
+    try:
+        return clipsync._own_job_running(projects.load(project_dir))
+    except (OSError, ValueError, TypeError):
+        return False
+
+
 class Arrivals:
     """The words waiting for a sync, and the one thread that runs them in turn."""
 
@@ -81,8 +89,11 @@ class Arrivals:
         delay: float = DELAY_S,
         frozen=lambda: False,
         max_wait: float = MAX_WAIT_S,
+        busy=None,
+        recheck: float = BUSY_RECHECK_S,
     ):
         self._run, self._delay, self._frozen, self._max = run, delay, frozen, max_wait
+        self._busy, self._recheck = busy or _own_job_running, recheck
         self._due: dict[str, float] = {}  # project folder -> when its sync may start
         self._first: dict[str, float] = {}  # project folder -> its first waiting clip
         self._cv = threading.Condition()
@@ -143,6 +154,12 @@ class Arrivals:
         while True:
             w = self._next()
             try:
+                if self._busy(w):  # its training reads the device clips: sync once it ends
+                    with self._cv:
+                        self._due.setdefault(w, time.monotonic() + self._recheck)
+                        self._first.setdefault(w, time.monotonic())
+                        self._cv.notify()
+                    continue
                 started = time.time()
                 self._run(w)
                 self._again_if_left(w, started)

@@ -97,9 +97,11 @@ runs finish** in the Queue panel adds a desktop notification.
 4. **Train.** Live progress for every stage, with the time left measured on your machine and live
    RAM and GPU memory. A Quick test takes about 8 minutes with a GPU and 20 on six CPU cores; a
    Standard model about 15 minutes with a GPU. A Standard run trains three microWakeWord candidates
-   (side by side, one per card, with two or more GPUs and the free memory for them) and keeps the one with the fewest false
+   (side by side, one per card, with two or more GPUs and the free memory for them; an NVIDIA card with
+   under 5 GB free is left alone) and keeps the one with the fewest false
    triggers on half of your held-out recordings, among those that catch at least 70% as many takes as
-   the best one (runs of one recipe differ a lot); its results come from the other half, which played
+   the best one (runs of one recipe differ a lot), passing over candidates that typically fire before
+   the phrase ends while another is left; its results come from the other half, which played
    no part in choosing, so the choice doesn't flatter them.
    Start another run while one is going and it waits in the queue; finished and failed runs show a
    notice, in the browser too if you allow it.
@@ -307,40 +309,45 @@ From the command line:
 
 To keep up without doing that by hand, fill in *Sync automatically* on the same tab: the folder new
 clips arrive in, the start of the `model` name your devices write for this word (a shared folder holds
-every word's clips), and optionally the time the current model went live. *Sync now* brings in only
-the clips not seen before and transcribes them; *Every day at* runs the same for every wake word with a
+every word's clips), and optionally the time the current model went live. *Sync now* brings in only the
+clips not seen before and transcribes them; *Every day at* runs the same for every wake word with a
 folder set (a systemd user timer); *As clips arrive* (on by default) syncs a word a minute after a
-device sends it a clip through *Device upload* (below), while wakesmith is running (a word whose own job
-is running catches up at the next sync). Two words on one device share a folder: give each its own model
-name and each takes only its clips. The folder is only read. The Wake words card shows how many clips
-wait for you. From the command line: `wakesmith clips sync PROJECT [--from DIR] [--model-prefix NAME]
-[--since TIME] [--transcribe-device auto|cpu|xpu:N|cuda:N] [--save]`, `wakesmith clips sync-all`, and
-`wakesmith clips schedule [--at 03:30] [--off] [--status]` (log: `clips-sync.log` next to the projects).
-With `auto`, Whisper uses the GPU only while no other wakesmith job runs; a wake word whose own job
-is running is skipped until the next run.
+device sends it a clip through *Device upload* (below), while wakesmith is running: for a burst, a
+minute after its last clip but at most 10 after its first; a word whose own job is running syncs when
+the job ends. Two words on one device share a folder: give each its own model name and each takes only
+its clips. The folder is only read. The Wake words card shows how many clips wait for you. From the
+command line: `wakesmith clips sync PROJECT [--from DIR] [--model-prefix NAME] [--since TIME]
+[--transcribe-device auto|cpu|xpu:N|cuda:N] [--save]`, `wakesmith clips sync-all`, and `wakesmith clips
+schedule [--at 03:30] [--off] [--status]` (log: `clips-sync.log` next to the projects). With `auto`,
+Whisper uses the GPU only while no other wakesmith job runs; a wake word whose own job is running is
+skipped until the next run.
 
-**Receiving clips from TECHO5 devices.** Instead of copying clips off the devices, let them send
-each clip as they save it. On the Hardware page, under *Device upload*, press *Create token* and copy
-it (it is shown once; wakesmith keeps only a fingerprint of it). Then on the device's setup page choose
-*Send wake clips to* → *wakesmith*, paste the URL shown next to the token and the token itself, and press
+**Receiving clips from TECHO5 devices.** Instead of copying clips off the devices, let them send each
+clip as they save it. On the Hardware page, under *Device upload*, press *Create token* and copy it (it
+is shown once; wakesmith keeps only a fingerprint of it). Then on the device's setup page choose *Send
+wake clips to* → *wakesmith*, paste the URL shown next to the token and the token itself, and press
 *Test*. Clips arrive in the *Save clips in* folder as `<device>/<kind>/<name>.wav` with their `.json`,
 the same layout as the device's own clip folder: set a wake word's *Sync automatically* folder to it and
 Sync picks them up. Devices need to reach wakesmith, so start it with `--host 0.0.0.0` (your LAN only);
 with `--https` the device has to accept wakesmith's self-signed certificate. *Revoke* turns the inbox
-off again; *Create a new token* replaces the old one. Any other device can send to it too:
-`POST /api/clips` with `Authorization: Bearer <token>` and a multipart form of `audio` (16 kHz mono
-16-bit WAV, at most 2 MB) and `meta` (JSON with `name`, `device`, `kind` = wake, nearmiss, mistake or
-noise, `at` in UTC like `2026-10-12T21:33:01Z`, `model`, and optionally `slot`, `score`, `cutoff`);
-`GET /api/clips/ping` checks a token. Answers: 200 `{"ok": true, "stored": "<path>"}` (with
-`"duplicate": true` when that device already sent a clip of that name: sending again is harmless),
-400 for audio or meta it can't use (the message says which), 401 for a missing or wrong token, 413
-for audio over 2 MB.
-A device can also send takes of the phrase recorded on purpose (a person starts a run of captures on the
+off again; *Create a new token* replaces the old one. Any other device can send to it too: `POST
+/api/clips` with `Authorization: Bearer <token>` and a multipart form of `audio` (16 kHz mono 16-bit
+WAV, at most 2 MB) and `meta` (JSON with `name`, `device`, `kind` = wake, nearmiss, mistake or noise,
+`at` in UTC like `2026-10-12T21:33:01Z`, `model`, and optionally `slot`, `score`, `cutoff`); `GET
+/api/clips/ping` checks a token. Answers: 200 `{"ok": true, "stored": "<path>"}` (with `"duplicate":
+true` when that device already sent a clip of that name: sending again is harmless), 400 for audio or
+meta it can't use (the message says which), 401 for a missing or wrong token, 413 for audio over 2 MB. A
+device can also send takes of the phrase recorded on purpose (a person starts a run of captures on the
 device): `kind` = take, with `word` (the wake word's model name) in place of `model`, and optionally
-`run` (one id per run), `index` (the capture's number) and `frame`. Sync puts takes straight into that
-word's recordings (*Record here*), with no listening needed; they train like takes recorded on the page
-and, like those, are only tested on when you mark some held out there. So the upload token lets a device
-add training takes: give it only to your own devices.
+`run` (one id per run; without one, a device's takes less than 10 minutes apart count as one run (a take
+without `at` is timed by when its file arrived)), `index` (the capture's number), `frame` and `front`
+(which audio the device recorded). Sync puts takes straight into that word's recordings (*Record here*),
+with no listening needed, a run at a time: *Takes recorded on a device* under *Sync automatically* holds
+the first run out for the test, trains on the next, and so on (or trains on every run, or holds every
+run out). A run recorded on purpose keeps every capture with speech in it, so a held-out run counts
+missed calls honestly, which clips saved when a model fired can't. Each run keeps the role it got when
+its first take came in. The upload token lets a device add training takes: give it only to your own
+devices.
 
 **Versions.** Every round of training is a version of its wake word (v1, v2, ...), with a short note on
 what it tried; the wake words page shows one row per word and folds out its versions. *New version* (a

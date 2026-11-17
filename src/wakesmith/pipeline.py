@@ -223,7 +223,7 @@ def _run_stage(p: Project, stage: str, hw: hardware.Hardware, say) -> dict | Non
         info = candidates.train(
             p,
             p.path("logs", "mww-train.log"),
-            device=mww.train_devices(hw.gpus, hw.ram_free_gb),
+            device=mww.train_devices(hw.gpus, hw.ram_free_gb, mww.gpu_free_gb()),
             log=say,
         )
         if p.microwakeword.combine and info:

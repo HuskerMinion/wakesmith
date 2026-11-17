@@ -45,6 +45,8 @@ import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
+import numpy as np
+
 from . import evaluate, mww
 from .project import Project
 from .real import RealData
@@ -57,6 +59,11 @@ KEEP_CANDIDATE = {  # a few hundred KB per candidate: enough to average or resco
 }
 # a candidate catching under this share of the most positives any candidate caught can't be kept
 MIN_CAUGHT_SHARE = 0.7
+# timing: a candidate that, on the synthetic test clips, typically fires before the wake word has
+# ended (median below EARLY_MS) cuts the start of the command and is passed over when another isn't
+EARLY_MS = 0.0
+TIMING_CLIPS = 150
+MIN_FIRES = 10  # a median from fewer fires says little: no timing then
 _BEST = re.compile(r"^best: step (\d+), (\S+) = ([\d.]+)", re.MULTILINE)
 
 
@@ -66,20 +73,48 @@ def _validation(text: str) -> float | None:
     return float(m[-1][2]) if m else None
 
 
+def timing(p: Project, model: Path, cutoff: float) -> float | None:
+    """Median ms from the end of the wake word to the candidate firing, on up to TIMING_CLIPS of the
+    synthetic test clips (the same ones for every candidate); None without them or without a fire."""
+    clips = sorted(p.path("clips", "positive_test").glob("*.wav"))
+    if not clips:
+        return None
+    step = max(1, len(clips) // TIMING_CLIPS)
+    try:
+        d = [
+            x
+            for x in evaluate.fire_delays(
+                model, clips[::step][:TIMING_CLIPS], cutoff, frontend=p.microwakeword.frontend
+            )
+            if x is not None
+        ]
+    except (OSError, RuntimeError, ValueError):
+        return None
+    return float(np.median(d)) if len(d) >= MIN_FIRES else None
+
+
+def early(c: dict) -> bool:
+    return c.get("fires_ms") is not None and c["fires_ms"] < EARLY_MS
+
+
 def choose(cands: list[dict], on: str = "") -> tuple[dict, str]:
-    """The candidate to keep and a one-line reason. on: which held-out clips the numbers are from."""
+    """The candidate to keep and a one-line reason. on: which held-out clips the numbers are from.
+    Candidates that fire before the wake word ends are passed over while any other is left."""
     ok = [c for c in cands if not c.get("failed")]
     if not ok:
         raise RuntimeError("every microWakeWord candidate failed to train")
     val = lambda c: c.get("validation") or 0.0
     if all("false" in c for c in ok):
-        floor = MIN_CAUGHT_SHARE * max(c["caught"] for c in ok)
+        floor = MIN_CAUGHT_SHARE * max(c["caught"] for c in ok)  # measured on every candidate
         able = [c for c in ok if c["caught"] >= floor]  # never empty: the best one is in it
+        timely = [c for c in able if not early(c)]
+        skipped = len(able) - len(timely) if timely else 0
+        able = timely or able
         fmin = min(c["false"] for c in able)
         slack = max(1, round(0.25 * fmin))
         tied = [c for c in able if c["false"] <= fmin + slack]
         best = max(tied, key=lambda c: (c["caught"], -c["false"], val(c)))
-        out = len(ok) - len(able)
+        out = len(ok) - len(able) - skipped
         return best, (
             f"s{best['n']}: {best['caught']}/{best['positives']} held-out positives caught, "
             f"{best['false']}/{best['negatives']} false triggers at {best['cutoff']:.2f}"
@@ -91,7 +126,15 @@ def choose(cands: list[dict], on: str = "") -> tuple[dict, str]:
                 if out
                 else ""
             )
+            + (f"; {skipped} that fire before the wake word ends passed over" if skipped else "")
             + ")"
+        )
+    timely = [c for c in ok if not early(c)]
+    if timely and len(timely) < len(ok):
+        best = max(timely, key=val)
+        return best, (
+            f"s{best['n']}: best validation score ({val(best):.4f}; no held-out recordings);"
+            f" {len(ok) - len(timely)} that fire before the wake word ends passed over"
         )
     best = max(ok, key=val)
     return best, f"s{best['n']}: best validation score ({val(best):.4f}; no held-out recordings)"
@@ -221,8 +264,11 @@ def train(p: Project, log_file: Path, device: str | list[str], log=print) -> dic
             p.path("logs", f"mww-train-s{i}.log").unlink(missing_ok=True)
             d = out / f"s{i}"
             c["validation"] = _validation(text)
+            model = d / mww.model_path(p).relative_to(p.path("mww", "trained"))
+            fires = timing(p, model, cutoff)
+            if fires is not None:
+                c["fires_ms"] = fires
             if held:
-                model = d / mww.model_path(p).relative_to(p.path("mww", "trained"))
                 r = evaluate.score(p, "mww", model=model, tag=f"s{i}")
                 if split_note is None:
                     halves, split_note = evaluate.split(r["pos"], r["neg"])
@@ -236,6 +282,7 @@ def train(p: Project, log_file: Path, device: str | list[str], log=print) -> dic
                     if held
                     else ""
                 )
+                + (f", fires {c['fires_ms']:+.0f} ms after the phrase" if "fires_ms" in c else "")
             )
             cands.append(c)
     except (

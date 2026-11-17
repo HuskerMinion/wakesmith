@@ -429,18 +429,82 @@ TRAIN_RAM_GB = (
 )
 
 
-def train_devices(gpus: list, ram_free_gb: float = 0.0) -> list[str]:
+TRAIN_VRAM_GB = 5.0  # a candidate's validation sets and batches on its GPU
+
+
+_free_cache: tuple[float, dict] = (0.0, {})
+
+
+def gpu_free_gb(max_age: float = 0.0) -> dict[str, float]:
+    """Free memory per CUDA device ("cuda:N" as torch numbers them), from nvidia-smi, so another
+    program's use counts (a trainer, an LLM); {} where it can't be read or matched for sure (no NVIDIA
+    tool, other GPUs, unlike cards in torch's default fastest-first order, devices named by UUID).
+    max_age: a reading this recent (seconds) is reused (estimates, status lines)."""
+    global _free_cache
+    import time
+
+    if max_age and time.monotonic() - _free_cache[0] <= max_age:
+        return dict(_free_cache[1])
+    out = _read_gpu_free()
+    _free_cache = (time.monotonic(), out)
+    return dict(out)
+
+
+def _read_gpu_free() -> dict[str, float]:
+    try:
+        out = subprocess.run(
+            ["nvidia-smi", "--query-gpu=index,name,memory.free", "--format=csv,noheader,nounits"],
+            capture_output=True,
+            text=True,
+            timeout=10,
+            check=True,
+        ).stdout
+    except (OSError, subprocess.SubprocessError):
+        return {}
+    free, names = {}, set()
+    for line in out.splitlines():
+        try:
+            i, name, mb = (x.strip() for x in line.split(","))
+            free[int(i)] = float(mb) / 1024
+            names.add(name)
+        except ValueError:
+            continue
+    if len(names) > 1 and os.environ.get("CUDA_DEVICE_ORDER") != "PCI_BUS_ID":
+        return {}  # torch puts the fastest card first; nvidia-smi counts by PCI bus: can't match
+    # the trainer's own mask: a pipeline stage hides the cards from TensorFlow in CUDA_VISIBLE_DEVICES
+    # and keeps the original in WAKESMITH_CUDA_DEVICES ("all": none), which mww.train hands PyTorch
+    seen = os.environ.get("WAKESMITH_CUDA_DEVICES")
+    if seen is None:
+        seen = os.environ.get("CUDA_VISIBLE_DEVICES")
+    elif seen == "all":
+        seen = None
+    order = list(free)
+    if seen is not None:  # torch's cuda:N is the N-th listed device
+        parts = [x.strip() for x in seen.split(",") if x.strip()]
+        if not all(x.isascii() and x.isdigit() for x in parts):
+            return {}  # UUIDs or MIG ids: not matched here
+        order = [int(x) for x in parts]
+    return {f"cuda:{n}": free[i] for n, i in enumerate(order) if i in free}
+
+
+def train_devices(gpus: list, ram_free_gb: float = 0.0, free_gb: dict | None = None) -> list[str]:
     """Where training can run: every GPU with room for the validation sets (~5 GB), else the CPU. With
-    `ram_free_gb`, no more GPUs than there is free RAM for a trainer on each (best of N runs one per GPU)."""
+    `ram_free_gb`, no more GPUs than there is free RAM for a trainer on each (best of N runs one per GPU).
+    With `free_gb` ({device: GB free now}), a GPU another program has nearly filled is left out (its
+    candidates would run out of memory), unless every one is: then the one with the most room."""
     big = [g.device for g in gpus if g.memory_gb >= 6]
+    if big and free_gb:
+        room = [d for d in big if free_gb.get(d, TRAIN_VRAM_GB) >= TRAIN_VRAM_GB]
+        big = room or [max(big, key=lambda d: free_gb.get(d, 0.0))]
     if big and ram_free_gb:
         big = big[: max(1, int(ram_free_gb // TRAIN_RAM_GB))]
     return big or ["cpu"]
 
 
 def train_device(gpus: list) -> str:
-    """Where one training run goes: the first of train_devices."""
-    return train_devices(gpus)[0]
+    """Where one training run goes: the first of train_devices, a GPU another program has nearly
+    filled left out (gpu_free_gb)."""
+    return train_devices(gpus, free_gb=gpu_free_gb(max_age=30))[0]
 
 
 def more_open_files() -> None:
