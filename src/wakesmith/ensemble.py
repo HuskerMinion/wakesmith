@@ -178,12 +178,23 @@ def combine(
             "bytes": (out / TFLITE).stat().st_size,
             "tensor_arena_size": ARENA_PER_MODEL * len(use),
             "previous": previous,
+            # FLEURS as background in any candidate's features (their recipe records): for the
+            # combined model's license note
+            "speech_background": any(_used_speech(p, c["n"], previous) for c in use),
         }
         (out / "combined.json").write_text(json.dumps(meta, indent=1))
     finally:
         shutil.rmtree(build, ignore_errors=True)
     log(f"mww: combined model of {names}: {meta['bytes'] / 1024:.0f} KB in {meta['seconds']:.0f} s")
     return out / TFLITE
+
+
+def _used_speech(p: Project, n: int, previous: bool) -> bool:
+    try:
+        f = candidates_dir(p, previous) / f"s{n}" / "recipe.json"
+        return bool(json.loads(f.read_text()).get("speech_background"))
+    except (OSError, ValueError, AttributeError):
+        return False  # a candidate from before the record: built without it
 
 
 def remove(p: Project) -> None:

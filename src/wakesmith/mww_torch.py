@@ -198,6 +198,31 @@ class Sampler:
         self.p = w / w.sum()
         self.length = config["spectrogram_length"]
         self.rng = np.random.default_rng(seed)
+        # SpecAugment (the config's first phase; wakesmith writes the same values for every phase)
+        self.masks = [
+            int((config.get(k) or [0])[0])
+            for k in (
+                "time_mask_max_size",
+                "time_mask_count",
+                "freq_mask_max_size",
+                "freq_mask_count",
+            )
+        ]
+
+    def _mask(self, x: np.ndarray) -> None:
+        """Blank time_mask_count stretches of up to time_mask_max_size frames and freq_mask_count
+        bands of up to freq_mask_max_size features in each example, as microwakeword.data.spec_augment."""
+        tmax, tn, fmax, fn = self.masks
+        bins = x.shape[2]
+        for r in range(len(x)):
+            for _ in range(tn):
+                t = int(self.rng.uniform(0, tmax))
+                t0 = int(self.rng.integers(0, self.length - t + 1))
+                x[r, t0 : t0 + t, :] = 0
+            for _ in range(fn):
+                f = int(self.rng.uniform(0, fmax))
+                f0 = int(self.rng.integers(0, bins - f + 1))
+                x[r, :, f0 : f0 + f] = 0
 
     def batch(self, size: int):
         which = self.rng.choice(len(self.sets), size, p=self.p)
@@ -209,6 +234,8 @@ class Sampler:
             if len(rows):
                 x[rows] = s.sample(len(rows), self.length, self.rng)
                 y[rows], w[rows] = s.label, s.penalty
+        if any(self.masks):
+            self._mask(x)
         return x, y, w
 
 

@@ -133,6 +133,7 @@ def sync(
             "source": str(source),
             "model_prefix": prefix,
             "new": imp["added"],
+            "unreadable": imp.get("unreadable", 0),
             "transcribed": len(todo),
             "left": imp["left"],
             "device": dev,
@@ -178,6 +179,8 @@ def describe(r: dict) -> str:
             f"; suggested: {r['wake']} the phrase, {r['not_wake']} not the phrase, "
             f"{r['unclear']} unclear (Whisper on {r['device']})"
         )
+    if r.get("unreadable"):
+        s += f"; {r['unreadable']} unreadable (left out, tried again next time)"
     if r.get("left"):
         s += f"; {r['left']} more next time"
     return s + f"; {r['to_check']} waiting for a person"

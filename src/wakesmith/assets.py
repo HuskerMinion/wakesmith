@@ -12,6 +12,7 @@ import hashlib
 import os
 import shutil
 import socket
+import tarfile
 import threading
 import time
 import zipfile
@@ -84,6 +85,7 @@ class Asset:
     sha256: str = ""
     size: int = 0  # bytes, as downloaded
     unzip: bool = False  # extract the downloaded .zip into `path`'s parent and delete it
+    untar: bool = False  # extract the downloaded .tar.gz into `path` and delete it
     hf_repo: str = ""  # HF dataset snapshot instead of a single file
     hf_patterns: tuple[str, ...] = ()
     license: str = ""
@@ -98,7 +100,7 @@ class Asset:
 
     def present(self) -> bool:
         p = self.local
-        if self.hf_repo or self.unzip:
+        if self.hf_repo or self.unzip or self.untar:
             return (p / ".complete").exists() or (
                 p.is_dir() and any(p.iterdir()) and p.is_symlink()
             )
@@ -157,6 +159,17 @@ ASSETS: dict[str, Asset] = {
             license="CC BY 4.0",
             source=f"{HF}/datasets/FluidInference/musan",
             used_for="background noise for augmentation",
+        ),
+        Asset(
+            "fleurs-en-speech",
+            "noise/fleurs_en",
+            url=f"{HF}/datasets/google/fleurs/resolve/main/data/en_us/audio/train.tar.gz",
+            sha256="5f4491948c2bd29ac00f4b8afae2378f0a1dcdde4041b5cd284a80dff01fa9f5",
+            size=1_380_572_241,
+            untar=True,
+            license="CC BY 4.0",
+            source=f"{HF}/datasets/google/fleurs",
+            used_for="talk in the room: read sentences as background for augmentation",
         ),
         Asset(
             "mit-rirs",
@@ -367,7 +380,13 @@ def _fetch_unlocked(asset: Asset, progress: bool) -> Path:
         tmp.rename(dest)
         (dest / ".complete").touch()
         return dest
-    target = dest.with_suffix(".zip") if asset.unzip else dest
+    target = (
+        dest.with_suffix(".zip")
+        if asset.unzip
+        else dest.with_name(dest.name + ".tar.gz")
+        if asset.untar
+        else dest
+    )
     part = target.with_name(target.name + ".part")
     _download(asset.url, part, asset.size, progress, asset.name)
     if asset.sha256:
@@ -382,9 +401,45 @@ def _fetch_unlocked(asset: Asset, progress: bool) -> Path:
         if not dest.is_dir():
             raise RuntimeError(f"{asset.name}: archive did not contain {dest.name}/")
         (dest / ".complete").touch()
+    elif asset.untar:
+        tmp = dest.with_name(dest.name + ".unpacking")
+        shutil.rmtree(tmp, ignore_errors=True)
+        tmp.mkdir()
+        with tarfile.open(part, "r:gz") as t:
+            _safe_extract(t, tmp)
+        part.unlink()
+        if dest.exists():
+            shutil.rmtree(dest)
+        tmp.rename(dest)
+        (dest / ".complete").touch()
     else:
         part.rename(dest)
     return dest
+
+
+def _safe_extract(t: tarfile.TarFile, into: Path) -> None:
+    """Extract only plain files and folders that stay inside `into` (Python's "data" filter where
+    there is one; a Python 3.10/3.11 without it gets the same rule here)."""
+    try:
+        t.extractall(into, filter="data")
+        return
+    except TypeError:
+        pass
+    import copy
+
+    root = into.resolve()
+    members = []
+    for m in t.getmembers():
+        if not (m.isfile() or m.isdir()):
+            raise RuntimeError(f"archive member {m.name!r} is not a plain file or folder")
+        if os.path.isabs(m.name) or not (root / m.name).resolve().is_relative_to(root):
+            raise RuntimeError(f"archive member {m.name!r} would land outside {into}")
+        m = copy.copy(m)  # plain permissions and no owner, as the data filter leaves them
+        m.mode = 0o755 if m.isdir() else 0o644
+        m.uid = m.gid = 0
+        m.uname = m.gname = ""
+        members.append(m)
+    t.extractall(into, members=members, numeric_owner=True)
 
 
 _ipv6_ok: bool | None = None  # can this machine reach the internet over IPv6? (tested once)

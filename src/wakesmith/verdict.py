@@ -214,6 +214,9 @@ def everyday(p: Project, kind: str = "mww") -> dict | None:
     return {
         "kind": kind,
         "positives": len(pos),
+        # test takes that are device clips: calls a model on the devices fired (or nearly fired) on.
+        # Calls it missed outright were never saved, so with mostly these the misses are undercounted
+        "device_takes": sum(n.startswith("dpos__") for n in pos),
         "negatives": len(neg),
         "device_clips": len(dev),
         "days": days,

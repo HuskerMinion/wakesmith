@@ -4,7 +4,7 @@
    NVIDIA -> CUDA wheels, otherwise CPU wheels.
 2. Install that torch build into this Python environment (uv when available, else pip).
 3. Install microWakeWord from a pinned clone, editable (its wheel omits microwakeword.audio).
-4. Download the training data (asks first; ~24 GB).
+4. Download the training data (asks first; ~25 GB).
 5. Check torch really sees the GPU; fall back to CPU wheels if not.
 """
 

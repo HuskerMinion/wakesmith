@@ -276,14 +276,15 @@ def _feature_sets(p: Project) -> dict[str, tuple[list[str], int]]:
     sets = {
         "positive_train": (
             originals("positive_train")
-            + sorted(str(x) for x in p.path("real", "train").glob("*.wav")) * p.real.copies,
+            + sorted(str(x) for x in p.path("real", "train").glob("*.wav"))
+            * p.openwakeword.real_copies,
             ROUNDS,
         ),
         "negative_train": (
             originals("negative_train")
             + conversational.clips(p)  # everyday sentences (experimental; empty when off)
             + sorted(str(x) for x in p.path("real_neg", "train").glob("*.wav"))
-            * p.real.negative_copies,
+            * p.openwakeword.real_negative_copies,
             ROUNDS,
         ),
         "positive_test": (originals("positive_test"), 1),
@@ -650,8 +651,11 @@ class Scorer:
         return float(self.it.get_tensor(self.out)[0, 0])
 
     def peak(self, path: Path) -> float:
-        a, _ = sf.read(str(path), dtype="int16", always_2d=True)
-        a = np.concatenate([np.zeros(SR, np.int16), a[:, 0], np.zeros(SR // 2, np.int16)])
+        from .real import read_16k_mono
+
+        # a source clip of any rate (review) too; int16-scaled, clipped as an int16 read would be
+        a = np.clip(np.round(read_16k_mono(path) * 32768.0), -32768, 32767)
+        a = np.concatenate([np.zeros(SR, np.float32), a, np.zeros(SR // 2, np.float32)])
         a = a.astype(np.float32)  # openWakeWord's frontend takes int16-scaled float samples
         win, hop = int(CLIP_S * SR), 1280
         if len(a) < win:  # a very short take: still one full window

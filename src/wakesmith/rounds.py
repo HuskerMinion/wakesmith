@@ -30,6 +30,7 @@ from datetime import datetime
 from pathlib import Path
 
 from .project import Project
+from .real import copy_as_16k_mono
 
 LABELS = ("wake", "not_wake", "skip")
 
@@ -78,7 +79,9 @@ def import_folder(
     With `model_prefix`, only clips whose sidecar "model" starts with it (the word's model on the
     devices: a puller folder holds every word's fires; slot numbers move, the model name doesn't);
     clips without a sidecar are skipped then. With `since` (ISO time), only clips from then on. With
-    `limit`, at most that many new clips, oldest first ("left" counts the rest for the next run)."""
+    `limit`, at most that many new clips, oldest first ("left" counts the rest for the next run).
+    A WAV that can't be read or converted is left out and counted in "unreadable"; it is tried
+    again next time (it may still have been being written)."""
     root = Path(folder).expanduser()
     if not root.is_dir():
         raise ValueError(f"not a folder: {root}")
@@ -106,13 +109,20 @@ def import_folder(
         known.add(cid)
         new.append((str(at), cid, device, wav, meta))
     new.sort(key=lambda x: x[0])
-    left = 0
-    if limit and len(new) > limit:
-        new, left = new[:limit], len(new) - limit
-    for at, cid, device, wav, meta in new:
+    added, unreadable, left = [], 0, 0
+    for k, (at, cid, device, wav, meta) in enumerate(new):
+        if limit and len(added) >= limit:  # the limit counts clips that came in, not broken ones
+            left = len(new) - k
+            break
         dst = _inbox(p) / device / wav.name
         dst.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copy2(wav, dst)
+        try:
+            copy_as_16k_mono(wav, dst)  # a 44.1 kHz or stereo recorder's clips come in converted
+        except (RuntimeError, ValueError, OSError):  # a broken or odd WAV: the rest still come in
+            dst.unlink(missing_ok=True)  # e.g. half copied when the disk filled
+            unreadable += 1
+            continue
+        added.append(cid)
         clips.append(
             {
                 "id": cid,
@@ -128,11 +138,12 @@ def import_folder(
     clips.sort(key=lambda c: c["at"])
     _save(p, clips)
     return {
-        "added": len(new),
-        "known": len(clips) - len(new),
+        "added": len(added),
+        "known": len(clips) - len(added),
         "skipped": skipped,
+        "unreadable": unreadable,
         "left": left,
-        "ids": [x[1] for x in new],
+        "ids": added,
     }
 
 

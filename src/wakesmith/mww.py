@@ -9,6 +9,7 @@ on a GPU, else the CPU); microWakeWord itself exports the deliverable, its strea
 
 from __future__ import annotations
 
+import json
 import os
 import random
 import shutil
@@ -24,7 +25,7 @@ import yaml
 
 from . import assets, clipcheck, conversational
 from .project import Project
-from .real import RealData
+from .real import RealData, read_16k_mono
 
 NEGATIVE_SETS = [  # (asset, features dir name, sampling weight, truncation)
     ("mww-speech", "speech", 10.0, "random"),
@@ -132,7 +133,9 @@ def impulse_paths(p: Project, rir_dir: str) -> list[str]:
     return out
 
 
-def _init_worker(noise_dir: str, rir_paths: list[str]) -> None:
+def _init_worker(
+    background: list[str], rir_paths: list[str], trailing: tuple[float, float]
+) -> None:
     global _AUG, _LIMITS
     import warnings
 
@@ -147,26 +150,46 @@ def _init_worker(noise_dir: str, rir_paths: list[str]) -> None:
     seed = int.from_bytes(os.urandom(4), "little")
     random.seed(seed)
     np.random.seed(seed)
-    # Settings from microWakeWord's basic_training_notebook.
-    _AUG = Augmentation(
-        augmentation_duration_s=3.2,
-        augmentation_probabilities={
-            "SevenBandParametricEQ": 0.1,
+    _AUG = Augmentation(**augmentation_settings(background, rir_paths, trailing))
+
+
+def augmentation_settings(
+    background: list[str], rir_paths: list[str], trailing: tuple[float, float]
+) -> dict:
+    """microWakeWord Augmentation's arguments: its basic_training_notebook's settings with Wake Word
+    Studio's changes, which held up best on real calls: a little more EQ, pitch and color noise, a
+    gain sweep inside some clips (GainTransition), background up to 15 dB under the clip (10 before),
+    and the quiet after the phrase from the project (microwakeword.min/max_trailing_s)."""
+    return {
+        "augmentation_duration_s": 3.2,
+        "augmentation_probabilities": {
+            "SevenBandParametricEQ": 0.15,
             "TanhDistortion": 0.1,
-            "PitchShift": 0.1,
+            "PitchShift": 0.15,
             "BandStopFilter": 0.1,
-            "AddColorNoise": 0.1,
+            "AddColorNoise": 0.15,
             "AddBackgroundNoise": 0.75,
             "Gain": 1.0,
+            "GainTransition": 0.2,
             "RIR": 0.5,
         },
-        impulse_paths=list(rir_paths),
-        background_paths=[noise_dir],
-        background_min_snr_db=-5,
-        background_max_snr_db=10,
-        min_jitter_s=0.195,
-        max_jitter_s=0.205,
-    )
+        "impulse_paths": list(rir_paths),
+        "background_paths": list(background),
+        "background_min_snr_db": -5,
+        "background_max_snr_db": 15,
+        "min_jitter_s": trailing[0],
+        "max_jitter_s": trailing[1],
+    }
+
+
+def trim_silence(a: np.ndarray) -> np.ndarray:
+    """A real clip with its quiet cut out (WebRTC voice detection, microWakeWord's
+    remove_silence_webrtc, as Wake Word Studio trims real clips; it always keeps the first 2000
+    samples). Unchanged when under 0.2 s of voice is found, as in a clip that is mostly room sound."""
+    from microwakeword.audio.audio_utils import remove_silence_webrtc
+
+    t = remove_silence_webrtc(a)
+    return t if len(t) - min(2000, len(a)) >= 3200 else a
 
 
 PARTIAL_KEEP = (0.25, 0.6)  # share of the speech a cut-off clip keeps
@@ -203,21 +226,26 @@ def end_at_pause(a: np.ndarray, rng: np.random.Generator | None = None) -> np.nd
 
 
 def _shard(args) -> int:
-    _set, _split, files, repeat, slide, out = args
+    _set, _split, files, repeat, slide, out, trim = args  # trim: the real clips, quiet cut out
     from microwakeword.audio.audio_utils import generate_features_for_clip
     from mmap_ninja.ragged import RaggedMmap
 
     def gen():
         for _ in range(repeat):
             for f in files:
-                audio, sr = sf.read(f, dtype="float32", always_2d=True)
-                if sr != 16000:
-                    raise ValueError(f"{f}: {sr} Hz (want 16 kHz)")
-                a = audio[:, 0]
+                if _set.startswith("real_") or f in trim:  # your clips: any rate, converted
+                    a = read_16k_mono(f)
+                else:
+                    audio, sr = sf.read(f, dtype="float32", always_2d=True)
+                    if sr != 16000:
+                        raise ValueError(f"{f}: {sr} Hz (want 16 kHz)")
+                    a = audio[:, 0]
                 if _set == "partial":
                     a = cut_short(a)
                 elif _set == "conversational":
                     a = end_at_pause(a)
+                if _split == "training" and f in trim:
+                    a = trim_silence(a)
                 spec = generate_features_for_clip(_AUG.augment_clip(a), 10)
                 spec = np.round(spec / _FEATURE_SCALE).astype(np.uint16)
                 if slide == 1:
@@ -236,25 +264,49 @@ def _shard(args) -> int:
 def build_features(p: Project, workers: int, log=print) -> None:
     out_root = p.path("mww", "features")
     shutil.rmtree(out_root, ignore_errors=True)
-    noise = str(assets.fetch(assets.ASSETS["musan-noise"]))
+    lo, hi = p.microwakeword.min_trailing_s, p.microwakeword.max_trailing_s
+    if not 0 <= lo <= hi <= 1.0:
+        raise ValueError(
+            f"microwakeword.min_trailing_s/max_trailing_s: {lo}/{hi} (want 0 <= min <= max <= 1 s)"
+        )
+    background = [str(assets.fetch(assets.ASSETS["musan-noise"]))]
+    speech = p.microwakeword.speech_background
+    if speech:
+        fleurs = assets.ASSETS["fleurs-en-speech"]
+        if not fleurs.present():
+            log("mww features: downloading FLEURS read speech for the background (1.4 GB, once)")
+        background.append(str(assets.fetch(fleurs)))
     rirs = impulse_paths(p, str(assets.fetch(assets.ASSETS["mit-rirs"])))
     if len(rirs) > 1:
         log(f"mww features: room echoes from the MIT set and {len(set(rirs[1:]))} house claps")
+    jobs = feature_jobs(p)
+    trim: frozenset[str] = frozenset()
+    if p.real.trim_silence:  # every real clip, also real positives mixed into the synthetic set
+        real_pos = {str(x) for x in p.path("real", "train").glob("*.wav")}
+        trim = frozenset(
+            f for s, _, files, _, _ in jobs for f in files if s.startswith("real_") or f in real_pos
+        )
+    out_root.mkdir(parents=True, exist_ok=True)
+    # kept next to the features (archiving a project removes the features) and in them (a project
+    # whose features are a link to another's finds it through the link)
+    record = json.dumps({"speech_background": speech})
+    p.path("mww", "recipe.json").write_text(record)
+    (out_root / "recipe.json").write_text(record)
     tasks = []
-    for set_name, split, files, repeat, slide in feature_jobs(p):
+    for set_name, split, files, repeat, slide in jobs:
         files = list(files)
         random.Random(1).shuffle(files)
         n = max(1, min(workers, len(files) // 200))  # >= 200 clips per shard
         for i in range(n):
             out = str(out_root / set_name / split / f"shard{i:02d}_mmap")
-            tasks.append((set_name, split, files[i::n], repeat, slide, out))
+            tasks.append((set_name, split, files[i::n], repeat, slide, out, trim))
         log(f"mww features {set_name}/{split}: {len(files)} clips x{repeat}, {n} shards")
     from tqdm import tqdm
 
     from .hardware import worker_start
 
     with get_context(worker_start()).Pool(
-        workers, initializer=_init_worker, initargs=(noise, rirs)
+        workers, initializer=_init_worker, initargs=(background, rirs, (lo, hi))
     ) as pool:
         for _ in tqdm(pool.imap_unordered(_shard, tasks), total=len(tasks), desc="mww features"):
             pass
@@ -320,8 +372,8 @@ def write_config(p: Project, train_dir: str = "trained", config: str = "training
         feats.append(
             {
                 "features_dir": "features/real_negative",
-                "sampling_weight": 2.0,
-                "penalty_weight": 2.0,
+                "sampling_weight": p.real.negative_weight,
+                "penalty_weight": p.real.negative_penalty,
                 "truth": False,
                 "truncation_strategy": "truncate_start",
                 "type": "mmap",
@@ -340,6 +392,7 @@ def write_config(p: Project, train_dir: str = "trained", config: str = "training
             }
         )
     phases = 2 if p.microwakeword.finetune_steps else 1
+    masks = p.microwakeword.spec_augment
     cfg = {
         "window_step_ms": 10,
         "train_dir": train_dir,
@@ -349,10 +402,11 @@ def write_config(p: Project, train_dir: str = "trained", config: str = "training
         "negative_class_weight": [p.microwakeword.negative_class_weight] * phases,
         "learning_rates": [0.001, 0.0002][:phases],
         "batch_size": 128,
-        "time_mask_max_size": [0] * phases,
-        "time_mask_count": [0] * phases,
-        "freq_mask_max_size": [0] * phases,
-        "freq_mask_count": [0] * phases,
+        # SpecAugment, as microwakeword.data.spec_augment (mww_torch.Sampler does the same)
+        "time_mask_max_size": [5 if masks else 0] * phases,
+        "time_mask_count": [2 if masks else 0] * phases,
+        "freq_mask_max_size": [5 if masks else 0] * phases,
+        "freq_mask_count": [2 if masks else 0] * phases,
         "eval_step_interval": EVAL_INTERVAL,
         "clip_duration_ms": 1500,
         "target_minimization": 0.9,
@@ -463,6 +517,18 @@ def train(
             run_dir.rename(p.path("mww", "trained.previous"))
         else:  # half written by a stopped run: never put it over the previous model
             shutil.rmtree(run_dir)
+    # what the features this model learns from were built with, kept with the model (a kept
+    # candidate is copied whole into mww/trained), so its license note stays right after archiving
+    built = next(
+        # the record that travels with the features first (they may be a link to another's)
+        (f for f in (p.path("mww", "features", "recipe.json"), p.path("mww", "recipe.json"))
+         if f.is_file()),
+        None,
+    )  # fmt: skip
+    run_dir.mkdir(parents=True, exist_ok=True)
+    (run_dir / "recipe.json").write_text(
+        built.read_text() if built else json.dumps({"speech_background": False})
+    )
     test = [
         "--test_tf_nonstreaming",
         "0",

@@ -85,7 +85,7 @@ def export(p: Project, combined: bool | None = None) -> list[Path]:
         (d / f"{p.name}.json").write_text(json.dumps(manifest, indent=2))
         files += [d / f"{p.name}.tflite", d / f"{p.name}.json"]
     if files:
-        p.path("export", "LICENSE-NOTE.txt").write_text(license_note(p))
+        p.path("export", "LICENSE-NOTE.txt").write_text(license_note(p, both))
         files.append(p.path("export", "LICENSE-NOTE.txt"))
         models.record_export(p, combined=both)
     return files
@@ -122,7 +122,27 @@ def model_frontend(path: Path) -> str | None:
     return None
 
 
-def license_note(p: Project) -> str:
+def speech_background_used(p: Project, combined: dict | None = None) -> bool:
+    """Whether this project's microWakeWord model learned from features built with FLEURS speech as
+    background: recorded with the model (mww/trained/recipe.json), else with the features
+    (mww/features/recipe.json, then mww/recipe.json); a model or features from an older wakesmith
+    have no record and didn't use
+    it; with nothing built yet, the setting. A combined model's info carries its own."""
+    if combined and "speech_background" in combined:
+        return bool(combined["speech_background"])
+    record = p.path("mww", "trained", "recipe.json")
+    if mww.model_path(p).exists() and not record.is_file():
+        return False  # a model from before the record (or one brought back): built without it
+    for f in (record, p.path("mww", "features", "recipe.json"), p.path("mww", "recipe.json")):
+        try:
+            return bool(json.loads(f.read_text()).get("speech_background"))
+        except (OSError, ValueError, AttributeError):
+            continue
+    built = p.path("mww", "features").is_dir() or p.path("mww", "trained").is_dir()
+    return False if built else p.microwakeword.speech_background
+
+
+def license_note(p: Project, combined: dict | None = None) -> str:
     """What this project's models were trained on, with each source's license."""
     from . import assets
 
@@ -145,6 +165,8 @@ def license_note(p: Project) -> str:
                 "negative examples (microWakeWord speech, dinner party, no-speech sets)",
             ),
         ]
+        if speech_background_used(p, combined):
+            out.append(line("fleurs-en-speech", "background talk (Google FLEURS, English)"))
         nc = True
     if p.openwakeword.enabled:
         out += [

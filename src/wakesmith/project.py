@@ -47,12 +47,19 @@ class Samples:
 class Real:
     positives: str = ""  # folder of wake-phrase recordings (optional labels.csv, HELDOUT.txt)
     negatives: str = ""  # folder of not-the-phrase recordings, ideally real false triggers
-    copies: int = 10  # copies of each real positive in training (each augmented differently)
-    negative_copies: int = 5
+    copies: int = 3  # copies of each real positive in training (each augmented differently)
+    negative_copies: int = 3
     # microWakeWord: 0 mixes real positives into the synthetic set; > 0 trains them as their own
     # set sampled at this weight (synthetic positives: 2.0), so a few dozen takes aren't drowned.
-    sampling_weight: float = 0.0
+    sampling_weight: float = 2.0
     ignore_tail_s: float = 0.3  # ignore a device chime at the end of positive clips
+    # microWakeWord: real not-the-phrase clips' sampling weight, and how much more a false trigger
+    # on one costs than a missed call (a real false wake is worse than a synthetic one)
+    negative_weight: float = 1.5
+    negative_penalty: float = 3.0
+    # microWakeWord: cut the quiet out of real clips before training (WebRTC voice detection, as
+    # Wake Word Studio does), so a device's lead-in and tail don't teach the model silence
+    trim_silence: bool = True
 
 
 @dataclass
@@ -89,6 +96,17 @@ class MicroWakeWord:
     # near-copies of the phrase ("hey jarvis is" for "hey jarvis") still fire
     adversarial_weight: float = 3.0
     cutoff: float = 0.9  # probability cutoff in the exported manifest (pick from test results)
+    # Masking during training (SpecAugment: 2 stretches of up to 5 frames and 2 bands of up to 5
+    # of the 40 features blanked per example), as Wake Word Studio trains: the model can't lean on
+    # any one moment or pitch, which held up best on real calls
+    spec_augment: bool = True
+    # real speech (FLEURS, read sentences) as background noise as well as MUSAN, so talk in the room
+    # doesn't sound new to the model
+    speech_background: bool = True
+    # quiet after the phrase in each training clip, in seconds (the model learns to fire this long
+    # after the phrase ends): 0.10-0.21 fires 20-50 ms sooner than microWakeWord's 0.195-0.205
+    min_trailing_s: float = 0.10
+    max_trailing_s: float = 0.21
     # Feature frontend of the devices the model is for, used by `wakesmith test` and review:
     # "tflm" (ESPHome, microWakeWord's own runtime) or "zserge" (zserge/microwakeword, pure Go).
     frontend: str = "tflm"
@@ -104,6 +122,10 @@ class OpenWakeWord:
     # validation set is above target). Tuned on real held-out clips: 3000, LiveKit's setting,
     # suppressed recall to ~14% once the features use the runtime's int16 scale; 100 -> 400 worked.
     max_negative_weight: float = 100.0
+    # copies of each real positive and real not-the-phrase window in openWakeWord's training (each
+    # augmented differently); microWakeWord's are real.copies / real.negative_copies
+    real_copies: int = 10
+    real_negative_copies: int = 5
     target_fp_per_hour: float = 0.1
     threshold: float = 0.5
 
@@ -240,6 +262,12 @@ def load(where: str | Path) -> Project:
     if not (p / "project.yaml").exists() and not p.is_absolute():
         p = projects_home() / str(where)
     data = yaml.safe_load((p / "project.yaml").read_text(encoding="utf-8"))
+    # saved before openWakeWord had its own real-clip copies: it keeps the ones it trained with
+    real, ow = data.get("real") or {}, data.get("openwakeword")
+    if isinstance(real, dict) and isinstance(ow, dict):
+        for old, new in (("copies", "real_copies"), ("negative_copies", "real_negative_copies")):
+            if new not in ow and old in real:
+                ow[new] = real[old]
     proj = _build(Project, data)
     from . import languages
 

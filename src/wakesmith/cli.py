@@ -387,7 +387,8 @@ def clips_import(
     from . import project, rounds
 
     r = rounds.import_folder(project.load(project_), folder)
-    typer.echo(f"{r['added']} clips added ({r['known']} already there)")
+    bad = f"; {r['unreadable']} unreadable, left out" if r.get("unreadable") else ""
+    typer.echo(f"{r['added']} clips added ({r['known']} already there{bad})")
 
 
 @clips_app.command("transcribe")

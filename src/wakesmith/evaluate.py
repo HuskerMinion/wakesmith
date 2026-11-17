@@ -31,11 +31,10 @@ from collections.abc import Callable
 from pathlib import Path
 
 import numpy as np
-import soundfile as sf
 
 from . import devicefront, mww, oww
 from .project import Project
-from .real import KIND, RealData, flat_name
+from .real import KIND, RealData, flat_name, read_16k_mono
 
 THRESHOLDS = (0.3, 0.5, 0.6, 0.7, 0.8, 0.85, 0.9, 0.93, 0.95, 0.97)
 MIN_HALF = 5  # fewer phrase clips (or other clips) than this in a half: no split
@@ -135,13 +134,13 @@ def mww_scorer(tflite: Path, window: int = 5, frontend: str = "tflm") -> Callabl
     from microwakeword.inference import Model
 
     def peak(path: Path) -> float:
-        a, _ = sf.read(str(path), dtype="float32", always_2d=True)
+        a = read_16k_mono(path)  # a source clip of any rate (review, zserge positives) too
         if frontend == "zserge":
             # the device averages uint8 outputs / 255
-            p = Model(str(tflite)).predict_spectrogram(devicefront.features(a[:, 0]))
+            p = Model(str(tflite)).predict_spectrogram(devicefront.features(a))
             p = np.round(np.asarray(p, np.float32) * 255) / 255
         else:
-            a = np.concatenate([np.zeros(16000, np.float32), a[:, 0], np.zeros(8000, np.float32)])
+            a = np.concatenate([np.zeros(16000, np.float32), a, np.zeros(8000, np.float32)])
             p = np.asarray(Model(str(tflite)).predict_clip(a, step_ms=10), np.float32)
         if len(p) < window:
             return float(p.max(initial=0))

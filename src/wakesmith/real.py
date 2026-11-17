@@ -40,6 +40,66 @@ KIND = {
 VERDICTS = ("wake", "not_wake", "unsure", "bad_audio")
 
 
+MIN_RATE, MAX_RATE = 4000, 768_000  # sample rates converted; others are refused
+MAX_SECONDS = 7200.0  # longest clip converted (an evening of TV as not-the-phrase clips)
+MAX_SAMPLES = 200_000_000  # samples read at most, all channels (800 MB as float32)
+
+
+def read_16k_mono(path: str | Path) -> np.ndarray:
+    """A WAV as mono float32 in [-1, 1] at 16 kHz: channels averaged, other rates (44.1 kHz phone or
+    satellite recordings, say) resampled, so folders need no converting first. ValueError for a
+    rate outside 4-768 kHz, or one that needs resampling and is over 2 hours or 200 million samples:
+    those could need more memory than the machine has. 16 kHz mono clips read as before, any length."""
+    i = sf.info(str(path))
+    if i.channels > 1 and i.frames * i.channels > MAX_SAMPLES:  # averaging needs it all in memory
+        raise ValueError(f"{path}: {i.channels} channels x {i.frames} samples, too long to convert")
+    if i.samplerate != SR:
+        if not MIN_RATE <= i.samplerate <= MAX_RATE:
+            raise ValueError(f"{path}: {i.samplerate} Hz (wakesmith converts 4-768 kHz)")
+        if i.frames > MAX_SECONDS * i.samplerate or i.frames * max(1, i.channels) > MAX_SAMPLES:
+            raise ValueError(
+                f"{path}: {i.frames / i.samplerate:.0f} s at {i.samplerate} Hz, too long to convert "
+                f"(at most {MAX_SECONDS / 3600:.0f} h and {MAX_SAMPLES // 1_000_000} million "
+                "samples; 16 kHz mono clips have no limit)"
+            )
+    a, sr = sf.read(str(path), dtype="float32", always_2d=True)
+    a = a.mean(axis=1) if a.shape[1] > 1 else a[:, 0]
+    if sr != SR:
+        from math import gcd
+
+        from scipy.signal import resample_poly
+
+        g = gcd(SR, sr)
+        a = resample_poly(a, SR // g, sr // g).astype(np.float32)
+    # resampling (or a float WAV) can overshoot full scale; int16 consumers would wrap around
+    return np.clip(a, -1.0, 1.0, out=a)
+
+
+def copy_as_16k_mono(src: str | Path, dst: str | Path) -> None:
+    """Copy a WAV, converting it to 16 kHz mono 16-bit PCM unless it already is that."""
+    i = sf.info(str(src))
+    if (i.samplerate, i.channels, i.subtype) == (SR, 1, "PCM_16"):
+        shutil.copy2(src, dst)
+        return
+    a = np.clip(read_16k_mono(src), -1.0, 1.0)
+    import os
+    import tempfile
+
+    dst = Path(dst)
+    # written whole under a name of its own (two imports at once don't share it), then renamed
+    fd, name = tempfile.mkstemp(dir=dst.parent, prefix=f".{dst.name}.", suffix=".tmp")
+    os.close(fd)
+    tmp = Path(name)
+    try:
+        sf.write(str(tmp), a, SR, subtype="PCM_16", format="WAV")
+        # then the clip's own permission bits (the temp file's are owner-only; set after writing,
+        # so a read-only source still converts)
+        os.chmod(tmp, os.stat(src).st_mode & 0o777)
+        tmp.replace(dst)
+    finally:
+        tmp.unlink(missing_ok=True)
+
+
 def filled_row(row: dict) -> bool:
     """Not a blank row: a spreadsheet saves formatted empty rows below the data as ",,,"."""
     return any(
@@ -155,13 +215,9 @@ class RealData:
 
     # -- preparation -----------------------------------------------------------------------
     def read(self, src: str, f: str) -> np.ndarray:
-        a, sr = sf.read(self.file(src, f), dtype="float32", always_2d=True)
-        if sr != SR:
-            raise ValueError(
-                f"{src}/{f}: {sr} Hz. Convert recordings to 16 kHz mono first, e.g. "
-                "ffmpeg -i in.wav -ar 16000 -ac 1 out.wav"
-            )
-        return a[:, 0]
+        """Mono float32 at 16 kHz: channels are averaged and other rates (44.1 kHz phone or
+        satellite recordings, say) resampled, so folders need no converting first."""
+        return read_16k_mono(self.file(src, f))
 
     def prepare(self) -> dict[str, int]:
         """Write real/{train,test} (trimmed positives) and real_neg/{train,test}."""
@@ -201,7 +257,7 @@ class RealData:
             (out / d).mkdir(parents=True)
         held = [(s, f) for s in self.of_kind("not_wake") for f in self.heldout(s)]
         for s, f in held:
-            shutil.copy(self.file(s, f), out / "test" / flat_name(s, f))
+            copy_as_16k_mono(self.file(s, f), out / "test" / flat_name(s, f))
         train, _ = self.training_items("not_wake")
         n_win = 0
         for src, f in train:

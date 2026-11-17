@@ -31,14 +31,41 @@ def _settings(p: Project) -> dict:
         "sound_alikes": len(p.negatives),
         "microwakeword": {
             k: getattr(mww, k, None)
-            for k in ("enabled", "steps", "finetune_steps", "adversarial_weight", "frontend")
+            for k in (
+                "enabled",
+                "steps",
+                "finetune_steps",
+                "adversarial_weight",
+                "frontend",
+                "spec_augment",
+                "speech_background",
+                "min_trailing_s",
+                "max_trailing_s",
+            )
         },
         "openwakeword": {
-            k: getattr(oww, k, None) for k in ("enabled", "steps", "layer_dim", "blocks")
+            k: getattr(oww, k, None)
+            for k in (
+                "enabled",
+                "steps",
+                "layer_dim",
+                "blocks",
+                "real_copies",
+                "real_negative_copies",
+            )
         },
         "real": {
             k: getattr(p.real, k, None)
-            for k in ("positives", "negatives", "copies", "sampling_weight")
+            for k in (
+                "positives",
+                "negatives",
+                "copies",
+                "sampling_weight",
+                "negative_copies",
+                "negative_weight",
+                "negative_penalty",
+                "trim_silence",
+            )
         },
     }
 

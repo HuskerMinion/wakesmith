@@ -1,20 +1,32 @@
-## What's new in 0.4.10
+## What's new in 0.4.11
 
-**Devices can send their clips to wakesmith.** Clips your devices save when they fire (or nearly fire)
-are the best training data there is, but until now they had to be copied off by hand or by a script.
-wakesmith now has an inbox for them: on the Hardware page, under *Device upload*, press *Create token*,
-then paste the URL and token into the device. On TECHO5 devices that is the setup page's *Send wake
-clips to* → *wakesmith*, then *Test*. Each clip arrives as `<device>/<kind>/<name>.wav` with its `.json`,
-the same layout as a device's own clip folder, so *Sync automatically* and *Device clips* pick them up
-with nothing else to change. Sending a clip twice is harmless. The inbox is off until you make a token;
-wakesmith keeps only a fingerprint of it, and *Revoke* turns it off again. Any other device can send to
-it too (`POST /api/clips`, described in the README). Devices need to reach wakesmith, so start it with
-`--host 0.0.0.0` on your own network; never expose it to the internet.
+**A training recipe that catches about twice as many real calls.** microWakeWord models now train
+with the changes that held up best when wakesmith's recipe, Wake Word Studio's and Tater's trainer
+settings were compared one piece at a time on one household's real calls: masking (SpecAugment), a
+little more EQ, pitch and color noise, a gain sweep inside some clips, real read speech (Google
+FLEURS, CC BY 4.0) as background as well as MUSAN, and 0.10-0.21 s of quiet after the phrase, so
+the model fires 20-50 ms sooner. Real clips train as their own set with their quiet cut out, and a
+real false trigger costs 3x a missed call. With the same few false wakes allowed (5 on 447 clips),
+the middle of 8 candidates caught 45-56 of 97 real calls across four runs, against 24 before. Each
+piece is a `project.yaml` setting (see *Training recipe* in the README). A wake word made with an
+earlier wakesmith keeps its saved real-clip copies and weight and gets the rest on its next training
+run. FLEURS is a new 1.4 GB download: `wakesmith setup` fetches it, or the first training run does.
+
+**Recordings at any sample rate.** Folders of your own clips and device clip imports no longer stop
+at 44.1 kHz or stereo WAV files: wakesmith converts them to 16 kHz mono as it reads them (4-768 kHz,
+up to about 75 minutes of mono or 38 of stereo at 44.1 kHz, longer at lower rates). A clip that
+can't be read is left out and counted instead of stopping the import. The device upload
+(`POST /api/clips`) still takes 16 kHz mono, as devices are told.
+
+**Misses hide.** A false wake is loud; a missed call is silent. When most of a test's calls are
+clips your devices saved (which only holds calls a model fired or nearly fired on), Results now says
+the misses are likely undercounted, and points to *Record a room* for a fair count.
 
 To update: the Update button on the Hardware page, or by hand:
-`uv tool install --python 3.12 --force ./wakesmith-0.4.10-py3-none-any.whl`, then `wakesmith setup`.
+`uv tool install --python 3.12 --force ./wakesmith-0.4.11-py3-none-any.whl`, then `wakesmith setup`.
 
-Earlier: candidates on every GPU at once and a kept candidate that catches calls in
+Earlier: the device inbox in
+[0.4.10](https://github.com/HuskerMinion/wakesmith/releases/tag/v0.4.10), candidates on every GPU at once and a kept candidate that catches calls in
 [0.4.9](https://github.com/HuskerMinion/wakesmith/releases/tag/v0.4.9), the listening check, the Real voices guide and updating from the page in
 [0.4.8](https://github.com/HuskerMinion/wakesmith/releases/tag/v0.4.8), a smith at the forge while you train and `test --model` keeping the project's results in
 [0.4.7](https://github.com/HuskerMinion/wakesmith/releases/tag/v0.4.7), Macs with Apple silicon and the folder summary in

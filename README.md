@@ -37,7 +37,7 @@ sudo apt install espeak-ng git          # Debian/Ubuntu; espeak-ng phonemizes th
 # macOS instead: brew install espeak-ng git
 curl -LsSf https://astral.sh/uv/install.sh | sh   # uv, if you don't have it; then open a new shell
 uv tool install --python 3.12 ./wakesmith-<version>-py3-none-any.whl   # the wheel from the Releases page
-wakesmith setup                         # right PyTorch for your GPU; downloads ~24 GB of data
+wakesmith setup                         # right PyTorch for your GPU; downloads ~25 GB of data
 wakesmith serve                         # then open http://localhost:8765/
 ```
 
@@ -117,11 +117,36 @@ runs finish** in the Queue panel adds a desktop notification.
    next run) and takes about half an hour for a Standard set on
    one card, once: the clips stay checked for retrains and new versions. The Training page shows how
    many were left out; turn it off with `samples: check_negatives: false` in `project.yaml`.
+
+   **Training recipe.** microWakeWord models train with the changes that held up best on real
+   calls in a side-by-side test of recipes (wakesmith's earlier one, Wake Word Studio's, and Tater's
+   trainer settings): masking (SpecAugment: two short stretches and two narrow bands blanked in each
+   example, so the model can't lean on any one moment or pitch), a little more EQ, pitch and color
+   noise, a gain sweep inside some clips, real read speech ([FLEURS](https://huggingface.co/datasets/google/fleurs))
+   as background as well as MUSAN, and 0.10-0.21 s of quiet after the phrase, so the model fires
+   20-50 ms sooner. Real clips are trained as their own set (3 copies, weight 2.0), real false
+   triggers weigh 1.5 and cost 3x a missed call, and both have their quiet cut out first (WebRTC
+   voice detection). On one household's real calls (97 calls and 447 other clips its devices
+   saved), the middle of 8 candidates caught 24 calls at up to 5 false wakes with the earlier
+   recipe and 45-56 with this one (four runs), and 58 against 70-75 at up to 20.
+   Each piece is a `project.yaml` setting (`microwakeword: spec_augment, speech_background,
+   min_trailing_s, max_trailing_s`; `real: copies, negative_copies, sampling_weight,
+   negative_weight, negative_penalty, trim_silence`); openWakeWord keeps its own real-clip copies
+   (`openwakeword: real_copies` 10, `real_negative_copies` 5, as before). New wake words get them
+   all; a wake word made with an earlier wakesmith keeps the real-clip copies (and microWakeWord's
+   weight) saved in its `project.yaml`, for both model types (`real:` for microWakeWord,
+   `openwakeword:` for openWakeWord), and gets the rest on its next training run.
 5. **Results and export.** Caught and false triggers at every cutoff, broken down by test set (your
    recordings, device clips, sound-alikes...) so a weak spot shows even when the totals look fine,
    every run side by side, then a `.tflite` with its manifest for ESPHome (plus a YAML snippet)
    and/or an openWakeWord `.tflite`. The Models list keeps every exported model with its checksum,
    cutoff and numbers; mark one offered or live as it moves to your devices.
+
+   **Misses hide.** A false wake is loud; a missed call is silent (the person just says it again),
+   and device clips only hold calls a model fired or nearly fired on. A test made mostly of device
+   clips counts the misses short, and a recipe tuned on it can look better than it is. Results says
+   so when that's the case; takes from *Record a room* (the phone hears every call) give a fair
+   count.
 
    **Combined model.** A Standard run trains three microWakeWord candidates; wakesmith can also
    average them into one model (Advanced: "Combine the candidates", or `wakesmith combine PROJECT`).
@@ -238,7 +263,8 @@ house's room echoes* on a wake word's Training page (`microwakeword.house_rirs`)
 them in as often as the standard set. Sending twice adds nothing twice. From the command line:
 `wakesmith room list|split|send`.
 
-**Folders.** Clips your devices saved, or any 16 kHz mono WAV files:
+**Folders.** Clips your devices saved, or any WAV files (other rates and stereo, such as 44.1 kHz
+recordings, are converted to 16 kHz mono as they are read):
 
 ```
 my_positives/
@@ -506,17 +532,20 @@ and JetBrains Mono fonts (SIL Open Font License 1.1).
 Training data is downloaded at setup, never bundled; `wakesmith doctor` and the Data & licenses page
 list each item and its license. The default **personal** data profile uses datasets with
 **non-commercial** terms (microWakeWord's negative sets: CC BY-NC 4.0; openWakeWord's ACAV100M
-features: CC BY-NC-SA 4.0), so models trained with it are for personal use. Common Voice is CC0; the
-aligner that cuts phrases out of it (MMS, through torchaudio) has CC BY-NC 4.0 weights. Whisper
-(large-v3-turbo, MIT, through Hugging Face transformers) is downloaded the first time it listens, for
-the listening check and device clips; it only decides which clips to use. Every export
-includes a LICENSE-NOTE.txt listing what that model was trained on.
+features: CC BY-NC-SA 4.0), so models trained with it are for personal use. The background talk
+(Google FLEURS) is CC BY 4.0. Common Voice is CC0; the aligner that cuts phrases out of it (MMS,
+through torchaudio) has CC BY-NC 4.0 weights. Whisper (large-v3-turbo, MIT, through Hugging Face
+transformers) is downloaded the first time it listens, for the listening check and device clips; it
+only decides which clips to use. Every export includes a LICENSE-NOTE.txt listing what that model
+was trained on.
 
 ## Credits
 
 [microWakeWord](https://github.com/kahrendt/microWakeWord) (Kevin Ahrendt),
 [openWakeWord](https://github.com/dscripka/openWakeWord) (David Scripka),
-[Piper](https://github.com/rhasspy/piper) and piper-sample-generator (Michael Hansen),
-[Mozilla Common Voice](https://commonvoice.mozilla.org/) and its volunteers,
-torchaudio's MMS forced aligner (Meta AI), [CMUdict](https://github.com/cmusphinx/cmudict), MUSAN,
-and the MIT room impulse response survey.
+[Piper](https://github.com/rhasspy/piper) and piper-sample-generator (Michael Hansen), [Mozilla
+Common Voice](https://commonvoice.mozilla.org/) and its volunteers, torchaudio's MMS forced aligner
+(Meta AI), [CMUdict](https://github.com/cmusphinx/cmudict), MUSAN, Google's
+[FLEURS](https://arxiv.org/abs/2205.12446) (CC BY 4.0), and the MIT room impulse response survey.
+The training recipe's masking, augmentation and real-clip handling follow [Wake Word
+Studio](https://github.com/Wadim-dev/WakeWordStudio_ha).

@@ -246,7 +246,7 @@ def test_feature_workers_run_one_blas_thread(tmp_path, kind):
     code = (
         "import json, sys; from wakesmith import mww, oww; from threadpoolctl import threadpool_info; "
         + {
-            "mww": "mww._init_worker(sys.argv[1], [sys.argv[2]]); ",
+            "mww": "mww._init_worker([sys.argv[1]], [sys.argv[2]], (0.1, 0.21)); ",
             "oww": "oww._init_worker(sys.argv[1], sys.argv[1], False); ",
         }[kind]
         + "print(json.dumps([i['num_threads'] for i in threadpool_info() if i['user_api'] == 'blas']))"
@@ -1263,14 +1263,14 @@ def test_oww_features_reused_until_an_input_changes(proj):
         (d / f).write_bytes(b"")
     (d / "stamp.json").write_text(json.dumps(stamp))
     assert oww.features_current(proj, oww._stamp(proj, oww._feature_sets(proj)))
-    assert stamp["sets"]["positive_train"]["files"] == 2 + proj.real.copies
+    assert stamp["sets"]["positive_train"]["files"] == 2 + proj.openwakeword.real_copies
 
     def current() -> bool:
         return oww.features_current(proj, oww._stamp(proj, oww._feature_sets(proj)))
 
-    proj.real.copies += 1  # a changed setting
+    proj.openwakeword.real_copies += 1  # a changed setting
     assert not current()
-    proj.real.copies -= 1
+    proj.openwakeword.real_copies -= 1
     assert current()
     wav(proj.path("real", "train", "take2.wav"))  # a new recording
     assert not current()

@@ -365,7 +365,14 @@ def failure_logs(logs: Path, error: str = "") -> list[str]:
 
 SETTING_KEYS = {
     "samples": None,
-    "real": ("copies", "negative_copies", "sampling_weight"),
+    "real": (
+        "copies",
+        "negative_copies",
+        "sampling_weight",
+        "negative_weight",
+        "negative_penalty",
+        "trim_silence",
+    ),
     "commonvoice": ("enabled", "train"),
     "microwakeword": (
         "enabled",
@@ -376,8 +383,12 @@ SETTING_KEYS = {
         "adversarial_weight",
         "cutoff",
         "frontend",
+        "spec_augment",
+        "speech_background",
+        "min_trailing_s",
+        "max_trailing_s",
     ),
-    "openwakeword": ("enabled", "steps", "threshold"),
+    "openwakeword": ("enabled", "steps", "threshold", "real_copies", "real_negative_copies"),
 }
 
 

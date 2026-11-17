@@ -266,7 +266,13 @@ def create_app(token: str | None = None, listen: dict | None = None) -> FastAPI:
     dl = {"running": False, "current": None, "done": [], "error": None}
 
     def _part_bytes(a) -> int:
-        target = a.local.with_suffix(".zip") if a.unzip else a.local
+        target = (
+            a.local.with_suffix(".zip")
+            if a.unzip
+            else a.local.with_name(a.local.name + ".tar.gz")
+            if a.untar
+            else a.local
+        )
         part = target.with_name(target.name + ".part")
         try:
             return part.stat().st_size if part.is_file() else 0
@@ -1192,6 +1198,8 @@ def create_app(token: str | None = None, listen: dict | None = None) -> FastAPI:
         body = await request.json()
         try:
             return rounds.import_folder(proj(name), str(body.get("folder", "")).strip())
+        except OSError as e:  # the folder can't be read (permissions, a dropped network share)
+            raise HTTPException(400, str(e)) from None
         except ValueError as e:
             raise HTTPException(400, str(e)) from None
 

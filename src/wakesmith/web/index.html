@@ -1427,7 +1427,7 @@ async function voicesTab(p, base, steps) {
   const devWire = () => {
     syncWire();
     const msg = t => { const m = $("#devmsg"); if (m) m.textContent = t; };
-    $("#devimport").onclick = async () => { err(); try { const r = await api(base + "/devices/import", { method: "POST", body: { folder: $("#devdir").value } }); msg(`${r.added} new, ${r.known} already here`); await loadDev(); } catch (e) { err(e.message); } };
+    $("#devimport").onclick = async () => { err(); try { const r = await api(base + "/devices/import", { method: "POST", body: { folder: $("#devdir").value } }); msg(`${r.added} new, ${r.known} already here${r.unreadable ? `, ${r.unreadable} unreadable (left out)` : ""}`); await loadDev(); } catch (e) { err(e.message); } };
     $("#devtx").onclick = async () => { err(); try { await api(base + "/devices/transcribe", { method: "POST" }); msg("transcribing in the background: come back in a few minutes (Training shows the log)"); } catch (e) { err(e.message); } };
     if ($("#devaccept")) $("#devaccept").onclick = async () => { err(); try { const r = await api(base + "/devices/accept", { method: "POST" }); msg(`${r.changed} labeled`); await loadDev(); } catch (e) { err(e.message); } };
     $("#devseg").onclick = e => { const b = e.target.closest("[data-dseg]"); if (b) { if (quick) quickStop(); devShow = b.dataset.dseg; draw(); } };
@@ -2025,7 +2025,8 @@ async function everydayPanel(p, base, picks, rerender) {
       <input type="range" id="edr" min="0" max="${d.rows.length - 1}" step="1" value="${i}" style="width:100%;accent-color:var(--cyan)"></label>
     <div id="edtxt" style="display:flex;flex-direction:column;gap:6px"></div>
     <div class="row"><button type="button" id="eduse">Use this cutoff</button><span class="hint" id="edmsg"></span></div>
-    ${d.half ? `<p class="hint" style="margin:0">Counted on the half of the test recordings that wasn't used to pick the model.</p>` : ""}`;
+    ${d.half ? `<p class="hint" style="margin:0">Counted on the half of the test recordings that wasn't used to pick the model.</p>` : ""}
+    ${d.device_takes && d.device_takes * 2 >= d.positives ? `<p class="hint" style="margin:0" id="edmiss"><b>Misses are likely undercounted.</b> ${d.device_takes} of the ${d.positives} test takes are clips your devices saved because the model on them fired or nearly fired. A call it missed outright was never saved, so it can't be in this test. For a fair count, record takes with <i>Record a room</i>: the phone hears every call, whether a model fires or not.</p>` : ""}`;
   say();
   $("#edr").oninput = () => { i = +$("#edr").value; say(); $("#edmsg").textContent = ""; };
   $("#eduse").onclick = () => { picks[kind] = d.rows[i].cutoff; rerender(); $("#edmsg").textContent = "chosen: Export below writes it into the model files"; };
