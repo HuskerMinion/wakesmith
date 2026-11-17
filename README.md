@@ -295,16 +295,24 @@ such clips (a `.json` next to each with `at`, `device`, `model`, `score` is read
 Whisper in the background (installed with wakesmith; faster-whisper, Home Assistant's engine, is used
 when it's installed). Clips whose transcript has none of the phrase's words are labeled "not the phrase"
 by themselves; the rest wait under *Listen*, because only a person can tell a call from the TV saying the
-phrase. *Quick check* plays them one at a time (Y the phrase, N not the phrase, L leave out). Then choose
-where the held-out days start, *Use the labeled clips*, and *Retrain from recordings*, or let *New
-version* do all of that (below). From the command line:
+phrase. *Quick check* plays them one at a time (Y the phrase, N not the phrase, L leave out). With clips
+from more than one device, *Device* narrows the list (and Quick check) to one. The trash button (press
+twice; not while the word is training or syncing) deletes a clip for good: it leaves training at once,
+and the next import or sync skips it. The scissors button trims one: drag where it starts and ends, play
+the part kept, save. The clip itself stays whole; *Use the labeled clips* trains and tests on the part
+kept, so press it again after trimming clips it already used. Then choose where the held-out days start,
+*Use the labeled clips*, and *Retrain from recordings*, or let *New version* do all of that (below).
+From the command line:
 `wakesmith clips import|transcribe|accept|status|apply PROJECT ...`.
 
 To keep up without doing that by hand, fill in *Sync automatically* on the same tab: the folder new
 clips arrive in, the start of the `model` name your devices write for this word (a shared folder holds
 every word's clips), and optionally the time the current model went live. *Sync now* brings in only
 the clips not seen before and transcribes them; *Every day at* runs the same for every wake word with a
-folder set (a systemd user timer). The folder is only read. The Wake words card shows how many clips
+folder set (a systemd user timer); *As clips arrive* (on by default) syncs a word a minute after a
+device sends it a clip through *Device upload* (below), while wakesmith is running (a word whose own job
+is running catches up at the next sync). Two words on one device share a folder: give each its own model
+name and each takes only its clips. The folder is only read. The Wake words card shows how many clips
 wait for you. From the command line: `wakesmith clips sync PROJECT [--from DIR] [--model-prefix NAME]
 [--since TIME] [--transcribe-device auto|cpu|xpu:N|cuda:N] [--save]`, `wakesmith clips sync-all`, and
 `wakesmith clips schedule [--at 03:30] [--off] [--status]` (log: `clips-sync.log` next to the projects).
@@ -327,6 +335,12 @@ noise, `at` in UTC like `2026-10-12T21:33:01Z`, `model`, and optionally `slot`, 
 `"duplicate": true` when that device already sent a clip of that name: sending again is harmless),
 400 for audio or meta it can't use (the message says which), 401 for a missing or wrong token, 413
 for audio over 2 MB.
+A device can also send takes of the phrase recorded on purpose (a person starts a run of captures on the
+device): `kind` = take, with `word` (the wake word's model name) in place of `model`, and optionally
+`run` (one id per run), `index` (the capture's number) and `frame`. Sync puts takes straight into that
+word's recordings (*Record here*), with no listening needed; they train like takes recorded on the page
+and, like those, are only tested on when you mark some held out there. So the upload token lets a device
+add training takes: give it only to your own devices.
 
 **Versions.** Every round of training is a version of its wake word (v1, v2, ...), with a short note on
 what it tried; the wake words page shows one row per word and folds out its versions. *New version* (a

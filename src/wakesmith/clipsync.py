@@ -134,6 +134,8 @@ def sync(
             "model_prefix": prefix,
             "new": imp["added"],
             "unreadable": imp.get("unreadable", 0),
+            "takes": imp.get("takes", 0),
+            "takes_refused": imp.get("takes_refused", 0),
             "transcribed": len(todo),
             "left": imp["left"],
             "device": dev,
@@ -179,6 +181,10 @@ def describe(r: dict) -> str:
             f"; suggested: {r['wake']} the phrase, {r['not_wake']} not the phrase, "
             f"{r['unclear']} unclear (Whisper on {r['device']})"
         )
+    if r.get("takes"):
+        s += f"; {r['takes']} take{'s' if r['takes'] > 1 else ''} recorded on a device (into Record here)"
+    if r.get("takes_refused"):
+        s += f"; {r['takes_refused']} take(s) left out (silent, too short or too long)"
     if r.get("unreadable"):
         s += f"; {r['unreadable']} unreadable (left out, tried again next time)"
     if r.get("left"):

@@ -10,9 +10,13 @@ same held-out split as folders you bring yourself. Files are 16 kHz mono 16-bit 
 from __future__ import annotations
 
 import csv
+import fcntl
+import functools
 import io
 import re
+import threading
 import time
+from contextlib import contextmanager
 from pathlib import Path
 
 import numpy as np
@@ -26,6 +30,53 @@ KINDS = ("pos", "neg")
 FIELDS = ["file", "speaker", "condition", "recorded"]
 MIN_S, MAX_S = 0.3, 30.0
 _NAME = re.compile(r"^take_\d{3,}\.wav$")
+
+
+_mine = threading.local()  # per thread: the projects whose lock it holds
+_fallbacks: dict[str, threading.Lock] = {}
+_fallbacks_lock = threading.Lock()
+
+
+def _fallback(key: str) -> threading.Lock:
+    with _fallbacks_lock:
+        return _fallbacks.setdefault(key, threading.Lock())
+
+
+@contextmanager
+def locked(p: Project):
+    """One change to a project's recordings at a time (the page, and a sync bringing in device takes):
+    each reads labels.csv, picks a take number and writes both back.
+    Nested use in one thread takes the lock once."""
+    key = str(p.dir.resolve())
+    held = getattr(_mine, "keys", set())
+    if key in held:
+        yield
+        return
+    with open(p.dir / ".recordings.lock", "a") as fd:  # in the project folder: no folder made
+        try:
+            fcntl.flock(fd, fcntl.LOCK_EX)
+            fallback = None
+        except OSError:  # a network share without flock: this process's threads, at least
+            fallback = _fallback(key)
+            fallback.acquire()
+        _mine.keys = held | {key}
+        try:
+            yield
+        finally:
+            _mine.keys = held
+            if fallback is None:
+                fcntl.flock(fd, fcntl.LOCK_UN)
+            else:
+                fallback.release()
+
+
+def _serial(fn):
+    @functools.wraps(fn)
+    def run(p: Project, *a, **kw):
+        with locked(p):
+            return fn(p, *a, **kw)
+
+    return run
 
 
 def folder(p: Project, kind: str) -> Path:
@@ -165,6 +216,7 @@ def listing(p: Project, kind: str, with_folder: bool = False) -> dict:
     }
 
 
+@_serial
 def add(
     p: Project,
     kind: str,
@@ -173,6 +225,7 @@ def add(
     heldout: bool = False,
     speaker: str = "",
     keep_unused: bool = False,
+    choose: bool = True,
 ) -> dict:
     """Store one take (16 kHz mono WAV bytes). Takes recorded here are always trained on and tested
     with, next to any folder the project was given (real.py adds them as their own source), so recording
@@ -208,7 +261,7 @@ def add(
     if heldout:
         held.add(name)
     _write(d, rows, held)
-    if not _setting(p, kind):
+    if choose and not _setting(p, kind):  # a sync (choose=False) never saves the project
         use(p, kind)
     return {"file": name, "held": heldout, "seconds": round(len(a) / SR, 2), "unused": False}
 
@@ -226,6 +279,7 @@ def path(p: Project, kind: str, name: str) -> Path:
     return f
 
 
+@_serial
 def delete(p: Project, kind: str, name: str) -> None:
     d = folder(p, kind)
     rows, held = _rows(d), _held(d)  # read first: a labels.csv that can't be read leaves the take
@@ -233,6 +287,7 @@ def delete(p: Project, kind: str, name: str) -> None:
     _write(d, [r for r in rows if r["file"] != name], held - {name})
 
 
+@_serial
 def set_speaker(p: Project, kind: str, name: str, speaker: str) -> None:
     d = folder(p, kind)
     path(p, kind, name)
@@ -240,6 +295,7 @@ def set_speaker(p: Project, kind: str, name: str, speaker: str) -> None:
     _write(d, rows, _held(d))
 
 
+@_serial
 def set_heldout(p: Project, kind: str, name: str, held: bool) -> None:
     d = folder(p, kind)
     path(p, kind, name)

@@ -25,18 +25,28 @@ def fake_train(proj, monkeypatch):
         with lock:
             now["n"] += 1
             now["most"] = max(now["most"], now["n"])
-            calls.append({"device": device, "dir": train_dir, "share": share, "seed": seed})
+            calls.append(
+                {
+                    "device": device,
+                    "dir": train_dir,
+                    "share": share,
+                    "seed": seed,
+                    "t": time.monotonic(),
+                }
+            )
         log_file.write_text(
             f"Validation Batch #1: Mini-Batch #10\nbest: step 500, recall = 0.{len(calls)}\n"
         )
-        time.sleep(0.2)
+        cand = train_dir.split("/")[-1].split(".")[0]  # "candidates/s3.part" -> "s3"
+        # the disk-full one fails at once, while the one beside it still runs (a tie raced: 0.4.11)
+        time.sleep(0.0 if os.environ.get("FAKE_OSERROR") == cand else 0.2)
         m = p.path("mww", train_dir) / mww.model_path(p).relative_to(p.path("mww", "trained"))
         m.parent.mkdir(parents=True)
         m.write_bytes(train_dir.encode())
         with lock:
             now["n"] -= 1
-        cand = train_dir.split("/")[-1].split(".")[0]  # "candidates/s3.part" -> "s3"
         if os.environ.get("FAKE_OSERROR") == cand:
+            now["failed_at"] = time.monotonic()
             raise OSError("disk full")
         if os.environ.get("FAKE_FAIL") == cand:
             raise RuntimeError(f"microWakeWord training failed (exit 1): see {log_file}")
@@ -241,7 +251,7 @@ def test_train_devices_leaves_out_gpus_there_is_no_ram_for():
 def test_a_candidate_failing_some_other_way_stops_the_ones_still_waiting(
     proj, fake_train, monkeypatch
 ):
-    calls, _ = fake_train
+    calls, now = fake_train
     monkeypatch.setenv("FAKE_OSERROR", "s1")
     proj.microwakeword.candidates = 6
     with pytest.raises(OSError, match="disk full"):
@@ -249,7 +259,8 @@ def test_a_candidate_failing_some_other_way_stops_the_ones_still_waiting(
             proj, proj.path("logs", "mww-train.log"), ["cuda:0", "cuda:1"], log=lambda m: None
         )
     time.sleep(0.5)
-    assert len(calls) == 2  # s1, and s2 running beside it: nothing starts after s1 fails
+    # nothing starts after s1 fails (on a loaded machine s2 may finish, and s3 start, before s1 runs)
+    assert all(c["t"] <= now["failed_at"] for c in calls) and len(calls) < 6
     assert not list(proj.path("logs").glob("mww-candidates.json*"))
 
 

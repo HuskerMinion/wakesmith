@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import math
 import os
 import secrets
 import sys
@@ -22,6 +23,7 @@ from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Response
 from .. import (
     __version__,
     archive,
+    arrival,
     assets,
     assistant,
     clipcheck,
@@ -44,6 +46,7 @@ from .. import (
     runs,
     sessions,
     sysstat,
+    takes,
     update,
     verdict,
     versions,
@@ -150,6 +153,7 @@ def create_app(token: str | None = None, listen: dict | None = None) -> FastAPI:
     app = FastAPI(title="wakesmith", docs_url=None, redoc_url=None, lifespan=_lifespan)
     state: dict = {"hw": None, "hw_time": 0.0}
     updater = app.state.updater = update.Updater()
+    arrivals = app.state.arrivals = arrival.Arrivals(frozen=updater.frozen)
 
     @app.middleware("http")
     async def auth(request: Request, call_next):
@@ -690,8 +694,14 @@ def create_app(token: str | None = None, listen: dict | None = None) -> FastAPI:
         """Make the next version from this one and queue its run: device clips synced and labeled,
         the newest day held out, trained from the recordings on, compared with the live version."""
         p = proj(name)
-        body = await request.json() if await request.body() else {}
-        q = versions.create(p, str(body.get("note") or "").strip()[:120])
+        body = await _json_object(request) if await request.body() else {}
+        note = str(body.get("note") or "").strip()[:120]
+        try:
+            q = await asyncio.to_thread(versions.create, p, note)  # waits for p's locks
+        except FileExistsError as e:
+            raise HTTPException(409, str(e)) from None
+        except FileNotFoundError as e:
+            raise HTTPException(404, str(e)) from None
         item = jobs.enqueue(
             q, ["prepare-version", str(q.dir)], "new version: device clips, then train"
         )
@@ -809,7 +819,9 @@ def create_app(token: str | None = None, listen: dict | None = None) -> FastAPI:
             if len(body) > TAKE_MAX_BYTES:
                 raise HTTPException(413, "a take is at most 30 s of 16 kHz audio")
         try:
-            return recordings.add(p, kind, bytes(body), condition, heldout, speaker)
+            return await asyncio.to_thread(  # its lock may wait for a sync: off the event loop
+                recordings.add, p, kind, bytes(body), condition, heldout, speaker
+            )
         except PermissionError as e:
             raise HTTPException(409, str(e)) from None
         except (ValueError, RuntimeError) as e:  # soundfile raises RuntimeError on non-WAV bytes
@@ -849,7 +861,8 @@ def create_app(token: str | None = None, listen: dict | None = None) -> FastAPI:
         p = proj(name)
         _idle(p)
         try:
-            recordings.set_speaker(p, kind, file, str((await request.json()).get("speaker", "")))
+            who = str((await _json_object(request)).get("speaker", ""))
+            await asyncio.to_thread(recordings.set_speaker, p, kind, file, who)
         except recordings.LabelsError as e:
             raise HTTPException(409, str(e)) from None
         except (ValueError, FileNotFoundError):
@@ -861,7 +874,8 @@ def create_app(token: str | None = None, listen: dict | None = None) -> FastAPI:
         p = proj(name)
         _idle(p)
         try:
-            recordings.set_heldout(p, kind, file, bool((await request.json()).get("held")))
+            held = bool((await _json_object(request)).get("held"))
+            await asyncio.to_thread(recordings.set_heldout, p, kind, file, held)
         except recordings.LabelsError as e:
             raise HTTPException(409, str(e)) from None
         except (ValueError, FileNotFoundError):
@@ -1064,13 +1078,14 @@ def create_app(token: str | None = None, listen: dict | None = None) -> FastAPI:
     @app.put("/api/projects/{name}/devices/sync")
     async def devices_sync_settings(name: str, request: Request):
         """Where `clips sync` looks and which clips are this word's (project.yaml devices:)."""
-        p, body = proj(name), await request.json()
+        p, body = proj(name), await _json_object(request)
         source = str(body.get("source", p.devices.source)).strip()
         if source and not Path(source).expanduser().is_dir():
             raise HTTPException(400, f"not a folder: {source}")
         p.devices.source = source
         p.devices.model_prefix = str(body.get("model_prefix", p.devices.model_prefix)).strip()
         p.devices.since = str(body.get("since", p.devices.since)).strip()
+        p.devices.on_arrival = bool(body.get("on_arrival", p.devices.on_arrival))
         p.save()
         return _sync_info(p)
 
@@ -1147,7 +1162,7 @@ def create_app(token: str | None = None, listen: dict | None = None) -> FastAPI:
             missing = [k for k in ("audio", "meta") if k not in parts]
             if missing:
                 raise inbox.BadUpload(f"missing part: {', '.join(missing)}")
-            return await asyncio.to_thread(inbox.store, parts["audio"], parts["meta"])
+            stored = await asyncio.to_thread(inbox.store, parts["audio"], parts["meta"])
         except inbox.TooLarge as e:
             return _device_error(413, str(e))
         except inbox.BadUpload as e:
@@ -1155,6 +1170,13 @@ def create_app(token: str | None = None, listen: dict | None = None) -> FastAPI:
         except (OSError, ValueError) as e:  # disk full, a folder that can't be made
             why = getattr(e, "strerror", None) or type(e).__name__
             return _device_error(500, f"could not store the clip: {why}")
+        if not stored.get("duplicate"):  # the words that take it sync a minute after the burst ends
+            try:
+                model = takes.word(json.loads(parts["meta"]))
+                await asyncio.to_thread(arrivals.note, inbox.folder() / stored["stored"], model)
+            except Exception as e:  # noqa: BLE001 - the clip is stored; the daily sync still brings it in
+                print(f"wakesmith: sync on arrival: {e}", file=sys.stderr)
+        return stored
 
     def _upload_info() -> dict:
         where = listen or {"host": "127.0.0.1", "port": 8765, "https": False}
@@ -1195,9 +1217,10 @@ def create_app(token: str | None = None, listen: dict | None = None) -> FastAPI:
 
     @app.post("/api/projects/{name}/devices/import")
     async def devices_import(name: str, request: Request):
-        body = await request.json()
+        body = await _json_object(request)
         try:
-            return rounds.import_folder(proj(name), str(body.get("folder", "")).strip())
+            folder = str(body.get("folder", "")).strip()
+            return await asyncio.to_thread(rounds.import_folder, proj(name), folder)
         except OSError as e:  # the folder can't be read (permissions, a dropped network share)
             raise HTTPException(400, str(e)) from None
         except ValueError as e:
@@ -1213,10 +1236,67 @@ def create_app(token: str | None = None, listen: dict | None = None) -> FastAPI:
 
     @app.post("/api/projects/{name}/devices/labels")
     async def devices_labels(name: str, request: Request):
-        body = await request.json()
+        body = await _json_object(request)
         try:
-            return {"changed": rounds.label(proj(name), body.get("labels", {}))}
+            labels = body.get("labels", {})
+            if not isinstance(labels, dict):
+                raise HTTPException(400, "labels: an object of clip id to label")
+            return {"changed": await asyncio.to_thread(rounds.label, proj(name), labels)}
         except ValueError as e:
+            raise HTTPException(400, str(e)) from None
+
+    async def _json_object(request: Request) -> dict:
+        try:
+            body = await request.json()
+        except (ValueError, RecursionError):  # not JSON, or nested too deep
+            raise HTTPException(400, "the body must be JSON") from None
+        if not isinstance(body, dict):
+            raise HTTPException(400, "the body must be a JSON object")
+        return body
+
+    @app.post("/api/projects/{name}/devices/delete")
+    async def devices_delete(name: str, request: Request):
+        """Delete device clips by id: gone here and never imported again (rounds.delete)."""
+        p, body = proj(name), await _json_object(request)
+        ids = body.get("ids")
+        if not isinstance(ids, list) or not all(isinstance(i, str) for i in ids):
+            raise HTTPException(400, "ids: a list of clip ids")
+        if jobs.busy(p):
+            raise HTTPException(409, "a job of this wake word is running; delete after it ends")
+        try:
+            with clipsync._locked(p):  # a sync rewrites the index: never under it
+                return {"deleted": await asyncio.to_thread(rounds.delete, p, ids)}
+        except clipsync.Busy:
+            raise HTTPException(
+                409, "a sync of this wake word is running; try again in a minute"
+            ) from None
+        except ValueError as e:
+            raise HTTPException(400, str(e)) from None
+
+    @app.post("/api/projects/{name}/devices/trim")
+    async def devices_trim(name: str, request: Request):
+        """{"id", "start", "end"} in seconds, or {"id", "start": null} to keep the whole clip."""
+        p, body = proj(name), await _json_object(request)
+        cid, start, end = body.get("id"), body.get("start"), body.get("end")
+        if not isinstance(cid, str) or not all(
+            v is None
+            or isinstance(v, int | float)
+            and not isinstance(v, bool)
+            and abs(v) < 1e6  # before isfinite, which overflows on a huge integer
+            and math.isfinite(v)
+            for v in (start, end)
+        ):
+            raise HTTPException(400, "id, and start/end in seconds (start null: no trim)")
+        try:
+            with clipsync._locked(p):  # a sync rewrites the index: never under it
+                return await asyncio.to_thread(rounds.set_trim, p, cid, start, end)
+        except clipsync.Busy:
+            raise HTTPException(
+                409, "a sync of this wake word is running; try again in a minute"
+            ) from None
+        except KeyError:
+            raise HTTPException(404, "no such clip") from None
+        except (ValueError, RuntimeError) as e:
             raise HTTPException(400, str(e)) from None
 
     @app.post("/api/projects/{name}/devices/accept")
@@ -1229,7 +1309,7 @@ def create_app(token: str | None = None, listen: dict | None = None) -> FastAPI:
         frm = str(body.get("holdout_from", "")).strip()
         if not frm:
             raise HTTPException(400, "choose where the held-out days start")
-        return rounds.apply(proj(name), frm)
+        return await asyncio.to_thread(rounds.apply, proj(name), frm)
 
     @app.get("/api/projects/{name}/devices/audio")
     def devices_audio(name: str, id: str):

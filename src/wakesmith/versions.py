@@ -13,15 +13,18 @@ verdict.
 
 from __future__ import annotations
 
+import fcntl
 import json
 import os
+import secrets
 import shutil
+import threading
 import time
 from dataclasses import asdict, replace
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
-from . import clipsync, rounds
+from . import clipsync, recordings, rounds
 from .project import Project, all_projects, assign_versions, projects_home
 
 HOLD_DAYS = 1.0
@@ -49,11 +52,44 @@ def _link_audio(src: str, dst: str) -> None:
     shutil.copy2(src, dst)
 
 
+_creating = threading.Lock()  # one New version at a time in this process (the numbering) ...
+STALE_S = 86400  # a .<name>.making.* folder this old was left by a killed New version
+
+
 def create(p: Project, note: str = "") -> Project:
     """A new version of p's wake word from p: same settings and recordings, the same synthetic clips
     (linked), p's takes recorded on the page and its device clips with their labels (both hard-linked, so
-    they stay if p is deleted). Built in a temporary folder and moved into place at the end, so a failure
-    leaves nothing behind. Nothing is trained yet."""
+    they stay if p is deleted). Built in a temporary folder of its own and moved into place at the end, so
+    a failure leaves nothing behind. Nothing is trained yet."""
+    home = projects_home()
+    home.mkdir(parents=True, exist_ok=True)
+    if not p.dir.is_dir():
+        raise FileNotFoundError(f"{p.name} was deleted")
+    with _creating, open(home / ".versions.lock", "a") as fd:  # ... and across processes
+        try:
+            fcntl.flock(fd, fcntl.LOCK_EX)
+            held = True
+        except OSError:  # a share without flock: this process's lock only, as the other locks do
+            held = False
+        try:
+            _sweep(home)
+            return _create(p, note)
+        finally:
+            if held:
+                fcntl.flock(fd, fcntl.LOCK_UN)
+
+
+def _sweep(home: Path) -> None:
+    """Remove what a New version killed mid-way (SIGKILL, power) left behind."""
+    for d in home.glob(".*.making.*"):
+        try:
+            if d.is_dir() and time.time() - d.stat().st_mtime > STALE_S:
+                shutil.rmtree(d, ignore_errors=True)
+        except OSError:
+            pass
+
+
+def _create(p: Project, note: str) -> Project:
     kin = [q for q in all_projects() if q.family == p.family]
     assign_versions(kin)
     p = next((q for q in kin if q.name == p.name), p)  # as numbered and named just now
@@ -66,15 +102,16 @@ def create(p: Project, note: str = "") -> Project:
         created=time.time(),
     )
     final = projects_home() / q.name
-    q.dir = projects_home() / f".{q.name}.making"
-    shutil.rmtree(q.dir, ignore_errors=True)
+    if final.exists():  # made by hand, or by an older wakesmith meanwhile
+        raise FileExistsError(f"{q.name} exists already; try again")
+    while True:  # a folder of its own; a plain mkdir, so it gets the usual permissions (umask)
+        q.dir = projects_home() / f".{q.name}.making.{secrets.token_hex(4)}"
+        try:
+            q.dir.mkdir()
+            break
+        except FileExistsError:
+            continue
     try:
-        q.dir.mkdir(parents=True)
-        # made once and shared: generate never writes into them again
-        for sub in ("clips", "conversational"):
-            src = p.path(sub)
-            if src.exists():
-                os.symlink(src.resolve(), q.path(sub))
         done = {
             k: v
             for k, v in p.state().items()
@@ -82,27 +119,53 @@ def create(p: Project, note: str = "") -> Project:
         }
         if done:
             q.set_state(**done)
-        if p.path("recordings").is_dir():  # takes recorded on the page: q's own (hard links)
-            shutil.copytree(p.path("recordings"), q.path("recordings"), copy_function=_link_audio)
-            for kind in ("pos", "neg"):
-                mine = p.path("recordings", kind).resolve()
-                attr = "positives" if kind == "pos" else "negatives"
-                v = getattr(p.real, attr)
-                if v and Path(v).expanduser().resolve() == mine:
-                    setattr(q.real, attr, str(final / "recordings" / kind))
-        if p.path(
-            "devices", "clips.json"
-        ).exists():  # the clips and their labels; files hard-linked
-            q.path("devices").mkdir(exist_ok=True)
-            if p.path("devices", "inbox").is_dir():
+        # under p's locks (index, then recordings, as an import takes them): a sync or the page
+        # adding a clip or take meanwhile lands either wholly in this copy or wholly after it
+        with rounds.index_lock(p), recordings.locked(p):
+            if p.path(
+                "recordings"
+            ).is_dir():  # takes from the page and devices: q's own (hard links)
                 shutil.copytree(
-                    p.path("devices", "inbox"),
-                    q.path("devices", "inbox"),
-                    copy_function=_link_audio,
+                    p.path("recordings"), q.path("recordings"), copy_function=_link_audio
                 )
-            shutil.copy2(p.path("devices", "clips.json"), q.path("devices", "clips.json"))
+                for kind in ("pos", "neg"):
+                    mine = p.path("recordings", kind).resolve()
+                    attr = "positives" if kind == "pos" else "negatives"
+                    v = getattr(p.real, attr)
+                    if v and Path(v).expanduser().resolve() == mine:
+                        setattr(q.real, attr, str(final / "recordings" / kind))
+            if p.path(
+                "devices", "clips.json"
+            ).exists():  # the clips and their labels; files hard-linked
+                q.path("devices").mkdir(exist_ok=True)
+                if p.path("devices", "inbox").is_dir():
+                    shutil.copytree(
+                        p.path("devices", "inbox"),
+                        q.path("devices", "inbox"),
+                        copy_function=_link_audio,
+                    )
+                shutil.copy2(p.path("devices", "clips.json"), q.path("devices", "clips.json"))
+            # deleted clips stay deleted, and device takes already in recordings/ (copied above) don't
+            # come in a second time
+            for keep in ("deleted.json", "takes.json"):
+                if p.path("devices", keep).exists():
+                    q.path("devices").mkdir(exist_ok=True)
+                    shutil.copy2(p.path("devices", keep), q.path("devices", keep))
+            # made once and shared (generate never writes into them again): linked last, right
+            # before the move, so p being deleted meanwhile fails here instead of leaving dangling links
+            if not p.dir.is_dir():
+                raise FileNotFoundError(f"{p.name} was deleted while its new version was made")
+            for sub in ("clips", "conversational"):
+                src = p.path(sub)
+                if src.exists():
+                    os.symlink(src.resolve(), q.path(sub))
         q.save()
-        q.dir.rename(final)
+        try:
+            q.dir.rename(final)
+        except OSError:
+            if final.exists():
+                raise FileExistsError(f"{q.name} exists already; try again") from None
+            raise
     except BaseException:
         shutil.rmtree(q.dir, ignore_errors=True)
         raise

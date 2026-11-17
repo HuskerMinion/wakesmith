@@ -159,7 +159,11 @@ def version(
     the test, then trained from the recordings on and compared with the version on your devices."""
     from . import project, versions
 
-    q = versions.create(project.load(project_), note)
+    try:
+        q = versions.create(project.load(project_), note)
+    except (FileExistsError, FileNotFoundError) as e:
+        typer.echo(f"error: {e}", err=True)
+        raise typer.Exit(1) from None
     typer.echo(f"{q.title}: {q.dir}")
     if train_it:
         prepare_version(str(q.dir), cpu)
@@ -388,7 +392,10 @@ def clips_import(
 
     r = rounds.import_folder(project.load(project_), folder)
     bad = f"; {r['unreadable']} unreadable, left out" if r.get("unreadable") else ""
-    typer.echo(f"{r['added']} clips added ({r['known']} already there{bad})")
+    tk = f"; {r['takes']} takes recorded on a device, into recordings" if r.get("takes") else ""
+    if r.get("takes_refused"):
+        tk += f"; {r['takes_refused']} take(s) left out (silent, too short or too long)"
+    typer.echo(f"{r['added']} clips added ({r['known']} already there{bad}{tk})")
 
 
 @clips_app.command("transcribe")

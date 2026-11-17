@@ -149,6 +149,8 @@ class Devices:
     source: str = ""
     model_prefix: str = ""
     since: str = ""  # ISO time: only clips from then on (e.g. when the current model went live)
+    # sync this word soon after the device upload stores a clip it takes (arrival.py), not only daily
+    on_arrival: bool = True
 
 
 @dataclass

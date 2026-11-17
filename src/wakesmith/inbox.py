@@ -33,7 +33,7 @@ from . import assets
 
 AUDIO_MAX_BYTES = 2_000_000  # about 4 s of 16 kHz 16-bit mono is ~128 KB
 BODY_MAX_BYTES = AUDIO_MAX_BYTES + 64_000  # the meta part and multipart framing on top
-KINDS = ("wake", "nearmiss", "mistake", "noise")
+KINDS = ("wake", "nearmiss", "mistake", "noise", "take")  # take: recorded as the phrase (takes.py)
 RATE, CHANNELS, WIDTH = 16000, 1, 2
 KEY = "device_upload"
 
@@ -277,7 +277,11 @@ def check_meta(raw: bytes) -> dict:
         raise BadUpload(f"meta: not JSON ({str(e)[:120] or type(e).__name__})") from None
     if not isinstance(meta, dict):
         raise BadUpload("meta: must be a JSON object")
-    for k in ("name", "device", "kind", "at", "model"):
+    if meta.get("kind") == "take" and "model" not in meta:  # a take names its word as "word"
+        need = ("name", "device", "kind", "at", "word")
+    else:
+        need = ("name", "device", "kind", "at", "model")
+    for k in need:
         if not isinstance(meta.get(k), str) or not meta[k].strip():
             raise BadUpload(f"meta: {k!r} is missing or not a text")
     if meta["kind"] not in KINDS:
@@ -295,9 +299,14 @@ def check_meta(raw: bytes) -> dict:
         v = meta.get(k)
         if v is not None and (isinstance(v, bool) or not isinstance(v, (int, float))):
             raise BadUpload(f"meta: {k!r} must be a number")
-    slot = meta.get("slot")
-    if slot is not None and (isinstance(slot, bool) or not isinstance(slot, int)):
-        raise BadUpload("meta: 'slot' must be a whole number")
+    for k in ("slot", "index"):
+        v = meta.get(k)
+        if v is not None and (isinstance(v, bool) or not isinstance(v, int)):
+            raise BadUpload(f"meta: {k!r} must be a whole number")
+    for k in ("word", "run", "frame", "front"):
+        v = meta.get(k)
+        if v is not None and not isinstance(v, str):
+            raise BadUpload(f"meta: {k!r} must be a text")
     _usable("device", meta["device"])
     _usable("name", _stem(meta["name"]))
     return meta

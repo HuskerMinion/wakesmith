@@ -435,7 +435,7 @@ const I = {
   screen: '<rect x="3" y="5" width="18" height="12" rx="2"/><path d="M8 21h8M12 17v4"/>',
   bolt: '<path d="M13 3L5 14h6l-1 7 8-11h-6z"/>', up: '<path d="M12 19V5M6 11l6-6 6 6"/>', dn: '<path d="M12 5v14M6 13l6 6 6-6"/>',
   chev: '<path d="M9 6l6 6-6 6"/>', more: '<circle cx="5" cy="12" r="1.3"/><circle cx="12" cy="12" r="1.3"/><circle cx="19" cy="12" r="1.3"/>',
-  bell: '<path d="M6 16v-5a6 6 0 0 1 12 0v5l2 2H4z"/><path d="M10 21h4"/>', trash: '<path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/>', refresh: '<path d="M20 12a8 8 0 1 1-2.3-5.7M20 4v5h-5"/>',
+  bell: '<path d="M6 16v-5a6 6 0 0 1 12 0v5l2 2H4z"/><path d="M10 21h4"/>', trash: '<path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/>', scissors: '<circle cx="6" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><path d="M8.1 8.1 20 20M8.1 15.9 20 4"/>', refresh: '<path d="M20 12a8 8 0 1 1-2.3-5.7M20 4v5h-5"/>',
 };
 const icon = (n, size = 20, w = 1.75) => `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="${w}" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${I[n]}</svg>`;
 
@@ -1308,7 +1308,7 @@ async function voicesTab(p, base, steps) {
         The alignment model wakesmith uses for cutting (MMS) is CC BY-NC 4.0, like the personal data profile.</p><span class="hint" id="cvsaved"></span></section>`;
   };
   // ---- device clips: what the devices saved, labeled into the next round (rounds.py) ----
-  let dev = null, devShow = null, holdFrom = "", sched = null, quick = null;
+  let dev = null, devShow = null, devFrom = "", trimEd = null, holdFrom = "", sched = null, quick = null;
   const DEVLABEL = { wake: "the phrase", not_wake: "not the phrase", skip: "leave out" };
   const KEYS = { wake: "Y", not_wake: "N", skip: "L" };
   const howTo = () => `<div class="callout info">${icon("help", 18, 2)}<div style="display:flex;flex-direction:column;gap:6px">
@@ -1326,16 +1326,89 @@ async function voicesTab(p, base, steps) {
     }
     if (tab === "dev") draw();
   };
-  const devPick = () => ({ todo: x => !x.label, unclear: x => !x.label && x.suggestion !== "not_wake",
-    wake: x => x.label === "wake", not_wake: x => x.label === "not_wake", all: () => true })[devShow];
+  const devPick = () => {  // the chosen list, of the chosen device ("" every device)
+    const f = ({ todo: x => !x.label, unclear: x => !x.label && x.suggestion !== "not_wake",
+      wake: x => x.label === "wake", not_wake: x => x.label === "not_wake", all: () => true })[devShow];
+    return x => f(x) && (!devFrom || x.device === devFrom);
+  };
+  const devFilter = () => {  // only when the clips come from more than one device
+    const n = {}; for (const c of dev.clips) n[c.device] = (n[c.device] || 0) + 1;
+    const names = Object.keys(n).sort();
+    if (devFrom && !n[devFrom]) devFrom = "";
+    if (names.length < 2) return "";
+    return `<label class="row" style="gap:8px" for="devfrom"><span class="hint">Device</span><select id="devfrom">
+      <option value="">Every device (${dev.clips.length})</option>${names.map(d => `<option value="${esc(d)}" ${d === devFrom ? "selected" : ""}>${esc(d)} (${n[d]})</option>`).join("")}</select></label>`;
+  };
   const devRows = () => {
-    const c = dev.clips, pick = devPick();
+    const c = dev.clips, pick = devPick(), models = new Set(c.map(x => x.model || "")).size;
     const rows = c.filter(pick), shown = rows.slice(-300).reverse();
     return `${shown.map(x => `<li><button type="button" class="round" data-dplay="${esc(x.id)}" aria-label="Play ${esc(x.id)}">${icon("play", 14)}</button>
-        <span class="mono hint" style="min-width:150px">${esc(x.device)}<br>${esc(new Date(x.at).toLocaleString([], { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }))}${x.score != null ? ` · ${Number(x.score).toFixed(2)}` : ""}</span>
+        <span class="mono hint" style="min-width:150px">${esc(x.device)}${models > 1 && x.model ? ` · ${esc(x.model)}` : ""}<br>${esc(new Date(x.at).toLocaleString([], { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }))}${x.score != null ? ` · ${Number(x.score).toFixed(2)}` : ""}</span>
         <span style="flex:1 1 220px">${x.text == null ? `<span class="hint">not transcribed</span>` : `“${esc(x.text)}”`}${x.suggestion && !x.label ? ` <span class="tag">${x.suggestion === "unclear" ? "listen: unclear" : "sounds like " + DEVLABEL[x.suggestion]}</span>` : ""}</span>
-        ${["wake", "not_wake", "skip"].map(k => `<button type="button" class="tag ${x.label === k ? "test" : ""}" data-dlabel="${k}" data-id="${esc(x.id)}" aria-pressed="${x.label === k}">${DEVLABEL[k]}</button>`).join("")}</li>`).join("")
+        ${["wake", "not_wake", "skip"].map(k => `<button type="button" class="tag ${x.label === k ? "test" : ""}" data-dlabel="${k}" data-id="${esc(x.id)}" aria-pressed="${x.label === k}">${DEVLABEL[k]}</button>`).join("")}
+        <button type="button" class="tag ${x.trim ? "test" : ""}" data-dtrim="${esc(x.id)}" aria-label="Trim ${esc(x.id)}" title="${x.trim ? `Trimmed to ${x.trim[0].toFixed(2)}-${x.trim[1].toFixed(2)} s` : "Trim: keep only part of the clip for training"}">${icon("scissors", 13)}${x.trim ? ` ${(x.trim[1] - x.trim[0]).toFixed(1)} s` : ""}</button>
+        <button type="button" class="tag" data-ddel="${esc(x.id)}" aria-label="Delete ${esc(x.id)}" title="Delete: gone from here, never imported again">${icon("trash", 13)}</button></li>${trimEd?.id === x.id ? trimPane() : ""}`).join("")
       || `<li class="hint">Nothing here.</li>`}${rows.length > shown.length ? `<li class="hint">…and ${rows.length - shown.length} older ones.</li>` : ""}`;
+  };
+  // Trim: keep only start..end of a clip for training and the test (the clip's own file stays whole).
+  const trimPane = () => {
+    const d = trimEd.buf ? trimEd.buf.duration : 0, step = 0.01;
+    return `<li id="trimbox" style="flex-direction:column;align-items:stretch;gap:8px">
+      ${trimEd.error || !trimEd.buf ? `<div class="row"><span class="hint">${esc(trimEd.error || "Loading…")}</span><button type="button" id="trimclose">Close</button></div>` : `
+      <canvas id="trimwave" height="72" style="width:100%;height:72px;border-radius:8px;background:var(--panel2, rgba(127,127,127,.08))"></canvas>
+      <label class="row" style="gap:8px">Start <input type="range" id="trims" min="0" max="${d}" step="${step}" value="${trimEd.s}" style="flex:1" aria-label="trim start, seconds"><span class="mono" id="trimsv">${trimEd.s.toFixed(2)} s</span></label>
+      <label class="row" style="gap:8px">End <input type="range" id="trime" min="0" max="${d}" step="${step}" value="${trimEd.e}" style="flex:1" aria-label="trim end, seconds"><span class="mono" id="trimev">${trimEd.e.toFixed(2)} s</span></label>
+      <div class="row"><button type="button" id="trimplay">${icon("play", 14)}Play the part kept</button>
+        <button type="button" class="primary" id="trimsave">Save trim</button>
+        <button type="button" id="trimclear">Whole clip</button><button type="button" id="trimclose">Close</button>
+        <span class="hint" id="trimmsg">Takes effect at the next <b>Use the labeled clips</b>.</span></div>`}</li>`;
+  };
+  const trimDraw = () => {
+    const c = $("#trimwave"); if (!c || !trimEd?.buf) return;
+    const w = c.width = c.clientWidth * devicePixelRatio, h = c.height = 72 * devicePixelRatio, x = c.getContext("2d");
+    const a = trimEd.buf.getChannelData(0), per = Math.max(1, Math.floor(a.length / w)), d = trimEd.buf.duration;
+    const fg = getComputedStyle(document.body).color;
+    x.clearRect(0, 0, w, h); x.fillStyle = fg; x.globalAlpha = .75;
+    for (let i = 0; i < w; i++) { let m = 0; for (let j = i * per; j < (i + 1) * per && j < a.length; j++) m = Math.max(m, Math.abs(a[j])); const y = Math.max(1, m * h); x.fillRect(i, (h - y) / 2, 1, y); }
+    x.globalAlpha = .55; x.fillStyle = getComputedStyle(document.body).backgroundColor;
+    x.fillRect(0, 0, trimEd.s / d * w, h); x.fillRect(trimEd.e / d * w, 0, w, h);
+  };
+  let trimSrc = null, trimCtx = null;  // one audio context for every trim (browsers limit them)
+  const trimStop = () => { try { trimSrc?.stop(); } catch {} trimSrc = null; };
+  const trimOpen = async id => {
+    trimStop();
+    if (trimEd?.id === id) { trimEd = null; draw(); return; }
+    const c = dev.clips.find(x => x.id === id);
+    trimEd = { id, buf: null, s: 0, e: 0 }; draw();
+    try {
+      const r = await fetch(`${base}/devices/audio?id=${enc(id)}`); if (!r.ok) throw new Error(`could not load the clip (${r.status})`);
+      trimCtx ??= new (window.AudioContext || window.webkitAudioContext)();
+      const buf = await trimCtx.decodeAudioData(await r.arrayBuffer());
+      if (trimEd?.id !== id) return;
+      Object.assign(trimEd, { buf, s: c?.trim ? c.trim[0] : 0, e: c?.trim ? c.trim[1] : buf.duration });
+    } catch (e) { if (trimEd?.id === id) trimEd.error = e.message; }
+    draw();
+  };
+  const trimWire = () => {
+    if (!$("#trimbox")) return;
+    trimDraw();
+    const msg = t => { const m = $("#trimmsg"); if (m) m.textContent = t; };
+    const set = () => {
+      let s = +$("#trims").value, e = +$("#trime").value;
+      if (e - s < 0.3) { if (document.activeElement === $("#trims")) s = Math.max(0, e - 0.3); else e = Math.min(trimEd.buf.duration, s + 0.3); $("#trims").value = s; $("#trime").value = e; }
+      trimEd.s = s; trimEd.e = e; $("#trimsv").textContent = `${s.toFixed(2)} s`; $("#trimev").textContent = `${e.toFixed(2)} s`; trimDraw();
+    };
+    if ($("#trims")) { $("#trims").oninput = set; $("#trime").oninput = set; }
+    if ($("#trimplay")) $("#trimplay").onclick = () => { trimStop(); stopClip(); const n = trimCtx.createBufferSource(); n.buffer = trimEd.buf; n.connect(trimCtx.destination); trimCtx.resume(); n.start(0, trimEd.s, trimEd.e - trimEd.s); trimSrc = n; };
+    const save = async body => {
+      err();
+      try { const c = await api(base + "/devices/trim", { method: "POST", body: { id: trimEd.id, ...body } });
+        const x = dev.clips.find(y => y.id === c.id); if (x) { if (c.trim) x.trim = c.trim; else delete x.trim; }
+        trimStop(); trimEd = null; draw(); } catch (e) { msg(e.message); }
+    };
+    if ($("#trimsave")) $("#trimsave").onclick = () => save({ start: trimEd.s, end: trimEd.e });
+    if ($("#trimclear")) $("#trimclear").onclick = () => save({ start: null });
+    if ($("#trimclose")) $("#trimclose").onclick = () => { trimStop(); trimEd = null; draw(); };
   };
   const devPane = () => {
     if (!dev) return `<section class="panel"><h2>Device clips</h2><p class="hint" style="margin:0">Loading…</p></section>`;
@@ -1353,12 +1426,12 @@ async function voicesTab(p, base, steps) {
       <p class="hint" style="margin:0">${s.total} clips${s.first ? `, ${esc(new Date(s.first).toLocaleDateString())} to ${esc(new Date(s.last).toLocaleDateString())}` : ""}; ${s.transcribed} transcribed. Transcribing runs Whisper in the background. Clips where the transcript has none of the phrase's words are labeled “not the phrase” by themselves; a person listens to the rest.</p></section>
     <section class="panel" aria-labelledby="h-devl"><h2 id="h-devl" class="sr">Label the clips</h2>${howTo()}
       <div class="row" style="justify-content:space-between"><div role="tablist" class="seg" id="devseg">${seg.map(([k, l]) => `<button type="button" role="tab" aria-selected="${devShow === k}" data-dseg="${k}">${l}</button>`).join("")}</div>
-        <button type="button" class="primary" id="quickgo" ${dev.clips.filter(devPick()).length ? "" : "disabled"}>${icon("play", 14)}Quick check, one at a time</button></div>
+        ${devFilter()}<button type="button" class="primary" id="quickgo" ${dev.clips.filter(devPick()).length ? "" : "disabled"}>${icon("play", 14)}Quick check, one at a time</button></div>
       ${quick ? quickPane() : `<ul class="takes" id="devlist">${devRows()}</ul>`}</section>
     <section class="panel" aria-labelledby="h-devr"><h2 id="h-devr">Use them in training</h2>
       <label class="f" for="holdfrom">Keep aside to test: clips from <span class="hint">a time (UTC); whole newest days test best, since clips of one day share voices and noise</span>
         <input type="text" id="holdfrom" class="mono" value="${esc(holdFrom)}" placeholder="2026-10-23T18:00"></label>
-      <p class="hint" style="margin:0">From then on: ${h.wake} of the phrase and ${h.not_wake} not-the-phrase clips are kept aside; ${s.labels.wake - h.wake} and ${s.labels.not_wake - h.not_wake} train.${dev.applied ? ` Last used ${esc(new Date(dev.applied.applied * 1000).toLocaleString())}.` : ""}</p>
+      <p class="hint" style="margin:0">From then on: ${h.wake} of the phrase and ${h.not_wake} not-the-phrase clips are kept aside; ${s.labels.wake - h.wake - (s.missing_by?.wake || 0)} and ${s.labels.not_wake - h.not_wake - (s.missing_by?.not_wake || 0)} train.${s.missing ? ` ${s.missing} labeled clip${s.missing > 1 ? "s are" : " is"} missing from the folder and will be left out.` : ""}${dev.applied ? ` Last used ${esc(new Date(dev.applied.applied * 1000).toLocaleString())}.` : ""}</p>
       <div class="row"><button type="button" class="primary" id="devapply" ${s.labels.wake + s.labels.not_wake ? "" : "disabled"}>Use the labeled clips</button><span class="hint" id="devapplied"></span></div>
       <p class="hint" style="margin:0">Then <b>Retrain from recordings</b>. Unlabeled and "leave out" clips are never used.</p></section>`;
   };
@@ -1411,6 +1484,7 @@ async function voicesTab(p, base, steps) {
         <input type="text" id="syncpre" class="mono" value="${esc(y.model_prefix || "")}" placeholder="hey_jarvis"></label>
       <label class="f" for="syncsince">Only clips from <span class="hint">optional, a time (UTC), e.g. when this model went live</span>
         <input type="text" id="syncsince" class="mono" value="${esc(y.since || "")}" placeholder="2026-10-24T18:00"></label>
+      <label style="display:flex;gap:10px;align-items:center;min-height:44px;cursor:pointer"><input type="checkbox" id="syncarr" ${y.on_arrival !== false ? "checked" : ""} style="width:22px;height:22px;margin:0;accent-color:var(--orange)"><span><b>As clips arrive</b> <span class="hint">a minute after a device sends this word a clip through Device upload (while wakesmith is running)</span></span></label>
       <div class="row"><button type="button" id="syncsave">Save</button><button type="button" id="syncnow" ${y.source ? "" : "disabled"}>Sync now</button><span class="hint" id="syncmsg"></span></div>
       <p class="hint" style="margin:0">${last}</p>
       <div class="row"><label style="display:flex;gap:10px;align-items:center;min-height:44px;cursor:pointer"><input type="checkbox" id="syncday" ${sc.installed ? "checked" : ""} ${sched && !sc.error ? "" : "disabled"} style="width:22px;height:22px;margin:0;accent-color:var(--orange)"><b>Every day at</b></label>
@@ -1418,7 +1492,7 @@ async function voicesTab(p, base, steps) {
   };
   const syncWire = () => {
     const msg = t => { const m = $("#syncmsg"); if (m) m.textContent = t; };
-    $("#syncsave").onclick = async () => { err(); try { dev.sync = await api(base + "/devices/sync", { method: "PUT", body: { source: $("#syncsrc").value, model_prefix: $("#syncpre").value, since: $("#syncsince").value } }); draw(); msg("saved"); } catch (e) { err(e.message); } };
+    $("#syncsave").onclick = async () => { err(); try { dev.sync = await api(base + "/devices/sync", { method: "PUT", body: { source: $("#syncsrc").value, model_prefix: $("#syncpre").value, since: $("#syncsince").value, on_arrival: $("#syncarr").checked } }); draw(); msg("saved"); } catch (e) { err(e.message); } };
     $("#syncnow").onclick = async () => { err(); try { await api(base + "/devices/sync", { method: "POST" }); msg("syncing in the background: Training shows the log; come back in a few minutes"); } catch (e) { err(e.message); } };
     const setDaily = async () => { err(); try { sched = await api("/api/clips-schedule", { method: "PUT", body: { on: $("#syncday").checked, at: $("#syncat").value.trim() } }); draw(); } catch (e) { err(e.message); $("#syncday").checked = !!sched?.installed; } };
     $("#syncday").onchange = setDaily;
@@ -1427,10 +1501,11 @@ async function voicesTab(p, base, steps) {
   const devWire = () => {
     syncWire();
     const msg = t => { const m = $("#devmsg"); if (m) m.textContent = t; };
-    $("#devimport").onclick = async () => { err(); try { const r = await api(base + "/devices/import", { method: "POST", body: { folder: $("#devdir").value } }); msg(`${r.added} new, ${r.known} already here${r.unreadable ? `, ${r.unreadable} unreadable (left out)` : ""}`); await loadDev(); } catch (e) { err(e.message); } };
+    $("#devimport").onclick = async () => { err(); try { const r = await api(base + "/devices/import", { method: "POST", body: { folder: $("#devdir").value } }); msg(`${r.added} new, ${r.known} already here${r.unreadable ? `, ${r.unreadable} unreadable (left out)` : ""}${r.takes ? `, ${r.takes} take${r.takes > 1 ? "s" : ""} recorded on a device (now under Record here)` : ""}${r.takes_refused ? `, ${r.takes_refused} take${r.takes_refused > 1 ? "s" : ""} left out (silent, too short or too long)` : ""}`); await loadDev(); } catch (e) { err(e.message); } };
     $("#devtx").onclick = async () => { err(); try { await api(base + "/devices/transcribe", { method: "POST" }); msg("transcribing in the background: come back in a few minutes (Training shows the log)"); } catch (e) { err(e.message); } };
     if ($("#devaccept")) $("#devaccept").onclick = async () => { err(); try { const r = await api(base + "/devices/accept", { method: "POST" }); msg(`${r.changed} labeled`); await loadDev(); } catch (e) { err(e.message); } };
     $("#devseg").onclick = e => { const b = e.target.closest("[data-dseg]"); if (b) { if (quick) quickStop(); devShow = b.dataset.dseg; draw(); } };
+    if ($("#devfrom")) $("#devfrom").onchange = () => { if (quick) quickStop(); devFrom = $("#devfrom").value; draw(); };
     $("#quickgo").onclick = () => { quick = { ids: dev.clips.filter(devPick()).reverse().map(x => x.id), i: 0, hash: location.hash };
       window.addEventListener("hashchange", () => { document.removeEventListener("keydown", quickKey); stopClip(); quick = null; }, { once: true });
       document.removeEventListener("keydown", quickKey); document.addEventListener("keydown", quickKey); draw(); quickPlay(); };
@@ -1442,9 +1517,17 @@ async function voicesTab(p, base, steps) {
     }
     $("#holdfrom").onchange = async () => { holdFrom = $("#holdfrom").value.trim(); await loadDev(); };
     $("#devapply").onclick = async () => { err(); try { const r = await api(base + "/devices/apply", { method: "POST", body: { holdout_from: $("#holdfrom").value.trim() } });
-      $("#devapplied").textContent = Object.entries(r).map(([k, v]) => `${k === "pos" ? "phrase" : "not the phrase"}: ${v.train} train, ${v.heldout} test`).join("; ") || "nothing labeled"; } catch (e) { err(e.message); } };
+      $("#devapplied").textContent = Object.entries(r).map(([k, v]) => `${k === "pos" ? "phrase" : "not the phrase"}: ${v.train} train, ${v.heldout} test${v.missing ? `, ${v.missing} missing (left out)` : ""}`).join("; ") || "nothing labeled"; } catch (e) { err(e.message); } };
+    trimWire();
     if ($("#devlist")) $("#devlist").onclick = async e => {
       const pl = e.target.closest("[data-dplay]"), lb = e.target.closest("[data-dlabel]");
+      const del = e.target.closest("[data-ddel]"), tr = e.target.closest("[data-dtrim]");
+      if (tr) { trimOpen(tr.dataset.dtrim); return; }
+      if (del) {  // two presses: the first asks, the second deletes (no dialog)
+        if (!del.dataset.armed) { del.dataset.armed = "1"; del.textContent = "Delete?"; del.classList.add("danger"); setTimeout(() => { if (del.isConnected) { delete del.dataset.armed; del.innerHTML = icon("trash", 13); del.classList.remove("danger"); } }, 4000); return; }
+        try { await api(base + "/devices/delete", { method: "POST", body: { ids: [del.dataset.ddel] } }); await loadDev(); } catch (x) { err(x.message); }
+        return;
+      }
       if (pl) playClip(pl, `${base}/devices/audio?id=${enc(pl.dataset.dplay)}`).catch(x => err(x.message));
       if (lb) { const cur = lb.getAttribute("aria-pressed") === "true";
         try { await api(base + "/devices/labels", { method: "POST", body: { labels: { [lb.dataset.id]: cur ? null : lb.dataset.dlabel } } });

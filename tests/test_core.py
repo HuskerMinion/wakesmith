@@ -2779,6 +2779,7 @@ def test_clip_sync_since_limit_and_project_settings(proj, tmp_path):
         "source": str(src),
         "model_prefix": "hey_jarvis",
         "since": "2026-10-24T18:00",
+        "on_arrival": True,
     }
     r = clipsync.sync(p, device="cpu", limit=2, whisper=_FakeWhisper(SAID))
     assert (r["new"], r["left"]) == (2, 1) and "1 more next time" in clipsync.describe(r)
@@ -3550,7 +3551,8 @@ def test_versions_survive_deleting_the_one_they_came_from(tmp_path, monkeypatch)
     (p.dir / "devices" / "clips.json").write_text("[]")  # a sync that found nothing: no inbox
     q = versions.create(projects.load("hey_jarvis"))
     assert set(RealData(q).sources) == set(RealData(p).sources) == {"pos", "rpos"}
-    assert not list((tmp_path / "projects").glob(".*"))  # no half-made folder left
+    left = [f.name for f in (tmp_path / "projects").glob(".*")]
+    assert left in ([], [".versions.lock"])  # no half-made folder left
     with pytest.raises(ValueError, match="use"):  # its synthetic voices are q's too
         projects.delete(projects.load("hey_jarvis"))
     assert (q.dir / "recordings" / "pos" / "take_001.wav").exists()  # q's own copy of the take

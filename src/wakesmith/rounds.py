@@ -22,21 +22,77 @@ positives. This module brings them in and turns them into training data:
 from __future__ import annotations
 
 import csv
+import fcntl
+import functools
 import json
 import re
 import shutil
+import threading
 import time
+from contextlib import contextmanager
 from datetime import datetime
 from pathlib import Path
 
+import soundfile as sf
+
+from . import takes
 from .project import Project
-from .real import copy_as_16k_mono
+from .real import SR, copy_as_16k_mono, read_16k_mono
 
 LABELS = ("wake", "not_wake", "skip")
+MIN_TRIM_S = 0.3  # the shortest part of a clip a trim may keep
 
 
 def _inbox(p: Project) -> Path:
     return p.path("devices", "inbox")
+
+
+_mine = threading.local()  # per thread: the projects whose lock it holds
+_fallbacks: dict[str, threading.Lock] = {}
+_fallbacks_lock = threading.Lock()
+
+
+def _fallback(key: str) -> threading.Lock:
+    with _fallbacks_lock:
+        return _fallbacks.setdefault(key, threading.Lock())
+
+
+@contextmanager
+def index_lock(p: Project):
+    """One change to a project's device clip index (clips.json, deleted.json, takes.json, devices/pos
+    and neg) at a time, across processes: a sync, the page and the command line each read the index,
+    change it and write it back.
+    Nested use in one thread takes the lock once."""
+    key = str(p.dir.resolve())
+    held = getattr(_mine, "keys", set())
+    if key in held:
+        yield
+        return
+    with open(p.dir / ".devices.lock", "a") as fd:  # in the project folder: no folder made for it
+        try:
+            fcntl.flock(fd, fcntl.LOCK_EX)
+            fallback = None
+        except OSError:  # a network share without flock: this process's threads, at least
+            fallback = _fallback(key)
+            fallback.acquire()
+        _mine.keys = held | {key}
+        try:
+            yield
+        finally:
+            _mine.keys = held
+            if fallback is None:
+                fcntl.flock(fd, fcntl.LOCK_UN)
+            else:
+                fallback.release()
+
+
+def _serial(fn):
+    @functools.wraps(fn)
+    def run(p: Project, *a, **kw):
+        with index_lock(p):
+            return fn(p, *a, **kw)
+
+    return run
 
 
 def _index_path(p: Project) -> Path:
@@ -56,6 +112,106 @@ def _save(p: Project, clips: list[dict]) -> None:
     tmp.replace(f)
 
 
+def _deleted_path(p: Project) -> Path:
+    return p.path("devices", "deleted.json")
+
+
+def deleted(p: Project) -> set[str]:
+    """Ids of clips a person deleted: an import never brings them in again."""
+    f = _deleted_path(p)
+    try:
+        return set(json.loads(f.read_text())) if f.exists() else set()
+    except (json.JSONDecodeError, OSError, TypeError):
+        return set()
+
+
+@_serial
+def delete(p: Project, ids: list[str]) -> int:
+    """Delete clips: the copy here and the index entry go, and the id is remembered so the next import
+    or sync skips the clip (the source folder is only read, so it is still there). It also leaves
+    devices/pos and devices/neg, so training never meets a clip that is gone. Returns how many."""
+    want = set(ids)
+    clips = load(p)
+    gone = [c for c in clips if c["id"] in want]
+    for c in gone:
+        file(p, c["id"]).unlink(missing_ok=True)
+    f = _deleted_path(p)
+    f.parent.mkdir(parents=True, exist_ok=True)
+    tmp = f.with_suffix(".part")
+    tmp.write_text(json.dumps(sorted(deleted(p) | {c["id"] for c in gone})))
+    tmp.replace(f)
+    _save(p, [c for c in clips if c["id"] not in want])
+    for c in gone:
+        _drop_used(p, c["id"])
+    return len(gone)
+
+
+def _inside(cid: str) -> bool:
+    """A clip id that names a file under a folder: no absolute path, no "..", no empty part ("." as
+    the folder, from an older import, is the inbox itself and safe)."""
+    parts = cid.split("/")
+    return len(parts) == 2 and parts[0] not in ("", "..") and parts[1] not in ("", ".", "..")
+
+
+def _drop_used(p: Project, cid: str) -> None:
+    """Take a deleted clip out of devices/pos and devices/neg (its labels.csv row, HELDOUT.txt line and
+    link or trimmed copy), and nothing else: the other labels stay as they were last used. The lists
+    are replaced whole (a reader never sees half of one) before the file goes."""
+    if not _inside(cid):
+        return
+    for sub in ("pos", "neg"):
+        d = p.path("devices", sub)
+        lab = d / "labels.csv"
+        if lab.exists():
+            with open(lab, newline="", encoding="utf-8") as fd:
+                rows = list(csv.reader(fd))
+            keep = [r for r in rows if not r or r[0] != cid]
+            if len(keep) != len(rows):
+                tmp = lab.with_suffix(".part")
+                with open(tmp, "w", newline="", encoding="utf-8") as fd:
+                    csv.writer(fd).writerows(keep)
+                tmp.replace(lab)
+        held = d / "HELDOUT.txt"
+        if held.exists():
+            lines = held.read_text(encoding="utf-8").splitlines(keepends=True)
+            keep_l = [x for x in lines if x.strip() != cid]
+            if len(keep_l) != len(lines):
+                tmp = held.with_suffix(".part")
+                tmp.write_text("".join(keep_l), encoding="utf-8")
+                tmp.replace(held)
+        f = d / cid
+        if f.is_symlink() or f.exists():
+            f.unlink()
+
+
+@_serial
+def set_trim(p: Project, cid: str, start: float | None, end: float | None = None) -> dict | None:
+    """Keep only start..end (seconds) of a clip when it goes into training or the test (apply()); the
+    clip's own file stays whole. start None clears the trim. Returns the clip's index entry."""
+    clips = load(p)
+    c = next((c for c in clips if c["id"] == cid), None)
+    if c is None:
+        raise KeyError(cid)
+    if start is None:
+        c.pop("trim", None)
+    else:
+        dur = sf.info(str(file(p, cid))).duration
+        s, e = round(float(start), 3), round(float(dur if end is None else end), 3)
+        if not (0 <= s < e <= dur + 0.001):
+            raise ValueError(f"trim must be within the clip (0-{dur:.2f} s), start before end")
+        if e - s < MIN_TRIM_S:
+            raise ValueError(f"a trim keeps at least {MIN_TRIM_S} s")
+        c["trim"] = [s, min(e, round(dur, 3))]
+    _save(p, clips)
+    return c
+
+
+def _write_trimmed(src: Path, dst: Path, trim: list[float]) -> None:
+    a = read_16k_mono(src)
+    s, e = round(trim[0] * SR), round(trim[1] * SR)
+    sf.write(str(dst), a[s:e], SR, subtype="PCM_16", format="WAV")
+
+
 def _meta(wav: Path) -> dict:
     side = wav.with_suffix(".json")
     if side.exists():
@@ -67,6 +223,7 @@ def _meta(wav: Path) -> dict:
     return {}
 
 
+@_serial
 def import_folder(
     p: Project,
     folder: str | Path,
@@ -74,7 +231,9 @@ def import_folder(
     since: str = "",
     limit: int = 0,
 ) -> dict:
-    """Copy new clips in; returns {"added", "known", "skipped", "left", "ids"}.
+    """Copy new clips in; returns {"added", "known", "skipped", "unreadable", "left", "ids", "takes"}.
+    Takes recorded on a device (kind "take") go into the word's recordings instead (takes.py), whatever
+    their time; "takes" counts them.
 
     With `model_prefix`, only clips whose sidecar "model" starts with it (the word's model on the
     devices: a puller folder holds every word's fires; slot numbers move, the model name doesn't);
@@ -86,12 +245,13 @@ def import_folder(
     if not root.is_dir():
         raise ValueError(f"not a folder: {root}")
     clips = load(p)
-    known = {c["id"] for c in clips}
-    new, skipped = [], 0
+    known = {c["id"] for c in clips} | deleted(p)
+    took = takes.done(p)
+    new, skipped, new_takes = [], 0, []
     for wav in sorted(root.rglob("*.wav")):
         rel = wav.relative_to(root)
         meta = _meta(wav)
-        if model_prefix and not str(meta.get("model") or "").startswith(model_prefix):
+        if model_prefix and not takes.word(meta).startswith(model_prefix):
             skipped += 1
             continue
         device = re.sub(
@@ -99,8 +259,17 @@ def import_folder(
             "_",
             str(meta.get("device") or (rel.parts[0] if len(rel.parts) > 1 else root.name)),
         )
+        # never the inbox itself, the folder above it, or an absolute id (importing "." or "/"
+        # gives an empty name); ".x" stays as 0.4.11 had it
+        old_id = f"{device}/{wav.name}"  # the id an older wakesmith gave it
+        if device in ("", ".", ".."):
+            device = "_" * max(1, len(device))
         cid = f"{device}/{wav.name}"
-        if cid in known:
+        if takes.is_take(meta, rel):  # recorded on the device as the phrase: into recordings
+            if cid not in took and old_id not in took:
+                new_takes.append((str(meta.get("at") or ""), cid, device, wav, meta))
+            continue
+        if cid in known or old_id in known:  # in already, perhaps under its old id
             continue
         at = meta.get("at") or time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(wav.stat().st_mtime))
         if since and str(at) < since:
@@ -137,11 +306,17 @@ def import_folder(
         )
     clips.sort(key=lambda c: c["at"])
     _save(p, clips)
+    new_takes.sort(key=lambda x: (x[0], x[1]))
+    took_n, bad_takes, refused = takes.add(
+        p, [(cid, dev, wav, meta) for _, cid, dev, wav, meta in new_takes]
+    )
     return {
+        "takes": took_n,
+        "takes_refused": refused,
         "added": len(added),
         "known": len(clips) - len(added),
         "skipped": skipped,
-        "unreadable": unreadable,
+        "unreadable": unreadable + bad_takes,
         "left": left,
         "ids": added,
     }
@@ -246,16 +421,30 @@ def transcribe(
     w = whisper or _Whisper(device, language=p.language)
     for i in range(0, len(todo), batch):
         group = todo[i : i + batch]
-        for c, text in zip(group, w([file(p, c["id"]) for c in group]), strict=True):
-            c["text"] = text
-            c["suggestion"] = suggest(p.heard_forms, text)
-        _save(p, clips)  # progress survives a stop
+        heard = {
+            c["id"]: text
+            for c, text in zip(group, w([file(p, c["id"]) for c in group]), strict=True)
+        }
+        _merge_text(p, heard)  # progress survives a stop
         if progress:
             progress(min(i + batch, len(todo)), len(todo))
     return {"transcribed": len(todo)}
 
 
+@_serial
+def _merge_text(p: Project, heard: dict[str, str]) -> None:
+    """Write transcripts into the index as it is now: labels set (or clips deleted) while Whisper ran
+    stay as they are."""
+    clips = load(p)
+    for c in clips:
+        if c["id"] in heard:
+            c["text"] = heard[c["id"]]
+            c["suggestion"] = suggest(p.heard_forms, c["text"])
+    _save(p, clips)
+
+
 # -- labels and the round ------------------------------------------------------------------------
+@_serial
 def label(p: Project, labels: dict[str, str | None]) -> int:
     """Set labels by clip id ("wake", "not_wake", "skip", or None to clear)."""
     clips = load(p)
@@ -271,6 +460,7 @@ def label(p: Project, labels: dict[str, str | None]) -> int:
     return n
 
 
+@_serial
 def accept_suggestions(p: Project, kinds: tuple[str, ...] = ("not_wake",)) -> int:
     """Take the clear suggestions as labels where none is set yet. By default only "not_wake" (Whisper
     heard none of the phrase's words): a clip where it heard the phrase may still be the TV saying it,
@@ -316,14 +506,28 @@ def summary(p: Project, holdout_from: str | None = None) -> dict:
         "first": clips[0]["at"] if clips else None,
         "last": clips[-1]["at"] if clips else None,
     }
+    inbox = _inbox(p)
+    gone = {  # labeled, but the file was removed: Use the labeled clips leaves them out
+        c["id"]
+        for c in clips
+        if c["label"] in ("wake", "not_wake") and not (inbox / c["id"]).is_file()
+    }
+    if gone:
+        out["missing"] = len(gone)
+        out["missing_by"] = {
+            k: sum(c["label"] == k and c["id"] in gone for c in clips) for k in ("wake", "not_wake")
+        }
     if holdout_from:
         out["heldout"] = {
-            k: sum(c["label"] == k and c["at"] >= holdout_from for c in clips)
+            k: sum(
+                c["label"] == k and c["at"] >= holdout_from and c["id"] not in gone for c in clips
+            )
             for k in ("wake", "not_wake")
         }
     return out
 
 
+@_serial
 def apply(p: Project, holdout_from: str) -> dict:
     """Write devices/pos and devices/neg (labels.csv, HELDOUT.txt) from the labeled clips. Clips at or
     after `holdout_from` (an ISO time, e.g. "2026-10-23T18:00") are held out."""
@@ -336,11 +540,21 @@ def apply(p: Project, holdout_from: str) -> dict:
         if not chosen:
             continue
         d.mkdir(parents=True)
-        rows, held = [], []
+        rows, held, missing = [], [], 0
         for c in chosen:
             rel = c["id"]
+            if not _inside(rel):  # an id an older wakesmith made from an empty device name
+                missing += 1
+                continue
+            src = file(p, c["id"])
+            if not src.is_file():  # gone from the inbox (removed by hand): left out, not a crash
+                missing += 1
+                continue
             (d / rel).parent.mkdir(parents=True, exist_ok=True)
-            (d / rel).symlink_to(file(p, c["id"]))
+            if c.get("trim"):  # a trimmed copy; the clip's own file stays whole
+                _write_trimmed(src, d / rel, c["trim"])
+            else:
+                (d / rel).symlink_to(src)
             rows.append(c)
             if c["at"] >= holdout_from:
                 held.append(rel)
@@ -355,6 +569,8 @@ def apply(p: Project, holdout_from: str) -> dict:
             encoding="utf-8",
         )
         stats[sub] = {"train": len(rows) - len(held), "heldout": len(held)}
+        if missing:
+            stats[sub]["missing"] = missing
     meta = p.path("devices", "round.json")
     meta.write_text(
         json.dumps({"holdout_from": holdout_from, "applied": time.time(), "stats": stats})
